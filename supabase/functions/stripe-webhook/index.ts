@@ -44,7 +44,56 @@ Deno.serve(async (req) => {
 
     console.log(`Processing webhook event: ${event.type}`);
 
-    if (event.type === 'invoice.paid') {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+
+      // Only handle immediate payments (not subscriptions or invoices)
+      if (session.mode === 'payment' && session.payment_status === 'paid') {
+        console.log('Processing completed checkout session:', session.id);
+        
+        // Get cart items from session metadata
+        const userId = session.metadata?.user_id;
+        const cartItemsJson = session.metadata?.cart_items;
+        
+        if (!userId || !cartItemsJson) {
+          console.error('Missing metadata in session:', session.id);
+          return new Response(JSON.stringify({ error: 'Missing metadata in session' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        try {
+          const cartItems = JSON.parse(cartItemsJson);
+          
+          // Create registrations for each item
+          for (const item of cartItems) {
+            const { error: regError } = await supabase
+              .from('registrations')
+              .insert({
+                user_id: userId,
+                kid_id: item.kid_id,
+                activity_id: item.activity_id,
+                price_type: item.price_type,
+                reduced_declaration: item.reduced_declaration,
+                amount_paid: item.price,
+                payment_status: 'paid',
+                payment_intent_id: session.payment_intent
+              });
+
+            if (regError) {
+              console.error('Error creating registration:', regError);
+              throw regError;
+            }
+          }
+          
+          console.log(`Created ${cartItems.length} registrations for session ${session.id}`);
+        } catch (error) {
+          console.error('Error processing cart items:', error);
+          throw error;
+        }
+      }
+    } else if (event.type === 'invoice.paid') {
       const invoice = event.data.object;
       
       // Update registrations to paid status

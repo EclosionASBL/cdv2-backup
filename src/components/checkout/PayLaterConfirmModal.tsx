@@ -1,5 +1,6 @@
 import { Dialog } from '@headlessui/react';
-import { FileText, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { useState } from 'react';
 
 interface PayLaterConfirmModalProps {
   isOpen: boolean;
@@ -8,55 +9,71 @@ interface PayLaterConfirmModalProps {
 }
 
 const PayLaterConfirmModal = ({ isOpen, onClose, onConfirm }: PayLaterConfirmModalProps) => {
+  const [isConfirmed, setIsConfirmed] = useState(false);
+
+  const handleConfirm = () => {
+    if (!isConfirmed) return;
+    onConfirm();
+  };
+
   return (
-    <Dialog
-      open={isOpen}
-      onClose={onClose}
-      className="fixed inset-0 z-50 overflow-y-auto"
-    >
+    <Dialog open={isOpen} onClose={onClose} className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4">
         <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
 
         <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
-          <Dialog.Title className="text-lg font-medium mb-4">
-            Confirmation de paiement différé
-          </Dialog.Title>
-
-          <div className="mb-6">
-            <div className="flex items-start space-x-3 mb-4">
-              <FileText className="h-5 w-5 text-primary-600 flex-shrink-0 mt-1" />
-              <div>
-                <p className="text-gray-700 mb-2">
-                  En choisissant cette option, vous recevrez une facture par email à régler dans les 30 jours.
-                </p>
-                <p className="text-gray-700">
-                  L'inscription ne sera définitivement confirmée qu'après réception du paiement.
-                </p>
-              </div>
+          <div className="flex items-start mb-4">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-6 w-6 text-primary-600" />
             </div>
-
-            <div className="bg-amber-50 p-3 rounded-lg">
-              <div className="flex items-start">
-                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="ml-2 text-sm text-amber-700">
-                  Si le paiement n'est pas reçu dans les délais, l'inscription pourra être annulée et la place libérée pour un autre participant.
-                </p>
-              </div>
+            <div className="ml-3">
+              <Dialog.Title className="text-lg font-semibold text-gray-900">
+                Paiement par facture
+              </Dialog.Title>
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3">
+          <div className="mt-2">
+            <p className="text-sm text-gray-600">
+              Vous recevrez la facture par email et vous aurez 20 jours pour la payer. 
+            </p>
+            
+            <div className="mt-4 p-4 bg-primary-50 rounded-lg">
+              <p className="text-sm text-primary-800">
+                En cliquant sur 'Valider l'inscription', vous vous engagez à payer dans le délai imparti.
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={isConfirmed}
+                  onChange={(e) => setIsConfirmed(e.target.checked)}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  J'accepte de payer la facture dans les 20 jours
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end space-x-3">
             <button
+              type="button"
               onClick={onClose}
               className="btn-outline"
             >
               Annuler
             </button>
             <button
-              onClick={onConfirm}
-              className="btn-primary"
+              type="button"
+              onClick={handleConfirm}
+              disabled={!isConfirmed}
+              className={`btn-primary ${!isConfirmed ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              Confirmer
+              Valider l'inscription
             </button>
           </div>
         </div>
