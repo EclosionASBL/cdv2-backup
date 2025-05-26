@@ -32,6 +32,17 @@ export const useCartStore = create<CartState>()(
       items: [],
       
       addItem: (item) => set((state) => {
+        // Validate required fields
+        if (!item.activity_id) {
+          console.error('Missing activity_id for item:', item);
+          return state;
+        }
+
+        if (!item.kid_id) {
+          console.error('Missing kid_id for item:', item);
+          return state;
+        }
+        
         // Check if activity+kid combination already exists
         const exists = state.items.some(
           (i) => i.activity_id === item.activity_id && i.kid_id === item.kid_id

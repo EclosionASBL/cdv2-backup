@@ -65,9 +65,16 @@ const CheckoutPage = () => {
       return;
     }
 
-    // Validate prices
-    const invalidItems = items.filter(item => !item.price || item.price <= 0);
+    // Validate all items have activity_id
+    const invalidItems = items.filter(item => !item.activity_id);
     if (invalidItems.length > 0) {
+      setError(`ID activité manquant pour l'article: ${invalidItems[0].activityName}. Veuillez supprimer cet article et le rajouter au panier.`);
+      return;
+    }
+
+    // Validate prices
+    const invalidPrices = items.filter(item => !item.price || item.price <= 0);
+    if (invalidPrices.length > 0) {
       setError('Certains articles ont un prix invalide.');
       return;
     }
