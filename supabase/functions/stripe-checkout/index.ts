@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
       const newCustomer = await stripe.customers.create({
         email: user.email,
         metadata: {
-          userId: user.id
+          userId: user.id,
         },
       });
 
