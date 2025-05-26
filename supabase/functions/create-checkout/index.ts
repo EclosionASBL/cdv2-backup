@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
             invoice: invoice.id,
             price_data: {
               currency: 'eur',
-              unit_amount: Math.round(item.price * 100), // Convert to cents
+              unit_amount: Math.round(item.price),
               product: product.id
             }
           });
@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
               activity_id: item.activity_id,
               price_type: item.price_type,
               reduced_declaration: item.reduced_declaration,
-              amount_paid: item.price, // Store in euros
+              amount_paid: item.price / 100, // Convert from cents to euros
               payment_status: 'pending',
               invoice_id: invoice.id,
               due_date: dueDate.toISOString(),
@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
         await stripe.invoices.sendInvoice(invoice.id);
 
         return new Response(
-          JSON.stringify({ url: successUrl }),
+          JSON.stringify({ url: invoice.hosted_invoice_url }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       } catch (stripeError: any) {
@@ -233,22 +233,12 @@ Deno.serve(async (req) => {
       }
     } else {
       try {
-        // Serialize cart data for metadata
-        const cartData = JSON.stringify(items.map(item => ({
-          kid_id: item.kid_id,
-          activity_id: item.activity_id,
-          user_id: user.id,
-          price_type: item.price_type,
-          reduced_declaration: item.reduced_declaration,
-          price: item.price * 100 // Store in cents for Stripe
-        })));
-
         // Create line items for Stripe checkout
         const lineItems = items.map(item => ({
           quantity: 1,
           price_data: {
             currency: 'eur',
-            unit_amount: Math.round(item.price * 100), // Convert to cents
+            unit_amount: Math.round(item.price),
             product_data: {
               name: `${item.activityName} (${item.kidName})`,
               description: item.dateRange,
@@ -273,8 +263,7 @@ Deno.serve(async (req) => {
           success_url: successUrl,
           cancel_url: cancelUrl,
           metadata: {
-            user_id: user.id,
-            cart_data: cartData
+            user_id: user.id
           }
         });
 
@@ -288,7 +277,7 @@ Deno.serve(async (req) => {
               activity_id: item.activity_id,
               price_type: item.price_type,
               reduced_declaration: item.reduced_declaration,
-              amount_paid: item.price, // Store in euros
+              amount_paid: item.price / 100, // Convert from cents to euros
               payment_status: 'pending',
               payment_intent_id: session.payment_intent?.toString()
             });
