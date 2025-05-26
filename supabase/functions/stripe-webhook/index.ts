@@ -4,7 +4,7 @@ import Stripe from 'npm:stripe@17.7.0';
 const stripe = Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! // Using service role key to bypass RLS
 );
 
 const corsHeaders = {
@@ -32,46 +32,38 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Récupérer le corps BRUT en bytes
+    // Get raw body bytes
     const bodyUint8 = new Uint8Array(await req.arrayBuffer());
 
-    // Vérifier async
+    // Verify webhook signature
     const event = await stripe.webhooks.constructEventAsync(
       bodyUint8,
       signature,
       Deno.env.get('STRIPE_WEBHOOK_SECRET')!
     );
 
-    // Process the event
     console.log(`Processing webhook event: ${event.type}`);
 
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
+    if (event.type === 'invoice.paid') {
+      const invoice = event.data.object;
       
-      // Check if this is a payment for registrations
-      if (session.metadata?.registration_ids) {
-        const registrationIds = session.metadata.registration_ids.split(',');
-        const sessionIds = session.metadata.session_ids?.split(',') || [];
-        const kidIds = session.metadata.kid_ids?.split(',') || [];
-        const priceTypes = session.metadata.price_types?.split(',') || [];
-        const reducedDeclarations = session.metadata.reduced_declarations?.split(',') || [];
-        
-        // Update registrations to paid status
-        const { error } = await supabase
-          .from('registrations')
-          .update({
-            payment_status: 'paid',
-            payment_intent_id: session.payment_intent
-          })
-          .in('id', registrationIds);
-        
-        if (error) {
-          console.error('Error updating registrations:', error);
-          throw error;
-        }
-        
-        console.log(`Updated ${registrationIds.length} registrations to paid status`);
+      // Update registrations to paid status
+      const { error: updateError } = await supabase
+        .from('registrations')
+        .update({
+          payment_status: 'paid',
+          // Clear due date and reminder flag since it's now paid
+          due_date: null,
+          reminder_sent: false
+        })
+        .eq('invoice_id', invoice.id);
+
+      if (updateError) {
+        console.error('Error updating registrations:', updateError);
+        throw updateError;
       }
+
+      console.log(`Updated registrations for invoice ${invoice.id} to paid status`);
     }
 
     return new Response(JSON.stringify({ received: true }), {

@@ -51,6 +51,7 @@ Deno.serve(async (req) => {
     }
 
     const stripe = Stripe(stripeSecretKey);
+    // Use service role key to bypass RLS
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const requestData = await req.json() as CheckoutRequest;
@@ -154,107 +155,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Check for existing registrations to avoid duplicates
-    const existingRegistrations = [];
-    for (const item of items) {
-      const { data: existing } = await supabase
-        .from('registrations')
-        .select('id, payment_status')
-        .eq('user_id', user.id)
-        .eq('kid_id', item.kid_id)
-        .eq('activity_id', item.activity_id)
-        .maybeSingle();
-      
-      if (existing) {
-        existingRegistrations.push({
-          item,
-          registration: existing
-        });
-      }
-    }
-
-    // Filter out items that already have registrations
-    const newItems = items.filter(item => {
-      return !existingRegistrations.some(
-        er => er.item.kid_id === item.kid_id && er.item.activity_id === item.activity_id
-      );
-    });
-
-    // Create registrations for new items only
-    const registrations = [];
-    const registrationIds = [];
-    const kidIds = [];
-    const sessionIds = [];
-    const priceTypes = [];
-    const reducedDeclarations = [];
-
-    // Fetch session data for all activities at once
-    const activityIds = items.map(item => item.activity_id);
-    const { data: sessionRows, error: sessErr } = await supabase
-      .from('sessions')
-      .select('id, center_id, periode, semaine')
-      .in('id', activityIds);
-
-    if (sessErr) throw sessErr;
-
-    // Create a map for quick lookup
-    const sessionMap = new Map(
-      (sessionRows || []).map(s => [s.id, s])
-    );
-
-    if (newItems.length > 0) {
-      const newRegistrations = newItems.map(item => {
-        return {
-          user_id: user.id,
-          kid_id: item.kid_id,
-          activity_id: item.activity_id,
-          price_type: item.price_type,
-          reduced_declaration: item.reduced_declaration,
-          amount_paid: item.price / 100, // Convert from cents to euros for DB
-          payment_status: 'pending'
-        };
-      });
-
-      const { data: regs, error: regError } = await supabase
-        .from('registrations')
-        .insert(newRegistrations)
-        .select();
-
-      if (regError) {
-        throw new Error('Erreur lors de la création des inscriptions: ' + regError.message);
-      }
-
-      if (regs) {
-        registrations.push(...regs);
-        registrationIds.push(...regs.map(r => r.id));
-        
-        // Collect metadata from items
-        newItems.forEach(item => {
-          kidIds.push(item.kid_id);
-          sessionIds.push(item.activity_id);
-          priceTypes.push(item.price_type);
-          reducedDeclarations.push(item.reduced_declaration.toString());
-        });
-      }
-    }
-
-    // Add existing registrations to the list
-    for (const er of existingRegistrations) {
-      registrations.push(er.registration);
-      registrationIds.push(er.registration.id);
-      kidIds.push(er.item.kid_id);
-      sessionIds.push(er.item.activity_id);
-      priceTypes.push(er.item.price_type);
-      reducedDeclarations.push(er.item.reduced_declaration.toString());
-    }
-
-    // If no registrations (new or existing), return an error
-    if (registrations.length === 0) {
-      throw new Error('Aucune inscription n\'a pu être créée.');
-    }
-
     if (payLater) {
       try {
+        // Set due date to 20 days from now
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 20);
+
         // Create invoice
         const invoice = await stripe.invoices.create({
           customer: customerId,
@@ -263,35 +169,26 @@ Deno.serve(async (req) => {
           auto_advance: true,
           description: 'Stages Éclosion ASBL',
           metadata: {
-            user_id: user.id,
-            registration_ids: registrationIds.join(','),
-            kid_ids: kidIds.join(','),
-            session_ids: sessionIds.join(','),
-            price_types: priceTypes.join(','),
-            reduced_declarations: reducedDeclarations.join(',')
+            user_id: user.id
           }
         });
 
-        // Add line items
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          const reg = registrations[i];
-          
+        // Add line items and create registrations
+        for (const item of items) {
           // Create a product first
           const product = await stripe.products.create({
             name: `${item.activityName} (${item.kidName})`,
             description: item.dateRange,
             metadata: {
-              registration_id: reg?.id,
               kid_id: item.kid_id,
-              session_id: item.activity_id,
+              activity_id: item.activity_id,
               user_id: user.id,
               price_type: item.price_type,
               reduced_declaration: item.reduced_declaration.toString()
             }
           });
 
-          // Then create the invoice item with the product
+          // Create invoice item
           await stripe.invoiceItems.create({
             customer: customerId,
             invoice: invoice.id,
@@ -302,12 +199,24 @@ Deno.serve(async (req) => {
             }
           });
 
-          // Update registration with invoice ID
-          if (reg) {
-            await supabase
-              .from('registrations')
-              .update({ invoice_id: invoice.id })
-              .eq('id', reg.id);
+          // Create registration with pending status
+          const { error: regError } = await supabase
+            .from('registrations')
+            .insert({
+              user_id: user.id,
+              kid_id: item.kid_id,
+              activity_id: item.activity_id,
+              price_type: item.price_type,
+              reduced_declaration: item.reduced_declaration,
+              amount_paid: item.price / 100, // Convert from cents to euros
+              payment_status: 'pending',
+              invoice_id: invoice.id,
+              due_date: dueDate.toISOString(),
+              reminder_sent: false
+            });
+
+          if (regError) {
+            throw new Error('Error creating registration: ' + regError.message);
           }
         }
 
@@ -325,30 +234,25 @@ Deno.serve(async (req) => {
     } else {
       try {
         // Create line items for Stripe checkout
-        const lineItems = items.map((item, index) => {
-          const reg = registrations[index];
-          
-          return {
-            quantity: 1,
-            price_data: {
-              currency: 'eur',
-              unit_amount: Math.round(item.price),
-              product_data: {
-                name: `${item.activityName} (${item.kidName})`,
-                description: item.dateRange,
-                images: item.imageUrl ? [item.imageUrl] : undefined,
-                metadata: {
-                  registration_id: reg?.id,
-                  kid_id: item.kid_id,
-                  session_id: item.activity_id,
-                  user_id: user.id,
-                  price_type: item.price_type,
-                  reduced_declaration: item.reduced_declaration.toString()
-                }
+        const lineItems = items.map(item => ({
+          quantity: 1,
+          price_data: {
+            currency: 'eur',
+            unit_amount: Math.round(item.price),
+            product_data: {
+              name: `${item.activityName} (${item.kidName})`,
+              description: item.dateRange,
+              images: item.imageUrl ? [item.imageUrl] : undefined,
+              metadata: {
+                kid_id: item.kid_id,
+                activity_id: item.activity_id,
+                user_id: user.id,
+                price_type: item.price_type,
+                reduced_declaration: item.reduced_declaration.toString()
               }
             }
-          };
-        });
+          }
+        }));
 
         // Create checkout session
         const session = await stripe.checkout.sessions.create({
@@ -358,28 +262,29 @@ Deno.serve(async (req) => {
           mode: 'payment',
           success_url: successUrl,
           cancel_url: cancelUrl,
-          payment_intent_data: {
-            metadata: {
-              registration_ids: registrationIds.join(','),
-              kid_ids: kidIds.join(','),
-              user_id: user.id,
-              session_ids: sessionIds.join(','),
-              price_types: priceTypes.join(','),
-              reduced_declarations: reducedDeclarations.join(',')
-            }
-          },
           metadata: {
-            user_id: user.id,
-            registration_ids: registrationIds.join(',')
+            user_id: user.id
           }
         });
 
-        // Update registrations with payment_intent_id
-        if (registrationIds.length > 0 && session.payment_intent) {
-          await supabase
+        // Create pending registrations
+        for (const item of items) {
+          const { error: regError } = await supabase
             .from('registrations')
-            .update({ payment_intent_id: session.payment_intent.toString() })
-            .in('id', registrationIds);
+            .insert({
+              user_id: user.id,
+              kid_id: item.kid_id,
+              activity_id: item.activity_id,
+              price_type: item.price_type,
+              reduced_declaration: item.reduced_declaration,
+              amount_paid: item.price / 100, // Convert from cents to euros
+              payment_status: 'pending',
+              payment_intent_id: session.payment_intent?.toString()
+            });
+
+          if (regError) {
+            throw new Error('Error creating registration: ' + regError.message);
+          }
         }
 
         return new Response(
