@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
-import { supabase } from '../../lib/supabase';
+import { createCheckoutSession } from '../../lib/stripe';
 import { Loader2, AlertCircle, CreditCard, Lock, FileText, CheckCircle } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 
@@ -76,61 +76,10 @@ const CheckoutPage = () => {
     setError(null);
     
     try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        throw new Error('Erreur lors de la récupération de la session: ' + sessionError.message);
-      }
-      
-      if (!session?.access_token) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
-      
-      // Call our Supabase Edge Function to create a Stripe checkout session
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            items: items.map(item => ({
-              ...item,
-              price: item.price * 100 // Convert to cents for Stripe
-            })),
-            payLater,
-            successUrl: `${window.location.origin}/order-confirmation`,
-            cancelUrl: `${window.location.origin}/cart`,
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Checkout error response:', errorData);
-        throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la session de paiement.');
-      }
-      
-      const { url, error: stripeError } = await response.json();
-      
-      if (stripeError) {
-        console.error('Stripe error:', stripeError);
-        throw new Error(stripeError);
-      }
-      
-      if (!url) {
-        throw new Error('Aucune URL de paiement n\'a été reçue.');
-      }
-
-      // Redirect to Stripe Checkout or Invoice
-      window.location.href = url;
+      await createCheckoutSession(items, payLater);
     } catch (error: any) {
       console.error('Error creating checkout session:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la session de paiement.');
-    } finally {
       setIsLoading(false);
     }
   };
