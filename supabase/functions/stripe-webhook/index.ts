@@ -44,7 +44,38 @@ Deno.serve(async (req) => {
 
     console.log(`Processing webhook event: ${event.type}`);
 
-    if (event.type === 'invoice.paid') {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+
+      // Only handle immediate payments (not subscriptions or invoices)
+      if (session.mode === 'payment' && session.payment_status === 'paid') {
+        // Extract metadata from the session
+        const metadata = session.metadata;
+        const cartItems = JSON.parse(metadata.cart_items || '[]');
+        const userId = metadata.user_id;
+
+        // Process each cart item
+        for (const item of cartItems) {
+          // Create or update registration
+          const { error: regError } = await supabase
+            .from('registrations')
+            .update({
+              payment_status: 'paid'
+            })
+            .eq('payment_intent_id', session.payment_intent)
+            .eq('user_id', userId)
+            .eq('kid_id', item.kid_id)
+            .eq('activity_id', item.activity_id);
+
+          if (regError) {
+            console.error('Error updating registration:', regError);
+            throw regError;
+          }
+        }
+
+        console.log(`Updated registrations for session ${session.id} to paid status`);
+      }
+    } else if (event.type === 'invoice.paid') {
       const invoice = event.data.object;
       
       // Update registrations to paid status

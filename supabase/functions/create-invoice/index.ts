@@ -21,13 +21,6 @@ interface CartItem {
   imageUrl?: string;
 }
 
-interface CheckoutRequest {
-  items: CartItem[];
-  payLater: boolean;
-  successUrl: string;
-  cancelUrl: string;
-}
-
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -54,33 +47,10 @@ Deno.serve(async (req) => {
     // Use service role key to bypass RLS
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const requestData = await req.json() as CheckoutRequest;
-    const { items, payLater, successUrl, cancelUrl } = requestData;
+    const { items } = await req.json();
 
     if (!items?.length) {
       throw new Error('Le panier est vide');
-    }
-
-    if (!successUrl || !cancelUrl) {
-      throw new Error('URLs de redirection manquantes');
-    }
-
-    // This function is for immediate payments only
-    if (payLater === true) {
-      throw new Error('Cette fonction est uniquement pour les paiements immédiats. Utilisez create-invoice pour les paiements différés.');
-    }
-
-    // Validate items
-    for (const item of items) {
-      if (!item.price || item.price <= 0) {
-        throw new Error(`Prix invalide pour l'article: ${item.activityName}`);
-      }
-      if (!item.kid_id) {
-        throw new Error(`ID enfant manquant pour l'article: ${item.activityName}`);
-      }
-      if (!item.activity_id) {
-        throw new Error(`ID activité manquant pour l'article: ${item.activityName}`);
-      }
     }
 
     // Get user from auth header
@@ -160,71 +130,79 @@ Deno.serve(async (req) => {
       }
     }
 
-    try {
-      // Create line items for Stripe checkout
-      const lineItems = items.map(item => ({
-        quantity: 1,
-        price_data: {
-          currency: 'eur',
-          unit_amount: Math.round(item.price), // Price should already be in cents
-          product_data: {
-            name: `${item.activityName} (${item.kidName})`,
-            description: item.dateRange,
-            images: item.imageUrl ? [item.imageUrl] : undefined
-          }
-        }
-      }));
+    // Calculate due date (20 days from now)
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 20);
 
-      // Create checkout session with metadata at the session level
-      const session = await stripe.checkout.sessions.create({
-        customer: customerId,
-        payment_method_types: ['card'],
-        line_items: lineItems,
-        mode: 'payment',
-        success_url: successUrl,
-        cancel_url: cancelUrl,
+    // Create invoice
+    const invoice = await stripe.invoices.create({
+      customer: customerId,
+      collection_method: 'send_invoice',
+      days_until_due: 20,
+      auto_advance: true,
+      description: 'Stages Éclosion ASBL',
+      metadata: {
+        user_id: user.id
+      }
+    });
+
+    // Add line items and create registrations
+    for (const item of items) {
+      // Create a product first
+      const product = await stripe.products.create({
+        name: `${item.activityName} (${item.kidName})`,
+        description: item.dateRange,
         metadata: {
+          kid_id: item.kid_id,
+          activity_id: item.activity_id,
           user_id: user.id,
-          cart_items: JSON.stringify(items.map(item => ({
-            kid_id: item.kid_id,
-            activity_id: item.activity_id,
-            price_type: item.price_type,
-            reduced_declaration: item.reduced_declaration,
-            price: item.price / 100 // Convert back to euros for our database
-          })))
+          price_type: item.price_type,
+          reduced_declaration: item.reduced_declaration.toString()
         }
       });
 
-      // Create pending registrations
-      for (const item of items) {
-        const { error: regError } = await supabase
-          .from('registrations')
-          .insert({
-            user_id: user.id,
-            kid_id: item.kid_id,
-            activity_id: item.activity_id,
-            price_type: item.price_type,
-            reduced_declaration: item.reduced_declaration,
-            amount_paid: item.price / 100, // Convert from cents to euros
-            payment_status: 'pending',
-            payment_intent_id: session.payment_intent?.toString()
-          });
-
-        if (regError) {
-          throw new Error('Error creating registration: ' + regError.message);
+      // Create invoice item
+      await stripe.invoiceItems.create({
+        customer: customerId,
+        invoice: invoice.id,
+        price_data: {
+          currency: 'eur',
+          unit_amount: Math.round(item.price), // Price should already be in cents
+          product: product.id
         }
-      }
+      });
 
-      return new Response(
-        JSON.stringify({ url: session.url }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    } catch (stripeError: any) {
-      console.error('Stripe error details:', stripeError);
-      throw new Error('Erreur lors de la création de la session de paiement: ' + stripeError.message);
+      // Create registration with pending status
+      const { error: regError } = await supabase
+        .from('registrations')
+        .insert({
+          user_id: user.id,
+          kid_id: item.kid_id,
+          activity_id: item.activity_id,
+          price_type: item.price_type,
+          reduced_declaration: item.reduced_declaration,
+          amount_paid: item.price / 100, // Convert from cents to euros
+          payment_status: 'pending',
+          invoice_id: invoice.id,
+          due_date: dueDate.toISOString(),
+          reminder_sent: false
+        });
+
+      if (regError) {
+        throw new Error('Error creating registration: ' + regError.message);
+      }
     }
+
+    // Finalize and send the invoice
+    await stripe.invoices.finalizeInvoice(invoice.id);
+    await stripe.invoices.sendInvoice(invoice.id);
+
+    return new Response(
+      JSON.stringify({ url: invoice.hosted_invoice_url }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   } catch (error) {
-    console.error('Error creating checkout session:', error);
+    console.error('Error creating invoice:', error);
     return new Response(
       JSON.stringify({ 
         error: error instanceof Error ? error.message : 'Une erreur inattendue est survenue'

@@ -5,7 +5,7 @@ import { useCartStore } from '../../stores/cartStore';
 import { supabase } from '../../lib/supabase';
 import { Loader2, AlertCircle, CreditCard, Lock, FileText, CheckCircle, Info } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
-import PayLaterConfirmModal from '../../components/checkout/PayLaterConfirmModal';
+import { PayLaterConfirmModal } from '../../components/checkout/PayLaterConfirmModal';
 
 const CheckoutPage = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -106,10 +106,16 @@ const CheckoutPage = () => {
           }),
         }
       );
-
+      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
+      }
+      
+      const { url } = await response.json();
+      
+      if (!url) {
+        throw new Error('Aucune URL de paiement n\'a été reçue.');
       }
 
       // Clear cart and redirect
