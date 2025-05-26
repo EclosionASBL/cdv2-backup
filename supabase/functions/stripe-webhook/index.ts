@@ -32,10 +32,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get the raw body as bytes
+    // Récupérer le corps BRUT en bytes
     const bodyUint8 = new Uint8Array(await req.arrayBuffer());
 
-    // Verify the webhook
+    // Vérifier async
     const event = await stripe.webhooks.constructEventAsync(
       bodyUint8,
       signature,
@@ -67,28 +67,6 @@ Deno.serve(async (req) => {
         }
         
         console.log(`Updated ${registrationIds.length} registrations to paid status`);
-      }
-    } else if (event.type === 'invoice.paid') {
-      const invoice = event.data.object;
-      
-      // Check if this is a payment for registrations
-      if (invoice.metadata?.registration_ids) {
-        const registrationIds = invoice.metadata.registration_ids.split(',');
-        
-        // Update registrations to paid status
-        const { error } = await supabase
-          .from('registrations')
-          .update({
-            payment_status: 'paid'
-          })
-          .in('id', registrationIds);
-        
-        if (error) {
-          console.error('Error updating registrations:', error);
-          throw error;
-        }
-        
-        console.log(`Updated ${registrationIds.length} registrations to paid status from invoice`);
       }
     }
 
