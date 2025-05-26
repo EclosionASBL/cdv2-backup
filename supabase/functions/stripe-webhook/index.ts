@@ -66,29 +66,22 @@ Deno.serve(async (req) => {
           const metadata = product.metadata;
           const amount = item.amount_total / 100; // Convert from cents to euros
 
-          // Create or update registration
+          // Update registration to paid status
           const { error: regError } = await supabase
             .from('registrations')
-            .upsert({
-              user_id: metadata.user_id,
-              kid_id: metadata.kid_id,
-              activity_id: metadata.activity_id,
-              price_type: metadata.price_type,
-              reduced_declaration: metadata.reduced_declaration === 'true',
-              amount_paid: amount,
+            .update({
               payment_status: 'paid',
-              payment_intent_id: session.payment_intent
-            }, {
-              onConflict: 'payment_intent_id'
-            });
+              amount_paid: amount
+            })
+            .eq('payment_intent_id', session.payment_intent);
 
           if (regError) {
-            console.error('Error creating registration:', regError);
+            console.error('Error updating registration:', regError);
             throw regError;
           }
         }
 
-        console.log(`Created registrations for session ${session.id}`);
+        console.log(`Updated registrations for session ${session.id} to paid status`);
       }
     } else if (event.type === 'invoice.paid') {
       const invoice = event.data.object;
