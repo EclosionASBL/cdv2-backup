@@ -4,10 +4,11 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  root: path.resolve(__dirname, ''),
   build: {
     rollupOptions: {
-      input: { main: path.resolve(__dirname, 'src/main.tsx') },
+      input: {
+        main: path.resolve(__dirname, 'index.html')
+      },
     },
     emptyOutDir: true,
     sourcemap: true
