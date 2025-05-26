@@ -29,7 +29,7 @@ export const createCheckoutSession = async (priceId: string, mode: 'payment' | '
 
     const { sessionId, url, error } = await response.json();
 
-    if (error) throw new Error(error);
+    if (error) throw error;
 
     // Redirect to Stripe Checkout
     if (url) {
