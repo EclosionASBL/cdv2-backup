@@ -340,6 +340,11 @@ const CheckoutPage = () => {
                           Tarif réduit
                         </span>
                       )}
+                      {item.price_type.includes('local') && (
+                        <span className="inline-block text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                          Tarif local
+                        </span>
+                      )}
                     </div>
                     <span className="font-medium">{item.price} €</span>
                   </div>
