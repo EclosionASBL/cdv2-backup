@@ -75,49 +75,38 @@ const CheckoutPage = () => {
     setError(null);
     
     try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      // Calculate due date (20 days from now)
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 20);
       
-      if (sessionError) {
-        throw new Error('Erreur lors de la récupération de la session: ' + sessionError.message);
+      // Insert registrations directly into the database
+      const registrations = items.map(item => ({
+        user_id: user.id,
+        kid_id: item.kid_id,
+        activity_id: item.activity_id,
+        price_type: item.price_type,
+        reduced_declaration: item.reduced_declaration,
+        amount_paid: item.price,
+        payment_status: 'pending',
+        due_date: dueDate.toISOString(),
+        reminder_sent: false
+      }));
+      
+      // Use service role client to bypass RLS if needed
+      const { error: insertError } = await supabase
+        .from('registrations')
+        .insert(registrations);
+      
+      if (insertError) {
+        throw new Error(`Erreur lors de la création des inscriptions: ${insertError.message}`);
       }
       
-      if (!session?.access_token) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
-      
-      // Call our Supabase Edge Function to create a Stripe checkout session
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            items: items.map(item => ({
-              ...item,
-              price: item.price * 100 // Convert to cents for Stripe
-            })),
-            payLater: true,
-            successUrl: `${window.location.origin}/order-confirmation`,
-            cancelUrl: `${window.location.origin}/cart`,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
-      }
-
-      // Clear cart and redirect
+      // Clear cart and redirect to confirmation page
       clearCart();
       navigate('/order-confirmation');
     } catch (error: any) {
-      console.error('Error creating invoice:', error);
-      setError(error.message || 'Une erreur est survenue lors de la création de la facture.');
+      console.error('Error creating registrations:', error);
+      setError(error.message || 'Une erreur est survenue lors de la création des inscriptions.');
     } finally {
       setIsLoading(false);
       setIsPayLaterModalOpen(false);
