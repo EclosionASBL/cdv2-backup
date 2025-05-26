@@ -33,13 +33,23 @@ export const useCartStore = create<CartState>()(
       
       addItem: (item) => set((state) => {
         // Validate required fields
-        if (!item.activity_id) {
-          console.error('Missing activity_id for item:', item);
+        if (!item.activity_id || item.activity_id.trim() === '') {
+          console.error('Missing or invalid activity_id for item:', item);
           return state;
         }
 
-        if (!item.kid_id) {
-          console.error('Missing kid_id for item:', item);
+        if (!item.kid_id || item.kid_id.trim() === '') {
+          console.error('Missing or invalid kid_id for item:', item);
+          return state;
+        }
+
+        if (!item.activityName || item.activityName.trim() === '') {
+          console.error('Missing or invalid activityName for item:', item);
+          return state;
+        }
+
+        if (typeof item.price !== 'number' || isNaN(item.price)) {
+          console.error('Invalid price for item:', item);
           return state;
         }
         
@@ -49,10 +59,22 @@ export const useCartStore = create<CartState>()(
         );
         
         if (exists) {
+          console.warn('Item already exists in cart:', item);
           return state; // Don't add duplicate
         }
+
+        // Create a new item with validated fields
+        const validatedItem: CartItem = {
+          ...item,
+          id: item.id || `${item.activity_id}-${item.kid_id}`,
+          activity_id: item.activity_id.trim(),
+          kid_id: item.kid_id.trim(),
+          activityName: item.activityName.trim(),
+          price_type: item.price_type || 'normal',
+          reduced_declaration: item.reduced_declaration || false,
+        };
         
-        return { items: [...state.items, item] };
+        return { items: [...state.items, validatedItem] };
       }),
       
       removeItem: (id) => set((state) => ({
