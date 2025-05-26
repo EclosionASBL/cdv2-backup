@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { supabase } from '../../lib/supabase';
-import { Loader2, AlertCircle, CreditCard, Lock, FileText, CheckCircle } from 'lucide-react';
+import { Loader2, AlertCircle, CreditCard, Lock, FileText, CheckCircle, Info } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
+import PayLaterConfirmModal from '../../components/checkout/PayLaterConfirmModal';
 
 const CheckoutPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPayLaterModalOpen, setIsPayLaterModalOpen] = useState(false);
   const [isReducedPriceModalOpen, setIsReducedPriceModalOpen] = useState(false);
   const [reducedPriceConfirmed, setReducedPriceConfirmed] = useState(false);
   const [isReducedPrice, setIsReducedPrice] = useState(false);
@@ -53,8 +55,76 @@ const CheckoutPage = () => {
     setReducedPriceConfirmed(true);
     setIsReducedPriceModalOpen(false);
   };
+
+  const handlePayLater = () => {
+    setIsPayLaterModalOpen(true);
+  };
   
-  const handleCheckout = async (payLater = false) => {
+  const handlePayLaterConfirm = async () => {
+    if (!user) {
+      setError('Vous devez être connecté pour effectuer un paiement.');
+      return;
+    }
+
+    if (items.length === 0) {
+      setError('Votre panier est vide.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Get the current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error('Erreur lors de la récupération de la session: ' + sessionError.message);
+      }
+      
+      if (!session?.access_token) {
+        throw new Error('Session expirée. Veuillez vous reconnecter.');
+      }
+      
+      // Call our Supabase Edge Function to create a Stripe checkout session
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            items: items.map(item => ({
+              ...item,
+              price: item.price * 100 // Convert to cents for Stripe
+            })),
+            payLater: true,
+            successUrl: `${window.location.origin}/order-confirmation`,
+            cancelUrl: `${window.location.origin}/cart`,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
+      }
+
+      // Clear cart and redirect
+      clearCart();
+      navigate('/order-confirmation');
+    } catch (error: any) {
+      console.error('Error creating invoice:', error);
+      setError(error.message || 'Une erreur est survenue lors de la création de la facture.');
+    } finally {
+      setIsLoading(false);
+      setIsPayLaterModalOpen(false);
+    }
+  };
+  
+  const handleCheckout = async () => {
     if (!user) {
       setError('Vous devez être connecté pour effectuer un paiement.');
       return;
@@ -101,7 +171,7 @@ const CheckoutPage = () => {
               ...item,
               price: item.price * 100 // Convert to cents for Stripe
             })),
-            payLater,
+            payLater: false,
             successUrl: `${window.location.origin}/order-confirmation`,
             cancelUrl: `${window.location.origin}/cart`,
           }),
@@ -110,22 +180,16 @@ const CheckoutPage = () => {
       
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('Checkout error response:', errorData);
         throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la session de paiement.');
       }
       
-      const { url, error: stripeError } = await response.json();
-      
-      if (stripeError) {
-        console.error('Stripe error:', stripeError);
-        throw new Error(stripeError);
-      }
+      const { url } = await response.json();
       
       if (!url) {
         throw new Error('Aucune URL de paiement n\'a été reçue.');
       }
 
-      // Redirect to Stripe Checkout or Invoice
+      // Redirect to Stripe Checkout
       window.location.href = url;
     } catch (error: any) {
       console.error('Error creating checkout session:', error);
@@ -213,7 +277,7 @@ const CheckoutPage = () => {
               
               <div className="space-y-4">
                 <button
-                  onClick={() => handleCheckout(false)}
+                  onClick={handleCheckout}
                   disabled={isLoading}
                   className="w-full btn-primary py-3 flex items-center justify-center"
                 >
@@ -231,7 +295,7 @@ const CheckoutPage = () => {
                 </button>
                 
                 <button
-                  onClick={() => handleCheckout(true)}
+                  onClick={handlePayLater}
                   disabled={isLoading}
                   className="w-full btn-outline py-3 flex items-center justify-center"
                 >
@@ -367,6 +431,13 @@ const CheckoutPage = () => {
           </div>
         </div>
       </Dialog>
+
+      {/* Pay Later Confirmation Modal */}
+      <PayLaterConfirmModal
+        isOpen={isPayLaterModalOpen}
+        onClose={() => setIsPayLaterModalOpen(false)}
+        onConfirm={handlePayLaterConfirm}
+      />
     </div>
   );
 };
