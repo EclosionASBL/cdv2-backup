@@ -64,8 +64,8 @@ const CheckoutPage = () => {
         throw new Error('Votre panier est vide.');
       }
 
-      // Validate all items have activity_id
-      const invalidItem = items.find(item => !item.activity_id || item.activity_id.trim() === '');
+      // Validate all items have session_id
+      const invalidItem = items.find(item => !item.session_id || item.session_id.trim() === '');
       if (invalidItem) {
         throw new Error(`ID activité manquant pour l'article: ${invalidItem.activityName}. Veuillez supprimer cet article et le rajouter au panier.`);
       }
@@ -102,6 +102,7 @@ const CheckoutPage = () => {
           body: JSON.stringify({
             items: items.map(item => ({
               ...item,
+              activity_id: item.session_id, // Use session_id as activity_id
               price: item.price * 100 // Convert to cents for Stripe
             })),
             payLater,

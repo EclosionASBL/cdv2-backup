@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 export interface CartItem {
   id: string; // sessionId-kidId
   activity_id: string;
+  session_id: string;
   kid_id: string;
   kidName: string;
   activityName: string;
@@ -33,10 +34,13 @@ export const useCartStore = create<CartState>()(
       
       addItem: (item) => set((state) => {
         // Validate required fields
-        if (!item.activity_id || typeof item.activity_id !== 'string' || item.activity_id.trim() === '') {
-          console.error('Missing or invalid activity_id for item:', item);
+        if (!item.session_id || typeof item.session_id !== 'string' || item.session_id.trim() === '') {
+          console.error('Missing or invalid session_id for item:', item);
           return state;
         }
+
+        // Set activity_id to session_id if not provided
+        const activity_id = item.activity_id || item.session_id;
 
         if (!item.kid_id || typeof item.kid_id !== 'string' || item.kid_id.trim() === '') {
           console.error('Missing or invalid kid_id for item:', item);
@@ -55,7 +59,7 @@ export const useCartStore = create<CartState>()(
         
         // Check if activity+kid combination already exists
         const exists = state.items.some(
-          (i) => i.activity_id === item.activity_id && i.kid_id === item.kid_id
+          (i) => i.session_id === item.session_id && i.kid_id === item.kid_id
         );
         
         if (exists) {
@@ -66,8 +70,9 @@ export const useCartStore = create<CartState>()(
         // Create a new item with validated fields
         const validatedItem: CartItem = {
           ...item,
-          id: `${item.activity_id}-${item.kid_id}`,
-          activity_id: item.activity_id.trim(),
+          id: `${item.session_id}-${item.kid_id}`,
+          activity_id: activity_id.trim(),
+          session_id: item.session_id.trim(),
           kid_id: item.kid_id.trim(),
           activityName: item.activityName.trim(),
           price_type: item.price_type || 'normal',
@@ -93,7 +98,7 @@ export const useCartStore = create<CartState>()(
       updatePriceType: (type) => set((state) => ({
         items: state.items.map(item => {
           // Get the base price and reduced price from the activity
-          const activity = window.sessionStorage.getItem(`activity_${item.activity_id}`);
+          const activity = window.sessionStorage.getItem(`activity_${item.session_id}`);
           let mainPrice = item.price;
           let reducedPrice = null;
           
