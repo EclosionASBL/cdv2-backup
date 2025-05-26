@@ -44,7 +44,53 @@ Deno.serve(async (req) => {
 
     console.log(`Processing webhook event: ${event.type}`);
 
-    if (event.type === 'invoice.paid') {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+
+      // Only handle immediate payments (not subscriptions or invoices)
+      if (session.mode === 'payment' && session.payment_status === 'paid') {
+        // Retrieve the session with line items
+        const expandedSession = await stripe.checkout.sessions.retrieve(
+          session.id,
+          {
+            expand: ['line_items', 'line_items.data.price.product']
+          }
+        );
+
+        // Process each line item
+        for (const item of expandedSession.line_items?.data || []) {
+          const product = item.price?.product;
+          if (!product || typeof product === 'string') continue;
+
+          // Extract metadata from the product
+          const metadata = product.metadata;
+          const amount = item.amount_total / 100; // Convert from cents to euros
+
+          // Create or update registration
+          const { error: regError } = await supabase
+            .from('registrations')
+            .upsert({
+              user_id: metadata.user_id,
+              kid_id: metadata.kid_id,
+              activity_id: metadata.activity_id,
+              price_type: metadata.price_type,
+              reduced_declaration: metadata.reduced_declaration === 'true',
+              amount_paid: amount,
+              payment_status: 'paid',
+              payment_intent_id: session.payment_intent
+            }, {
+              onConflict: 'payment_intent_id'
+            });
+
+          if (regError) {
+            console.error('Error creating registration:', regError);
+            throw regError;
+          }
+        }
+
+        console.log(`Created registrations for session ${session.id}`);
+      }
+    } else if (event.type === 'invoice.paid') {
       const invoice = event.data.object;
       
       // Update registrations to paid status
