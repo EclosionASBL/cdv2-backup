@@ -4,7 +4,6 @@ import { persist } from 'zustand/middleware';
 export interface CartItem {
   id: string; // sessionId-kidId
   activity_id: string;
-  session_id: string;
   kid_id: string;
   kidName: string;
   activityName: string;
@@ -33,53 +32,16 @@ export const useCartStore = create<CartState>()(
       items: [],
       
       addItem: (item) => set((state) => {
-        // Validate required fields
-        if (!item.session_id || typeof item.session_id !== 'string' || item.session_id.trim() === '') {
-          console.error('Missing or invalid session_id for item:', item);
-          return state;
-        }
-
-        // Set activity_id to session_id if not provided
-        const activity_id = item.activity_id || item.session_id;
-
-        if (!item.kid_id || typeof item.kid_id !== 'string' || item.kid_id.trim() === '') {
-          console.error('Missing or invalid kid_id for item:', item);
-          return state;
-        }
-
-        if (!item.activityName || typeof item.activityName !== 'string' || item.activityName.trim() === '') {
-          console.error('Missing or invalid activityName for item:', item);
-          return state;
-        }
-
-        if (typeof item.price !== 'number' || isNaN(item.price) || item.price < 0) {
-          console.error('Invalid price for item:', item);
-          return state;
-        }
-        
         // Check if activity+kid combination already exists
         const exists = state.items.some(
-          (i) => i.session_id === item.session_id && i.kid_id === item.kid_id
+          (i) => i.activity_id === item.activity_id && i.kid_id === item.kid_id
         );
         
         if (exists) {
-          console.warn('Item already exists in cart:', item);
           return state; // Don't add duplicate
         }
-
-        // Create a new item with validated fields
-        const validatedItem: CartItem = {
-          ...item,
-          id: `${item.session_id}-${item.kid_id}`,
-          activity_id: activity_id.trim(),
-          session_id: item.session_id.trim(),
-          kid_id: item.kid_id.trim(),
-          activityName: item.activityName.trim(),
-          price_type: item.price_type || 'normal',
-          reduced_declaration: item.reduced_declaration || false,
-        };
         
-        return { items: [...state.items, validatedItem] };
+        return { items: [...state.items, item] };
       }),
       
       removeItem: (id) => set((state) => ({
@@ -98,7 +60,7 @@ export const useCartStore = create<CartState>()(
       updatePriceType: (type) => set((state) => ({
         items: state.items.map(item => {
           // Get the base price and reduced price from the activity
-          const activity = window.sessionStorage.getItem(`activity_${item.session_id}`);
+          const activity = window.sessionStorage.getItem(`activity_${item.activity_id}`);
           let mainPrice = item.price;
           let reducedPrice = null;
           
