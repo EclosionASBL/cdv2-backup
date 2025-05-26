@@ -19,7 +19,6 @@ interface CartItem {
   reduced_declaration: boolean;
   price: number;
   imageUrl?: string;
-  session_id?: string; // Added for compatibility
 }
 
 interface CheckoutRequest {
@@ -73,7 +72,7 @@ Deno.serve(async (req) => {
       if (!item.kid_id) {
         throw new Error(`ID enfant manquant pour l'article: ${item.activityName}`);
       }
-      if (!item.activity_id && !item.session_id) {
+      if (!item.activity_id) {
         throw new Error(`ID activité manquant pour l'article: ${item.activityName}`);
       }
     }
@@ -158,13 +157,12 @@ Deno.serve(async (req) => {
     // Check for existing registrations to avoid duplicates
     const existingRegistrations = [];
     for (const item of items) {
-      const activityId = item.session_id || item.activity_id;
       const { data: existing } = await supabase
         .from('registrations')
         .select('id, payment_status')
         .eq('user_id', user.id)
         .eq('kid_id', item.kid_id)
-        .eq('activity_id', activityId)
+        .eq('activity_id', item.activity_id)
         .maybeSingle();
       
       if (existing) {
@@ -177,10 +175,8 @@ Deno.serve(async (req) => {
 
     // Filter out items that already have registrations
     const newItems = items.filter(item => {
-      const activityId = item.session_id || item.activity_id;
       return !existingRegistrations.some(
-        er => er.item.kid_id === item.kid_id && 
-             (er.item.activity_id === activityId || er.item.session_id === activityId)
+        er => er.item.kid_id === item.kid_id && er.item.activity_id === item.activity_id
       );
     });
 
@@ -188,14 +184,12 @@ Deno.serve(async (req) => {
     const registrations = [];
     const registrationIds = [];
     const kidIds = [];
-    const centerIds = [];
-    const periodes = [];
-    const semaines = [];
+    const sessionIds = [];
     const priceTypes = [];
     const reducedDeclarations = [];
 
     // Fetch session data for all activities at once
-    const activityIds = items.map(item => item.session_id || item.activity_id);
+    const activityIds = items.map(item => item.activity_id);
     const { data: sessionRows, error: sessErr } = await supabase
       .from('sessions')
       .select('id, center_id, periode, semaine')
@@ -210,11 +204,10 @@ Deno.serve(async (req) => {
 
     if (newItems.length > 0) {
       const newRegistrations = newItems.map(item => {
-        const activityId = item.session_id || item.activity_id;
         return {
           user_id: user.id,
           kid_id: item.kid_id,
-          activity_id: activityId,
+          activity_id: item.activity_id,
           price_type: item.price_type,
           reduced_declaration: item.reduced_declaration,
           amount_paid: item.price / 100, // Convert from cents to euros for DB
@@ -237,16 +230,10 @@ Deno.serve(async (req) => {
         
         // Collect metadata from items
         newItems.forEach(item => {
-          const activityId = item.session_id || item.activity_id;
-          const session = sessionMap.get(activityId);
-          
           kidIds.push(item.kid_id);
+          sessionIds.push(item.activity_id);
           priceTypes.push(item.price_type);
           reducedDeclarations.push(item.reduced_declaration.toString());
-          
-          if (session?.center_id) centerIds.push(session.center_id);
-          if (session?.periode) periodes.push(session.periode);
-          if (session?.semaine) semaines.push(session.semaine);
         });
       }
     }
@@ -255,17 +242,10 @@ Deno.serve(async (req) => {
     for (const er of existingRegistrations) {
       registrations.push(er.registration);
       registrationIds.push(er.registration.id);
-      
-      const activityId = er.item.session_id || er.item.activity_id;
-      const session = sessionMap.get(activityId);
-      
       kidIds.push(er.item.kid_id);
+      sessionIds.push(er.item.activity_id);
       priceTypes.push(er.item.price_type);
       reducedDeclarations.push(er.item.reduced_declaration.toString());
-      
-      if (session?.center_id) centerIds.push(session.center_id);
-      if (session?.periode) periodes.push(session.periode);
-      if (session?.semaine) semaines.push(session.semaine);
     }
 
     // If no registrations (new or existing), return an error
@@ -286,9 +266,7 @@ Deno.serve(async (req) => {
             user_id: user.id,
             registration_ids: registrationIds.join(','),
             kid_ids: kidIds.join(','),
-            center_ids: centerIds.join(','),
-            periodes: periodes.join(','),
-            semaines: semaines.join(','),
+            session_ids: sessionIds.join(','),
             price_types: priceTypes.join(','),
             reduced_declarations: reducedDeclarations.join(',')
           }
@@ -306,7 +284,7 @@ Deno.serve(async (req) => {
             metadata: {
               registration_id: reg?.id,
               kid_id: item.kid_id,
-              session_id: item.session_id || item.activity_id,
+              session_id: item.activity_id,
               user_id: user.id,
               price_type: item.price_type,
               reduced_declaration: item.reduced_declaration.toString()
@@ -362,7 +340,7 @@ Deno.serve(async (req) => {
                 metadata: {
                   registration_id: reg?.id,
                   kid_id: item.kid_id,
-                  session_id: item.session_id || item.activity_id,
+                  session_id: item.activity_id,
                   user_id: user.id,
                   price_type: item.price_type,
                   reduced_declaration: item.reduced_declaration.toString()
@@ -385,9 +363,7 @@ Deno.serve(async (req) => {
               registration_ids: registrationIds.join(','),
               kid_ids: kidIds.join(','),
               user_id: user.id,
-              center_ids: centerIds.join(','),
-              periodes: periodes.join(','),
-              semaines: semaines.join(','),
+              session_ids: sessionIds.join(','),
               price_types: priceTypes.join(','),
               reduced_declarations: reducedDeclarations.join(',')
             }

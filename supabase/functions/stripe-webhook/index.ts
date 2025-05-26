@@ -51,6 +51,10 @@ Deno.serve(async (req) => {
       // Check if this is a payment for registrations
       if (session.metadata?.registration_ids) {
         const registrationIds = session.metadata.registration_ids.split(',');
+        const sessionIds = session.metadata.session_ids?.split(',') || [];
+        const kidIds = session.metadata.kid_ids?.split(',') || [];
+        const priceTypes = session.metadata.price_types?.split(',') || [];
+        const reducedDeclarations = session.metadata.reduced_declarations?.split(',') || [];
         
         // Update registrations to paid status
         const { error } = await supabase
