@@ -11,42 +11,34 @@ export const getStripe = () => {
   return stripePromise;
 };
 
-export const createCheckoutSession = async (items: any[], payLater: boolean = false) => {
+export const createCheckoutSession = async (priceId: string, mode: 'payment' | 'subscription') => {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
-      throw new Error('No active session');
-    }
-    
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`, {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-checkout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
+        'Authorization': `Bearer ${supabase.auth.session()?.access_token}`,
       },
       body: JSON.stringify({
-        items,
-        payLater,
-        successUrl: `${window.location.origin}/order-confirmation`,
-        cancelUrl: `${window.location.origin}/cart`,
+        price_id: priceId,
+        success_url: `${window.location.origin}/order-confirmation`,
+        cancel_url: `${window.location.origin}/cart`,
+        mode,
       }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to create checkout session');
-    }
-
-    const { url, error } = await response.json();
+    const { sessionId, url, error } = await response.json();
 
     if (error) throw new Error(error);
-    if (!url) throw new Error('No checkout URL returned');
 
     // Redirect to Stripe Checkout
-    window.location.href = url;
-    
-    return { success: true };
+    if (url) {
+      window.location.href = url;
+    } else {
+      // Fallback if we get sessionId but not direct URL
+      const stripe = await getStripe();
+      await stripe.redirectToCheckout({ sessionId });
+    }
   } catch (error: any) {
     console.error('Error creating checkout session:', error);
     throw error;
