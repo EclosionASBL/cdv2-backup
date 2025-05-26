@@ -55,34 +55,30 @@ const CheckoutPage = () => {
   };
   
   const handleCheckout = async (payLater = false) => {
-    if (!user) {
-      setError('Vous devez être connecté pour effectuer un paiement.');
-      return;
-    }
-
-    if (items.length === 0) {
-      setError('Votre panier est vide.');
-      return;
-    }
-
-    // Validate all items have activity_id
-    const invalidItems = items.filter(item => !item.activity_id);
-    if (invalidItems.length > 0) {
-      setError(`ID activité manquant pour l'article: ${invalidItems[0].activityName}. Veuillez supprimer cet article et le rajouter au panier.`);
-      return;
-    }
-
-    // Validate prices
-    const invalidPrices = items.filter(item => !item.price || item.price <= 0);
-    if (invalidPrices.length > 0) {
-      setError('Certains articles ont un prix invalide.');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    
     try {
+      if (!user) {
+        throw new Error('Vous devez être connecté pour effectuer un paiement.');
+      }
+
+      if (items.length === 0) {
+        throw new Error('Votre panier est vide.');
+      }
+
+      // Validate all items have activity_id
+      const invalidItem = items.find(item => !item.activity_id || item.activity_id.trim() === '');
+      if (invalidItem) {
+        throw new Error(`ID activité manquant pour l'article: ${invalidItem.activityName}. Veuillez supprimer cet article et le rajouter au panier.`);
+      }
+
+      // Validate prices
+      const invalidPrice = items.find(item => !item.price || item.price <= 0);
+      if (invalidPrice) {
+        throw new Error(`Prix invalide pour l'article: ${invalidPrice.activityName}`);
+      }
+      
+      setIsLoading(true);
+      setError(null);
+      
       // Get the current session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       

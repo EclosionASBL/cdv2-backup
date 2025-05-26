@@ -33,22 +33,22 @@ export const useCartStore = create<CartState>()(
       
       addItem: (item) => set((state) => {
         // Validate required fields
-        if (!item.activity_id || item.activity_id.trim() === '') {
+        if (!item.activity_id || typeof item.activity_id !== 'string' || item.activity_id.trim() === '') {
           console.error('Missing or invalid activity_id for item:', item);
           return state;
         }
 
-        if (!item.kid_id || item.kid_id.trim() === '') {
+        if (!item.kid_id || typeof item.kid_id !== 'string' || item.kid_id.trim() === '') {
           console.error('Missing or invalid kid_id for item:', item);
           return state;
         }
 
-        if (!item.activityName || item.activityName.trim() === '') {
+        if (!item.activityName || typeof item.activityName !== 'string' || item.activityName.trim() === '') {
           console.error('Missing or invalid activityName for item:', item);
           return state;
         }
 
-        if (typeof item.price !== 'number' || isNaN(item.price)) {
+        if (typeof item.price !== 'number' || isNaN(item.price) || item.price < 0) {
           console.error('Invalid price for item:', item);
           return state;
         }
@@ -66,7 +66,7 @@ export const useCartStore = create<CartState>()(
         // Create a new item with validated fields
         const validatedItem: CartItem = {
           ...item,
-          id: item.id || `${item.activity_id}-${item.kid_id}`,
+          id: `${item.activity_id}-${item.kid_id}`,
           activity_id: item.activity_id.trim(),
           kid_id: item.kid_id.trim(),
           activityName: item.activityName.trim(),
