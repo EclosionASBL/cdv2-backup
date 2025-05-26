@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useCartStore } from '../../stores/cartStore';
-import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText } from 'lucide-react';
+import { CheckCircle, Calendar, Home, Loader2, AlertCircle, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const OrderConfirmationPage = () => {
@@ -29,6 +29,7 @@ const OrderConfirmationPage = () => {
             amount_paid,
             price_type,
             invoice_id,
+            due_date,
             kids!inner (
               prenom,
               nom
@@ -95,7 +96,7 @@ const OrderConfirmationPage = () => {
           ) : error ? (
             <div className="bg-red-50 p-4 rounded-lg mb-8">
               <div className="flex">
-                <AlertTriangle className="h-5 w-5 text-red-500 mr-2" />
+                <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
                 <p className="text-red-700">{error}</p>
               </div>
             </div>
@@ -129,6 +130,11 @@ const OrderConfirmationPage = () => {
                           <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded mt-1">
                             Tarif réduit
                           </span>
+                        )}
+                        {reg.due_date && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            À payer avant le {new Date(reg.due_date).toLocaleDateString('fr-FR')}
+                          </p>
                         )}
                       </div>
                     </div>
