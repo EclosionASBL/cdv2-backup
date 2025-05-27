@@ -30,8 +30,6 @@ interface Session {
   start_date: string;
   end_date: string;
   capacity: number;
-  price_full: number;
-  price_reduced: number | null;
   active: boolean;
   stage?: Stage;
   center?: Center;
@@ -119,8 +117,6 @@ export const useAdminStore = create<AdminState>((set, get) => ({
           start_date,
           end_date,
           capacity,
-          price_full,
-          price_reduced,
           prix_normal,
           prix_reduit,
           tarif_condition_id,
@@ -248,14 +244,9 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   createSession: async (session) => {
     set({ isLoading: true, error: null });
     try {
-      const sessionData = {
-        ...session,
-        price_full: session.prix_normal // Ensure price_full is set from prix_normal
-      };
-      
       const { error } = await supabase
         .from('sessions')
-        .insert([sessionData]);
+        .insert([session]);
 
       if (error) throw error;
       await get().fetchSessions();
@@ -269,14 +260,9 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   updateSession: async (id, updates) => {
     set({ isLoading: true, error: null });
     try {
-      const sessionUpdates = {
-        ...updates,
-        price_full: updates.prix_normal ?? updates.price_full // Ensure price_full is updated when prix_normal changes
-      };
-
       const { error } = await supabase
         .from('sessions')
-        .update(sessionUpdates)
+        .update(updates)
         .eq('id', id);
 
       if (error) throw error;
