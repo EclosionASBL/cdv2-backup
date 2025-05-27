@@ -4,7 +4,7 @@ import { useCartStore } from '../../stores/cartStore';
 
 function CheckoutPage() {
   const navigate = useNavigate();
-  const { cart, clearCart } = useCartStore();
+  const { items: cart, clearCart } = useCartStore();
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
