@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Search, Filter, CheckCircle, Clock, FileText, RefreshCw, XCircle, Download, AlertTriangle } from 'lucide-react';
+import { Loader2, Search, Filter, CheckCircle, Clock, FileText, RefreshCw, XCircle, Download, AlertTriangle, ExternalLink } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 
 interface Invoice {
@@ -56,12 +56,12 @@ const AdminPaymentsPage = () => {
       setIsLoading(true);
       setError(null);
 
-      // First get all invoices
+      // First get all invoices with user data
       const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
         .select(`
           *,
-          user:user_id(email, prenom, nom)
+          user:users(email, prenom, nom)
         `)
         .order('created_at', { ascending: false });
 
