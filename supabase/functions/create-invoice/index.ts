@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 20);
 
-    // Calculate total amount - fixed to 95 euros
+    // Fixed amount of 95 euros
     const totalAmount = 95;
 
     // Array to collect registration IDs
@@ -86,6 +86,9 @@ Deno.serve(async (req) => {
 
     // Create registrations with pending status
     for (const item of items) {
+      // Convert price to proper format (should be in euros, not cents)
+      const priceInEuros = 95;
+      
       const { data, error: regError } = await supabase
         .from('registrations')
         .insert({
@@ -94,7 +97,7 @@ Deno.serve(async (req) => {
           activity_id: item.activity_id,
           price_type: item.price_type,
           reduced_declaration: item.reduced_declaration,
-          amount_paid: item.price,
+          amount_paid: priceInEuros,
           payment_status: 'pending',
           due_date: dueDate.toISOString(),
           reminder_sent: false
