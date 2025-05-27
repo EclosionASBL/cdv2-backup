@@ -50,24 +50,18 @@ Deno.serve(async (req) => {
       // Only handle immediate payments (not subscriptions or invoices)
       if (session.mode === 'payment' && session.payment_status === 'paid') {
         const sessionId = session.id;
-        const cartItems = JSON.parse(session.metadata?.cart_items || '[]');
 
         // Update registrations using checkout_session_id
-        for (const item of cartItems) {
-          const { error: updateError } = await supabase
-            .from('registrations')
-            .update({
-              payment_status: 'paid',
-              amount_paid: item.price
-            })
-            .eq('checkout_session_id', sessionId)
-            .eq('kid_id', item.kid_id)
-            .eq('activity_id', item.activity_id);
+        const { error: updateError } = await supabase
+          .from('registrations')
+          .update({
+            payment_status: 'paid'
+          })
+          .eq('checkout_session_id', sessionId);
 
-          if (updateError) {
-            console.error('Error updating registration:', updateError);
-            throw updateError;
-          }
+        if (updateError) {
+          console.error('Error updating registrations:', updateError);
+          throw updateError;
         }
 
         console.log(`Updated registrations for checkout session ${sessionId}`);
@@ -75,23 +69,46 @@ Deno.serve(async (req) => {
     } else if (event.type === 'invoice.paid') {
       const invoice = event.data.object;
       
-      // Update registrations to paid status
-      const { error: updateError } = await supabase
-        .from('registrations')
-        .update({
-          payment_status: 'paid',
-          // Clear due date and reminder flag since it's now paid
-          due_date: null,
-          reminder_sent: false
-        })
-        .eq('invoice_id', invoice.id);
+      // Check if we have registration_ids in metadata
+      if (invoice.metadata?.registration_ids) {
+        const registrationIds = invoice.metadata.registration_ids.split(',');
+        
+        // Update registrations to paid status
+        const { error: updateError } = await supabase
+          .from('registrations')
+          .update({
+            payment_status: 'paid',
+            // Clear due date and reminder flag since it's now paid
+            due_date: null,
+            reminder_sent: false
+          })
+          .in('id', registrationIds);
 
-      if (updateError) {
-        console.error('Error updating registrations:', updateError);
-        throw updateError;
+        if (updateError) {
+          console.error('Error updating registrations:', updateError);
+          throw updateError;
+        }
+
+        console.log(`Updated registrations ${registrationIds.join(', ')} to paid status`);
+      } else {
+        // Fallback to invoice_id if no registration_ids in metadata
+        const { error: updateError } = await supabase
+          .from('registrations')
+          .update({
+            payment_status: 'paid',
+            // Clear due date and reminder flag since it's now paid
+            due_date: null,
+            reminder_sent: false
+          })
+          .eq('invoice_id', invoice.id);
+
+        if (updateError) {
+          console.error('Error updating registrations:', updateError);
+          throw updateError;
+        }
+
+        console.log(`Updated registrations for invoice ${invoice.id} to paid status`);
       }
-
-      console.log(`Updated registrations for invoice ${invoice.id} to paid status`);
     }
 
     return new Response(JSON.stringify({ received: true }), {

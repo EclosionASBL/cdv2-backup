@@ -134,63 +134,12 @@ Deno.serve(async (req) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 20);
 
-    // Create invoice with metadata
-    const invoice = await stripe.invoices.create({
-      customer: customerId,
-      collection_method: 'send_invoice',
-      days_until_due: 20,
-      auto_advance: true,
-      description: 'Stages Éclosion ASBL',
-      metadata: {
-        user_id: user.id,
-        cart_items: JSON.stringify(items.map(item => ({
-          kid_id: item.kid_id,
-          activity_id: item.activity_id,
-          price_type: item.price_type,
-          reduced_declaration: item.reduced_declaration,
-          price: item.price / 100 // Convert back to euros for our database
-        })))
-      }
-    });
+    // Array to collect registration IDs
+    const registrationIds: string[] = [];
 
-    // Add line items and create registrations
+    // Create registrations with pending status
     for (const item of items) {
-      // Create a product with metadata
-      const product = await stripe.products.create({
-        name: `${item.activityName} (${item.kidName})`,
-        description: item.dateRange,
-        metadata: {
-          kid_id: item.kid_id,
-          activity_id: item.activity_id,
-          user_id: user.id,
-          price_type: item.price_type,
-          reduced_declaration: item.reduced_declaration.toString()
-        }
-      });
-
-      // Create price with metadata
-      const price = await stripe.prices.create({
-        product: product.id,
-        currency: 'eur',
-        unit_amount: Math.round(item.price), // Price should be in cents
-        metadata: {
-          kid_id: item.kid_id,
-          activity_id: item.activity_id,
-          user_id: user.id,
-          price_type: item.price_type,
-          reduced_declaration: item.reduced_declaration.toString()
-        }
-      });
-
-      // Create invoice item
-      await stripe.invoiceItems.create({
-        customer: customerId,
-        invoice: invoice.id,
-        price: price.id
-      });
-
-      // Create registration with pending status
-      const { error: regError } = await supabase
+      const { data, error: regError } = await supabase
         .from('registrations')
         .insert({
           user_id: user.id,
@@ -200,14 +149,54 @@ Deno.serve(async (req) => {
           reduced_declaration: item.reduced_declaration,
           amount_paid: item.price / 100, // Convert from cents to euros
           payment_status: 'pending',
-          invoice_id: invoice.id,
           due_date: dueDate.toISOString(),
           reminder_sent: false
-        });
+        })
+        .select('id');
 
       if (regError) {
         throw new Error('Error creating registration: ' + regError.message);
       }
+
+      if (data && data.length > 0) {
+        registrationIds.push(data[0].id);
+      }
+    }
+
+    // Create invoice with minimal metadata
+    const invoice = await stripe.invoices.create({
+      customer: customerId,
+      collection_method: 'send_invoice',
+      days_until_due: 20,
+      auto_advance: true,
+      description: 'Stages Éclosion ASBL',
+      metadata: {
+        user_id: user.id,
+        registration_ids: registrationIds.join(',')
+      }
+    });
+
+    // Add line items to invoice
+    for (const item of items) {
+      // Create a product with minimal metadata
+      const product = await stripe.products.create({
+        name: `${item.activityName} (${item.kidName})`,
+        description: item.dateRange
+      });
+
+      // Create price with minimal metadata
+      const price = await stripe.prices.create({
+        product: product.id,
+        currency: 'eur',
+        unit_amount: Math.round(item.price) // Price should be in cents
+      });
+
+      // Create invoice item
+      await stripe.invoiceItems.create({
+        customer: customerId,
+        invoice: invoice.id,
+        price: price.id
+      });
     }
 
     // Finalize and send the invoice
