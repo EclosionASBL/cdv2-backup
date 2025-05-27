@@ -56,20 +56,42 @@ const AdminPaymentsPage = () => {
       setIsLoading(true);
       setError(null);
 
-      // First get all invoices with user data
+      // First get all invoices
       const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
-        .select(`
-          *,
-          user:users(email, prenom, nom)
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (invoicesError) throw invoicesError;
 
+      // Then get user details for each invoice
+      const invoicesWithUserDetails = await Promise.all(
+        (invoicesData || []).map(async (invoice) => {
+          // Get user details from users table
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('email, prenom, nom')
+            .eq('id', invoice.user_id)
+            .single();
+
+          if (userError) {
+            console.error('Error fetching user for invoice:', userError);
+            return {
+              ...invoice,
+              user: { email: 'Unknown', prenom: 'Unknown', nom: 'Unknown' }
+            };
+          }
+
+          return {
+            ...invoice,
+            user: userData
+          };
+        })
+      );
+
       // For each invoice, get the registrations
       const invoicesWithRegistrations = await Promise.all(
-        (invoicesData || []).map(async (invoice) => {
+        invoicesWithUserDetails.map(async (invoice) => {
           const { data: registrationsData, error: registrationsError } = await supabase
             .from('registrations')
             .select(`
