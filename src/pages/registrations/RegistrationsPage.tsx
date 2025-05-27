@@ -73,6 +73,7 @@ const RegistrationsPage = () => {
           price_type,
           reduced_declaration,
           invoice_id,
+          due_date,
           kid:kids!kid_id(
             prenom,
             nom
@@ -217,7 +218,7 @@ const RegistrationsPage = () => {
       return 'Remboursé';
     } else {
       // pending
-      return invoiceId ? 'Facture en attente' : 'Paiement en attente';
+      return invoiceId ? 'Virement en attente' : 'Paiement en attente';
     }
   };
 
@@ -281,6 +282,19 @@ const RegistrationsPage = () => {
   const activeWaitingListEntries = waitingListEntries.filter(
     entry => entry.status === 'waiting' || entry.status === 'invited'
   );
+
+  // Group registrations by invoice_id
+  const groupedRegistrations = filteredRegistrations.reduce((acc, reg) => {
+    if (!reg.invoice_id) {
+      // If no invoice_id, use registration id as key
+      acc[reg.id] = [reg];
+    } else if (!acc[reg.invoice_id]) {
+      acc[reg.invoice_id] = [reg];
+    } else {
+      acc[reg.invoice_id].push(reg);
+    }
+    return acc;
+  }, {} as Record<string, Registration[]>);
   
   return (
     <div className="container max-w-6xl mx-auto py-12 px-4">
@@ -327,7 +341,7 @@ const RegistrationsPage = () => {
         <div className="bg-red-50 p-4 rounded-lg">
           <p className="text-red-700">{error}</p>
         </div>
-      ) : filteredRegistrations.length === 0 && activeWaitingListEntries.length === 0 ? (
+      ) : Object.keys(groupedRegistrations).length === 0 && activeWaitingListEntries.length === 0 ? (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
           <p className="text-gray-600 mb-4">
             {searchTerm || filter !== 'all'
@@ -342,7 +356,7 @@ const RegistrationsPage = () => {
         </div>
       ) : (
         <div className="space-y-8">
-          {filteredRegistrations.length > 0 && (
+          {Object.keys(groupedRegistrations).length > 0 && (
             <div className="bg-white rounded-xl shadow-md overflow-hidden">
               <div className="p-4 bg-gray-50 border-b">
                 <h2 className="text-xl font-semibold">Inscriptions</h2>
@@ -352,19 +366,13 @@ const RegistrationsPage = () => {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Stage
+                        Facture
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Enfant
+                        Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Dates
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Centre
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tarif
+                        Inscriptions
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Montant
@@ -372,66 +380,67 @@ const RegistrationsPage = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Statut
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Échéance
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredRegistrations.map((reg) => (
-                      <tr key={reg.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {reg.session.stage.title}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {new Date(reg.created_at).toLocaleDateString('fr-BE')}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {reg.kid.prenom} {reg.kid.nom}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {new Date(reg.session.start_date).toLocaleDateString('fr-BE')}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            au {new Date(reg.session.end_date).toLocaleDateString('fr-BE')}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {reg.session.center.name}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {reg.price_type.includes('reduced') && (
-                              <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
-                                Tarif réduit
-                              </span>
+                    {Object.entries(groupedRegistrations).map(([invoiceId, regs]) => {
+                      // Calculate total amount for this invoice
+                      const totalAmount = regs.reduce((sum, reg) => sum + reg.amount_paid, 0);
+                      // Use the first registration for common data
+                      const firstReg = regs[0];
+                      // Check if due date is passed
+                      const isDueDatePassed = firstReg.due_date && new Date(firstReg.due_date) < new Date();
+                      
+                      return (
+                        <tr key={invoiceId} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {firstReg.invoice_id || 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">
+                              {new Date(firstReg.created_at).toLocaleDateString('fr-FR')}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-gray-900">
+                              {regs.map((reg, index) => (
+                                <div key={reg.id} className={index > 0 ? 'mt-1' : ''}>
+                                  {reg.session.stage.title} ({reg.kid.prenom})
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {totalAmount} €
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              getPaymentStatusColor(firstReg.payment_status)
+                            }`}>
+                              {getPaymentStatusIcon(firstReg.payment_status, firstReg.invoice_id)}
+                              {getPaymentStatusText(firstReg.payment_status, firstReg.invoice_id)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {firstReg.due_date ? (
+                              <div className={`text-sm ${isDueDatePassed ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                                {new Date(firstReg.due_date).toLocaleDateString('fr-FR')}
+                                {isDueDatePassed && ' (dépassée)'}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-500">-</div>
                             )}
-                            {reg.price_type.includes('local') && (
-                              <span className="inline-block text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                                Tarif local
-                              </span>
-                            )}
-                            {!reg.price_type.includes('reduced') && !reg.price_type.includes('local') && (
-                              <span className="text-sm text-gray-500">Standard</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {reg.amount_paid} €
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={clsx(
-                            "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                            getPaymentStatusColor(reg.payment_status)
-                          )}>
-                            {getPaymentStatusIcon(reg.payment_status, reg.invoice_id)}
-                            {getPaymentStatusText(reg.payment_status, reg.invoice_id)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

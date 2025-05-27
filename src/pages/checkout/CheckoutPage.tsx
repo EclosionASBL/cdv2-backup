@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { supabase } from '../../lib/supabase';
-import { Loader2, AlertCircle, CreditCard, Lock, FileText, CheckCircle, Info } from 'lucide-react';
-import { Dialog } from '@headlessui/react';
+import { Loader2, AlertCircle, FileText, Info } from 'lucide-react';
 import { PayLaterConfirmModal } from '../../components/checkout/PayLaterConfirmModal';
+import { generateInvoiceId, generateStructuredCommunication, sendInvoiceToGoogleSheets } from '../../lib/googleSheets';
 
 interface LoginFormData {
   email: string;
@@ -80,126 +80,60 @@ const CheckoutPage = () => {
     setError(null);
     
     try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      // Generate invoice ID and communication code
+      const invoiceId = generateInvoiceId();
+      const communication = generateStructuredCommunication();
       
-      if (sessionError) {
-        throw new Error('Erreur lors de la récupération de la session: ' + sessionError.message);
-      }
+      // Calculate due date (20 days from now)
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 20);
       
-      if (!session?.access_token) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
-      
-      // Call our Supabase Edge Function to create an invoice
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-invoice`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            items: items.map(item => ({
-              ...item,
-              price: item.price * 100 // Convert to cents for Stripe
-            }))
-          }),
-        }
+      // Create registrations in Supabase
+      const registrationPromises = items.map(item => 
+        supabase.from('registrations').insert({
+          user_id: user.id,
+          kid_id: item.kid_id,
+          activity_id: item.activity_id,
+          payment_status: 'pending',
+          amount_paid: item.price,
+          price_type: item.price_type,
+          reduced_declaration: item.reduced_declaration,
+          invoice_id: invoiceId,
+          due_date: dueDate.toISOString()
+        })
       );
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
-      }
-
-      const { url, paymentType, invoiceUrl } = await response.json();
+      const results = await Promise.all(registrationPromises);
       
-      // Clear cart and redirect
+      // Check for errors
+      const errors = results.filter(result => result.error);
+      if (errors.length > 0) {
+        throw new Error(`Error creating registrations: ${errors[0].error.message}`);
+      }
+      
+      // Send invoice data to Google Sheets
+      const invoiceData = {
+        invoice_id: invoiceId,
+        amount: total(),
+        user_id: user.id,
+        kid_id: items[0].kid_id, // First kid for reference
+        activity_id: items[0].activity_id, // First activity for reference
+        kid_name: items[0].kidName, // First kid name for reference
+        activity_name: items.map(item => item.activityName).join(', '),
+        communication: communication
+      };
+      
+      await sendInvoiceToGoogleSheets(invoiceData);
+      
+      // Clear cart and redirect to confirmation page
       clearCart();
-      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(invoiceUrl || '')}`);
+      navigate(`/bank-transfer?invoice_id=${encodeURIComponent(invoiceId)}&amount=${encodeURIComponent(total())}&communication=${encodeURIComponent(communication)}`);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la facture.');
     } finally {
       setIsLoading(false);
       setIsPayLaterModalOpen(false);
-    }
-  };
-  
-  const handleCheckout = async () => {
-    if (!user) {
-      setError('Vous devez être connecté pour effectuer un paiement.');
-      return;
-    }
-
-    if (items.length === 0) {
-      setError('Votre panier est vide.');
-      return;
-    }
-
-    // Validate prices
-    const invalidItems = items.filter(item => !item.price || item.price <= 0);
-    if (invalidItems.length > 0) {
-      setError('Certains articles ont un prix invalide.');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        throw new Error('Erreur lors de la récupération de la session: ' + sessionError.message);
-      }
-      
-      if (!session?.access_token) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
-      
-      // Call our Supabase Edge Function to create a Stripe checkout session
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            items: items.map(item => ({
-              ...item,
-              price: item.price * 100 // Convert to cents for Stripe
-            })),
-            payLater: false,
-            successUrl: `${window.location.origin}/order-confirmation?method=immediate`,
-            cancelUrl: `${window.location.origin}/cart`,
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la session de paiement.');
-      }
-      
-      const { url } = await response.json();
-      
-      if (!url) {
-        throw new Error('Aucune URL de paiement n\'a été reçue.');
-      }
-
-      // Redirect to Stripe Checkout
-      window.location.href = url;
-    } catch (error: any) {
-      console.error('Error creating checkout session:', error);
-      setError(error.message || 'Une erreur est survenue lors de la création de la session de paiement.');
-    } finally {
-      setIsLoading(false);
     }
   };
   
@@ -281,7 +215,7 @@ const CheckoutPage = () => {
               
               <div className="space-y-4">
                 <button
-                  onClick={handleCheckout}
+                  onClick={handlePayLater}
                   disabled={isLoading}
                   className="w-full btn-primary py-3 flex items-center justify-center"
                 >
@@ -292,26 +226,8 @@ const CheckoutPage = () => {
                     </span>
                   ) : (
                     <span className="flex items-center">
-                      <CreditCard className="h-5 w-5 mr-2" />
-                      Payer maintenant
-                    </span>
-                  )}
-                </button>
-                
-                <button
-                  onClick={handlePayLater}
-                  disabled={isLoading}
-                  className="w-full btn-outline py-3 flex items-center justify-center"
-                >
-                  {isLoading ? (
-                    <span className="flex items-center">
-                      <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                      Traitement en cours...
-                    </span>
-                  ) : (
-                    <span className="flex items-center">
                       <FileText className="h-5 w-5 mr-2" />
-                      Payer plus tard (facture)
+                      Payer par virement bancaire
                     </span>
                   )}
                 </button>
@@ -319,8 +235,8 @@ const CheckoutPage = () => {
               
               <div className="mt-4 text-sm text-gray-600">
                 <p className="flex items-center">
-                  <Lock className="h-4 w-4 mr-1 text-gray-500" />
-                  Paiement sécurisé par Stripe
+                  <Info className="h-4 w-4 mr-1 text-gray-500" />
+                  Vous recevrez les instructions de paiement par virement bancaire
                 </p>
               </div>
               
