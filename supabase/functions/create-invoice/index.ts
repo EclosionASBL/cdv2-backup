@@ -78,8 +78,8 @@ Deno.serve(async (req) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 20);
 
-    // Calculate total amount
-    const totalAmount = items.reduce((sum: number, item: CartItem) => sum + item.price, 0);
+    // Calculate total amount - fixed to 95 euros
+    const totalAmount = 95;
 
     // Array to collect registration IDs
     const registrationIds: string[] = [];
@@ -185,8 +185,8 @@ function generateInvoiceNumber(): string {
 
 // Helper function to generate a structured communication code for bank transfers
 function generateStructuredCommunication(): string {
-  // Generate 10 random digits
-  const digits = Array.from({ length: 10 }, () => Math.floor(Math.random() * 10)).join('');
+  // Generate 10 random digits, starting with 0
+  const digits = '0' + Array.from({ length: 9 }, () => Math.floor(Math.random() * 10)).join('');
   
   // Calculate check digit (modulo 97, or 97 if result is 0)
   const base = parseInt(digits, 10);
