@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useCartStore } from '../../stores/cartStore';
-import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText, ExternalLink, Clock } from 'lucide-react';
+import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const InvoiceConfirmationPage = () => {
@@ -129,7 +129,7 @@ const InvoiceConfirmationPage = () => {
                       </div>
                       <div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          <Clock className="h-4 w-4 mr-1" />
+                          <FileText className="h-4 w-4 mr-1" />
                           Facture en attente
                         </span>
                         <p className="text-sm font-medium text-right mt-1">{reg.amount_paid} €</p>
