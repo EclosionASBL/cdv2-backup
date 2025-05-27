@@ -67,63 +67,88 @@ const AdminPaymentsPage = () => {
       // Then get user details for each invoice
       const invoicesWithUserDetails = await Promise.all(
         (invoicesData || []).map(async (invoice) => {
-          // Get user details from users table
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('email, prenom, nom')
-            .eq('id', invoice.user_id)
-            .single();
+          try {
+            // Get user details from users table using maybeSingle() instead of single()
+            const { data: userData, error: userError } = await supabase
+              .from('users')
+              .select('email, prenom, nom')
+              .eq('id', invoice.user_id)
+              .maybeSingle();
 
-          if (userError) {
-            console.error('Error fetching user for invoice:', userError);
+            // If there's an error or no user found, return a default user object
+            if (userError || !userData) {
+              console.warn(`User not found for invoice ${invoice.invoice_number}:`, userError);
+              return {
+                ...invoice,
+                user: {
+                  email: 'Utilisateur supprimé',
+                  prenom: 'Compte',
+                  nom: 'Supprimé'
+                }
+              };
+            }
+
             return {
               ...invoice,
-              user: { email: 'Unknown', prenom: 'Unknown', nom: 'Unknown' }
+              user: userData
+            };
+          } catch (err) {
+            console.error('Error processing user data for invoice:', err);
+            return {
+              ...invoice,
+              user: {
+                email: 'Erreur',
+                prenom: 'Erreur',
+                nom: 'Erreur'
+              }
             };
           }
-
-          return {
-            ...invoice,
-            user: userData
-          };
         })
       );
 
       // For each invoice, get the registrations
       const invoicesWithRegistrations = await Promise.all(
         invoicesWithUserDetails.map(async (invoice) => {
-          const { data: registrationsData, error: registrationsError } = await supabase
-            .from('registrations')
-            .select(`
-              id,
-              kid_id,
-              activity_id,
-              kid:kids(
-                prenom,
-                nom
-              ),
-              session:activity_id(
-                stage:stage_id(
-                  title
+          try {
+            const { data: registrationsData, error: registrationsError } = await supabase
+              .from('registrations')
+              .select(`
+                id,
+                kid_id,
+                activity_id,
+                kid:kids(
+                  prenom,
+                  nom
                 ),
-                start_date,
-                end_date
-              )
-            `)
-            .in('id', invoice.registration_ids || []);
+                session:activity_id(
+                  stage:stage_id(
+                    title
+                  ),
+                  start_date,
+                  end_date
+                )
+              `)
+              .in('id', invoice.registration_ids || []);
 
-          if (registrationsError) {
-            console.error('Error fetching registrations for invoice:', registrationsError);
+            if (registrationsError) {
+              console.error('Error fetching registrations for invoice:', registrationsError);
+              return {
+                ...invoice,
+                registrations: []
+              };
+            }
+
+            return {
+              ...invoice,
+              registrations: registrationsData || []
+            };
+          } catch (err) {
+            console.error('Error processing registrations for invoice:', err);
             return {
               ...invoice,
               registrations: []
             };
           }
-
-          return {
-            ...invoice,
-            registrations: registrationsData || []
-          };
         })
       );
 
