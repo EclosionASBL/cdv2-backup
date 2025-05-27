@@ -34,33 +34,38 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Configuration Supabase manquante');
+      throw new Error('Configuration Supabase manquante. Veuillez contacter le support.');
     }
 
     // Use service role key to bypass RLS
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { items } = await req.json();
+    const requestData = await req.json().catch(() => null);
+    if (!requestData || !requestData.items) {
+      throw new Error('Données de requête invalides. Le panier est requis.');
+    }
 
-    if (!items?.length) {
-      throw new Error('Le panier est vide');
+    const { items } = requestData;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Le panier est vide. Veuillez ajouter des articles avant de continuer.');
     }
 
     // Get user from auth header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      throw new Error('En-tête d\'autorisation manquant');
+      throw new Error('En-tête d\'autorisation manquant. Veuillez vous reconnecter.');
     }
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError) {
-      throw new Error('Erreur d\'authentification: ' + authError.message);
+      throw new Error(`Erreur d'authentification: ${authError.message}`);
     }
 
     if (!user) {
-      throw new Error('Utilisateur non authentifié');
+      throw new Error('Utilisateur non authentifié. Veuillez vous reconnecter.');
     }
 
     // Generate invoice number
@@ -97,12 +102,14 @@ Deno.serve(async (req) => {
         .select('id');
 
       if (regError) {
-        throw new Error('Error creating registration: ' + regError.message);
+        throw new Error(`Erreur lors de la création de l'inscription: ${regError.message}`);
       }
 
-      if (data && data.length > 0) {
-        registrationIds.push(data[0].id);
+      if (!data || data.length === 0) {
+        throw new Error('Erreur lors de la création de l\'inscription: aucun ID retourné');
       }
+
+      registrationIds.push(data[0].id);
     }
 
     // Create invoice record
@@ -121,7 +128,11 @@ Deno.serve(async (req) => {
       .single();
 
     if (invoiceError) {
-      throw new Error('Error creating invoice: ' + invoiceError.message);
+      throw new Error(`Erreur lors de la création de la facture: ${invoiceError.message}`);
+    }
+
+    if (!invoice) {
+      throw new Error('Erreur lors de la création de la facture: aucune facture créée');
     }
 
     // Update registrations with invoice_id
@@ -133,27 +144,29 @@ Deno.serve(async (req) => {
       .in('id', registrationIds);
 
     if (updateError) {
-      console.error('Error updating registrations with invoice_id:', updateError);
+      console.error('Erreur lors de la mise à jour des inscriptions avec l\'ID de facture:', updateError);
       // Continue anyway, as this is not critical
     }
-
-    // Generate PDF invoice (this would be implemented in a separate function)
-    // For now, we'll just return the invoice data
     
     return new Response(
       JSON.stringify({ 
         url: '/invoice-confirmation',
         paymentType: 'invoice',
-        invoiceUrl: null // Will be implemented later
+        invoiceUrl: null, // Will be implemented later
+        invoiceNumber: invoice.invoice_number
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error creating invoice:', error);
+    
+    // Ensure we always return a string message
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : 'Une erreur inattendue est survenue lors de la création de la facture';
+
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Une erreur inattendue est survenue'
-      }),
+      JSON.stringify({ error: errorMessage }),
       { 
         status: 400, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 

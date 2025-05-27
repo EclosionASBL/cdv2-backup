@@ -109,16 +109,15 @@ const CheckoutPage = () => {
         }
       );
       
+      const data = await response.json();
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
+        throw new Error(data.error || 'Une erreur est survenue lors de la création de la facture.');
       }
 
-      const { url, paymentType, invoiceUrl } = await response.json();
-      
       // Clear cart and redirect
       clearCart();
-      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(invoiceUrl || '')}`);
+      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(data.invoiceNumber || '')}`);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la facture.');
