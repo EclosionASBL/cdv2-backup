@@ -161,21 +161,43 @@ Deno.serve(async (req) => {
     }
 
     try {
-      // Create line items for Stripe checkout
-      const lineItems = items.map(item => ({
-        quantity: 1,
-        price_data: {
-          currency: 'eur',
-          unit_amount: Math.round(item.price), // Price should already be in cents
-          product_data: {
-            name: `${item.activityName} (${item.kidName})`,
-            description: item.dateRange,
-            images: item.imageUrl ? [item.imageUrl] : undefined
+      // Create line items for Stripe checkout with metadata
+      const lineItems = await Promise.all(items.map(async (item) => {
+        // Create a product with metadata
+        const product = await stripe.products.create({
+          name: `${item.activityName} (${item.kidName})`,
+          description: item.dateRange,
+          images: item.imageUrl ? [item.imageUrl] : undefined,
+          metadata: {
+            kid_id: item.kid_id,
+            activity_id: item.activity_id,
+            user_id: user.id,
+            price_type: item.price_type,
+            reduced_declaration: item.reduced_declaration.toString()
           }
-        }
+        });
+
+        // Create price with metadata
+        const price = await stripe.prices.create({
+          product: product.id,
+          currency: 'eur',
+          unit_amount: Math.round(item.price), // Price should be in cents
+          metadata: {
+            kid_id: item.kid_id,
+            activity_id: item.activity_id,
+            user_id: user.id,
+            price_type: item.price_type,
+            reduced_declaration: item.reduced_declaration.toString()
+          }
+        });
+
+        return {
+          price: price.id,
+          quantity: 1
+        };
       }));
 
-      // Create checkout session with metadata at the session level
+      // Create checkout session with metadata
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
         payment_method_types: ['card'],
@@ -195,7 +217,7 @@ Deno.serve(async (req) => {
         }
       });
 
-      // Create pending registrations
+      // Create pending registrations with checkout_session_id
       for (const item of items) {
         const { error: regError } = await supabase
           .from('registrations')
@@ -207,7 +229,7 @@ Deno.serve(async (req) => {
             reduced_declaration: item.reduced_declaration,
             amount_paid: item.price / 100, // Convert from cents to euros
             payment_status: 'pending',
-            payment_intent_id: session.payment_intent?.toString()
+            checkout_session_id: session.id // ✅ New tracking key
           });
 
         if (regError) {

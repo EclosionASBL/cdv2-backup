@@ -49,31 +49,28 @@ Deno.serve(async (req) => {
 
       // Only handle immediate payments (not subscriptions or invoices)
       if (session.mode === 'payment' && session.payment_status === 'paid') {
-        // Extract metadata from the session
-        const metadata = session.metadata;
-        const cartItems = JSON.parse(metadata.cart_items || '[]');
-        const userId = metadata.user_id;
+        const sessionId = session.id;
+        const cartItems = JSON.parse(session.metadata?.cart_items || '[]');
 
-        // Process each cart item
+        // Update registrations using checkout_session_id
         for (const item of cartItems) {
-          // Create or update registration
-          const { error: regError } = await supabase
+          const { error: updateError } = await supabase
             .from('registrations')
             .update({
-              payment_status: 'paid'
+              payment_status: 'paid',
+              amount_paid: item.price
             })
-            .eq('payment_intent_id', session.payment_intent)
-            .eq('user_id', userId)
+            .eq('checkout_session_id', sessionId)
             .eq('kid_id', item.kid_id)
             .eq('activity_id', item.activity_id);
 
-          if (regError) {
-            console.error('Error updating registration:', regError);
-            throw regError;
+          if (updateError) {
+            console.error('Error updating registration:', updateError);
+            throw updateError;
           }
         }
 
-        console.log(`Updated registrations for session ${session.id} to paid status`);
+        console.log(`Updated registrations for checkout session ${sessionId}`);
       }
     } else if (event.type === 'invoice.paid') {
       const invoice = event.data.object;
