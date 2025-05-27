@@ -4,11 +4,23 @@ import { useCartStore } from '../../stores/cartStore';
 import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText, ExternalLink, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
+interface Invoice {
+  id: string;
+  invoice_number: string;
+  amount: number;
+  status: string;
+  due_date: string;
+  created_at: string;
+  communication: string;
+  pdf_url: string | null;
+}
+
 const InvoiceConfirmationPage = () => {
   const { clearCart } = useCartStore();
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [registrations, setRegistrations] = useState<any[]>([]);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   const invoiceUrl = searchParams.get('invoice');
@@ -17,18 +29,20 @@ const InvoiceConfirmationPage = () => {
     // Clear the cart on successful payment
     clearCart();
     
-    // Fetch registrations
-    const fetchRegistrations = async () => {
+    // Fetch invoice and registrations
+    const fetchData = async () => {
       try {
         setIsLoading(true);
         
-        const { data, error } = await supabase
+        // Fetch recent registrations
+        const { data: regData, error: regError } = await supabase
           .from('registrations')
           .select(`
             id,
             payment_status,
             amount_paid,
             price_type,
+            reduced_declaration,
             invoice_id,
             invoice_url,
             kids!inner (
@@ -50,18 +64,32 @@ const InvoiceConfirmationPage = () => {
           .order('created_at', { ascending: false })
           .limit(5);
         
-        if (error) throw error;
+        if (regError) throw regError;
+        setRegistrations(regData || []);
         
-        setRegistrations(data || []);
+        // If we have registrations with an invoice_id, fetch the invoice
+        if (regData && regData.length > 0 && regData[0].invoice_id) {
+          const { data: invoiceData, error: invoiceError } = await supabase
+            .from('invoices')
+            .select('*')
+            .eq('id', regData[0].invoice_id)
+            .single();
+          
+          if (invoiceError) {
+            console.error('Error fetching invoice:', invoiceError);
+          } else {
+            setInvoice(invoiceData);
+          }
+        }
       } catch (err) {
-        console.error('Error fetching registrations:', err);
-        setError('Une erreur est survenue lors du chargement des inscriptions.');
+        console.error('Error fetching data:', err);
+        setError('Une erreur est survenue lors du chargement des données.');
       } finally {
         setIsLoading(false);
       }
     };
     
-    fetchRegistrations();
+    fetchData();
   }, [clearCart]);
   
   return (
@@ -81,6 +109,46 @@ const InvoiceConfirmationPage = () => {
           <p className="text-lg text-gray-600 mb-8 max-w-lg mx-auto text-center">
             Votre facture a été générée et vous sera envoyée par email. Vous avez 20 jours pour effectuer le paiement.
           </p>
+
+          {invoice && (
+            <div className="bg-gray-50 rounded-lg p-6 mb-8">
+              <h2 className="text-xl font-semibold mb-4">Informations de paiement</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-gray-500">Numéro de facture</p>
+                  <p className="text-xl font-bold text-primary-600">{invoice.invoice_number}</p>
+                </div>
+                
+                <div>
+                  <p className="text-sm text-gray-500">Montant à payer</p>
+                  <p className="text-xl font-bold text-primary-600">{invoice.amount} €</p>
+                </div>
+                
+                <div>
+                  <p className="text-sm text-gray-500">Communication structurée</p>
+                  <p className="font-medium font-mono">{invoice.communication}</p>
+                </div>
+                
+                <div>
+                  <p className="text-sm text-gray-500">Date d'échéance</p>
+                  <p className="font-medium">
+                    {new Date(invoice.due_date).toLocaleDateString('fr-FR')}
+                  </p>
+                </div>
+                
+                <div>
+                  <p className="text-sm text-gray-500">IBAN</p>
+                  <p className="font-medium font-mono">BE12 3456 7890 1234</p>
+                </div>
+                
+                <div>
+                  <p className="text-sm text-gray-500">Bénéficiaire</p>
+                  <p className="font-medium">Éclosion ASBL</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {invoiceUrl && (
             <div className="flex justify-center mb-8">
