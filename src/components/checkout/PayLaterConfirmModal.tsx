@@ -28,14 +28,14 @@ export const PayLaterConfirmModal = ({ isOpen, onClose, onConfirm }: PayLaterCon
             </div>
             <div className="ml-3">
               <Dialog.Title className="text-lg font-semibold text-gray-900">
-                Paiement par virement bancaire
+                Paiement par facture
               </Dialog.Title>
             </div>
           </div>
 
           <div className="mt-2">
             <p className="text-sm text-gray-600">
-              Vous recevrez les instructions de paiement par virement bancaire et vous aurez 20 jours pour effectuer le paiement.
+              Vous recevrez la facture par email et vous aurez 20 jours pour la payer. 
             </p>
             
             <div className="mt-4 p-4 bg-primary-50 rounded-lg">
@@ -53,7 +53,7 @@ export const PayLaterConfirmModal = ({ isOpen, onClose, onConfirm }: PayLaterCon
                   className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                 />
                 <span className="ml-2 text-sm text-gray-700">
-                  J'accepte de payer par virement bancaire dans les 20 jours
+                  J'accepte de payer la facture dans les 20 jours
                 </span>
               </label>
             </div>
