@@ -86,9 +86,9 @@ const CheckoutPage = () => {
         throw new Error('Session expirée. Veuillez vous reconnecter.');
       }
       
-      // Call our Supabase Edge Function to create a Stripe checkout session
+      // Call our Supabase Edge Function to create an invoice
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-invoice`,
         {
           method: 'POST',
           headers: {
@@ -99,10 +99,7 @@ const CheckoutPage = () => {
             items: items.map(item => ({
               ...item,
               price: item.price * 100 // Convert to cents for Stripe
-            })),
-            payLater: true,
-            successUrl: `${window.location.origin}/order-confirmation`,
-            cancelUrl: `${window.location.origin}/cart`,
+            }))
           }),
         }
       );
@@ -112,12 +109,6 @@ const CheckoutPage = () => {
         throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
       }
       
-      const { url } = await response.json();
-      
-      if (!url) {
-        throw new Error('Aucune URL de paiement n\'a été reçue.');
-      }
-
       // Clear cart and redirect
       clearCart();
       navigate('/order-confirmation');
