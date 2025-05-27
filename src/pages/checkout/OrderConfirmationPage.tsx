@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useCartStore } from '../../stores/cartStore';
-import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText } from 'lucide-react';
+import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const OrderConfirmationPage = () => {
@@ -10,7 +10,9 @@ const OrderConfirmationPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'immediate' | 'invoice'>('immediate');
+  
+  const paymentMethod = searchParams.get('method') || 'immediate';
+  const invoiceUrl = searchParams.get('invoice');
   
   useEffect(() => {
     // Clear the cart on successful payment
@@ -50,11 +52,6 @@ const OrderConfirmationPage = () => {
         if (error) throw error;
         
         setRegistrations(data || []);
-        
-        // Determine payment method based on the first registration
-        if (data && data.length > 0) {
-          setPaymentMethod(data[0].invoice_id ? 'invoice' : 'immediate');
-        }
       } catch (err) {
         console.error('Error fetching registrations:', err);
         setError('Une erreur est survenue lors du chargement des inscriptions.');
@@ -87,6 +84,21 @@ const OrderConfirmationPage = () => {
               ? 'Votre paiement a été traité avec succès. Vous recevrez bientôt un email de confirmation avec tous les détails de votre inscription.'
               : 'Votre facture a été générée et vous sera envoyée par email. Vous avez 20 jours pour effectuer le paiement.'}
           </p>
+
+          {paymentMethod === 'invoice' && invoiceUrl && (
+            <div className="flex justify-center mb-8">
+              <a 
+                href={invoiceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary flex items-center"
+              >
+                <FileText className="h-5 w-5 mr-2" />
+                Voir la facture
+                <ExternalLink className="h-4 w-4 ml-1" />
+              </a>
+            </div>
+          )}
           
           {isLoading ? (
             <div className="flex justify-center my-8">
@@ -152,56 +164,6 @@ const OrderConfirmationPage = () => {
               </div>
             </div>
           ) : null}
-          
-          <div className="bg-primary-50 p-6 rounded-lg max-w-lg mx-auto mb-8">
-            <h2 className="text-xl font-semibold text-primary-700 mb-4 text-center">Que se passe-t-il maintenant ?</h2>
-            <div className="space-y-3 text-left">
-              <div className="flex items-start">
-                <div className="bg-white p-1.5 rounded-full mr-3 flex-shrink-0">
-                  <span className="flex items-center justify-center h-5 w-5 bg-primary-500 text-white rounded-full text-xs font-bold">
-                    1
-                  </span>
-                </div>
-                <p className="text-sm text-primary-700">
-                  {paymentMethod === 'immediate'
-                    ? 'Un email de confirmation a été envoyé à votre adresse email'
-                    : 'Une facture a été générée et vous sera envoyée par email'}
-                </p>
-              </div>
-              <div className="flex items-start">
-                <div className="bg-white p-1.5 rounded-full mr-3 flex-shrink-0">
-                  <span className="flex items-center justify-center h-5 w-5 bg-primary-500 text-white rounded-full text-xs font-bold">
-                    2
-                  </span>
-                </div>
-                <p className="text-sm text-primary-700">
-                  Vous pouvez consulter les détails de votre inscription dans votre tableau de bord
-                </p>
-              </div>
-              <div className="flex items-start">
-                <div className="bg-white p-1.5 rounded-full mr-3 flex-shrink-0">
-                  <span className="flex items-center justify-center h-5 w-5 bg-primary-500 text-white rounded-full text-xs font-bold">
-                    3
-                  </span>
-                </div>
-                <p className="text-sm text-primary-700">
-                  Quelques jours avant le début du stage, vous recevrez un email avec les informations pratiques
-                </p>
-              </div>
-              {paymentMethod === 'invoice' && (
-                <div className="flex items-start">
-                  <div className="bg-white p-1.5 rounded-full mr-3 flex-shrink-0">
-                    <span className="flex items-center justify-center h-5 w-5 bg-primary-500 text-white rounded-full text-xs font-bold">
-                      4
-                    </span>
-                  </div>
-                  <p className="text-sm text-primary-700">
-                    Vous avez 20 jours pour effectuer le paiement de votre facture
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
           
           <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 justify-center">
             <Link
