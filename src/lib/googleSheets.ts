@@ -29,10 +29,7 @@ export async function sendInvoiceToGoogleSheets(invoiceData: InvoiceData): Promi
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        ...invoiceData,
-        api_key: 'oJ77UmqWU4VLzXcRQEh4jYsuembHe'
-      }),
+      body: JSON.stringify(invoiceData),
     });
 
     if (!response.ok) {
