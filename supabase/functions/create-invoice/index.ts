@@ -199,11 +199,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Update registrations with invoice_id
+    // Update registrations with invoice_id and invoice_url
     const { error: updateError } = await supabase
       .from('registrations')
       .update({
-        invoice_id: invoice.id
+        invoice_id: invoice.id,
+        invoice_url: invoice.hosted_invoice_url
       })
       .in('id', registrationIds);
 

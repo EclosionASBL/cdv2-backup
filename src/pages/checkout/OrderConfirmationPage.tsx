@@ -31,6 +31,7 @@ const OrderConfirmationPage = () => {
             amount_paid,
             price_type,
             invoice_id,
+            invoice_url,
             kids!inner (
               prenom,
               nom
@@ -156,6 +157,18 @@ const OrderConfirmationPage = () => {
                           <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded mt-1">
                             Tarif réduit
                           </span>
+                        )}
+                        
+                        {reg.invoice_url && reg.payment_status !== 'paid' && (
+                          <a 
+                            href={reg.invoice_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center text-xs text-primary-600 hover:text-primary-700 mt-2"
+                          >
+                            <FileText className="h-3 w-3 mr-1" />
+                            Voir la facture
+                          </a>
                         )}
                       </div>
                     </div>
