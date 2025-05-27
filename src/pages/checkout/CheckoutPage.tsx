@@ -118,7 +118,7 @@ const CheckoutPage = () => {
       
       // Clear cart and redirect
       clearCart();
-      navigate(`/order-confirmation?method=${paymentType}&invoice=${encodeURIComponent(invoiceUrl)}`);
+      navigate(`/order-confirmation?method=${paymentType}&invoice=${encodeURIComponent(invoiceUrl || '')}`);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la facture.');

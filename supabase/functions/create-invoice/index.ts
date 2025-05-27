@@ -22,7 +22,7 @@ interface CartItem {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight request
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -197,6 +197,19 @@ Deno.serve(async (req) => {
         invoice: invoice.id,
         price: price.id
       });
+    }
+
+    // Update registrations with invoice_id
+    const { error: updateError } = await supabase
+      .from('registrations')
+      .update({
+        invoice_id: invoice.id
+      })
+      .in('id', registrationIds);
+
+    if (updateError) {
+      console.error('Error updating registrations with invoice_id:', updateError);
+      // Continue anyway, as this is not critical
     }
 
     // Finalize and send the invoice
