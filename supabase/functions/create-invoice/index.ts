@@ -23,7 +23,7 @@ interface CartItem {
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
       headers: corsHeaders,
@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 20);
 
-    // Create invoice
+    // Create invoice with metadata
     const invoice = await stripe.invoices.create({
       customer: customerId,
       collection_method: 'send_invoice',
@@ -142,16 +142,37 @@ Deno.serve(async (req) => {
       auto_advance: true,
       description: 'Stages Éclosion ASBL',
       metadata: {
-        user_id: user.id
+        user_id: user.id,
+        cart_items: JSON.stringify(items.map(item => ({
+          kid_id: item.kid_id,
+          activity_id: item.activity_id,
+          price_type: item.price_type,
+          reduced_declaration: item.reduced_declaration,
+          price: item.price / 100 // Convert back to euros for our database
+        })))
       }
     });
 
     // Add line items and create registrations
     for (const item of items) {
-      // Create a product first
+      // Create a product with metadata
       const product = await stripe.products.create({
         name: `${item.activityName} (${item.kidName})`,
         description: item.dateRange,
+        metadata: {
+          kid_id: item.kid_id,
+          activity_id: item.activity_id,
+          user_id: user.id,
+          price_type: item.price_type,
+          reduced_declaration: item.reduced_declaration.toString()
+        }
+      });
+
+      // Create price with metadata
+      const price = await stripe.prices.create({
+        product: product.id,
+        currency: 'eur',
+        unit_amount: Math.round(item.price), // Price should be in cents
         metadata: {
           kid_id: item.kid_id,
           activity_id: item.activity_id,
@@ -165,11 +186,7 @@ Deno.serve(async (req) => {
       await stripe.invoiceItems.create({
         customer: customerId,
         invoice: invoice.id,
-        price_data: {
-          currency: 'eur',
-          unit_amount: Math.round(item.price), // Price should already be in cents
-          product: product.id
-        }
+        price: price.id
       });
 
       // Create registration with pending status
@@ -197,8 +214,13 @@ Deno.serve(async (req) => {
     await stripe.invoices.finalizeInvoice(invoice.id);
     await stripe.invoices.sendInvoice(invoice.id);
 
+    // Return the same format as create-checkout for consistency
     return new Response(
-      JSON.stringify({ url: invoice.hosted_invoice_url }),
+      JSON.stringify({ 
+        url: '/order-confirmation',
+        paymentType: 'invoice',
+        invoiceUrl: invoice.hosted_invoice_url
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

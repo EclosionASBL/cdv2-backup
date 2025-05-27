@@ -122,7 +122,22 @@ const OrderConfirmationPage = () => {
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           reg.payment_status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                         }`}>
-                          {reg.payment_status === 'paid' ? 'Payé' : 'En attente'}
+                          {reg.payment_status === 'paid' ? (
+                            <>
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Payé
+                            </>
+                          ) : reg.invoice_id ? (
+                            <>
+                              <FileText className="h-4 w-4 mr-1" />
+                              Facture en attente
+                            </>
+                          ) : (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              En attente
+                            </>
+                          )}
                         </span>
                         <p className="text-sm font-medium text-right mt-1">{reg.amount_paid} €</p>
                         {reg.price_type.includes('reduced') && (

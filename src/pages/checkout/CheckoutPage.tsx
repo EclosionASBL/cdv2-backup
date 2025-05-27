@@ -109,9 +109,11 @@ const CheckoutPage = () => {
         throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
       }
       
+      const { url, paymentType, invoiceUrl } = await response.json();
+      
       // Clear cart and redirect
       clearCart();
-      navigate('/order-confirmation');
+      navigate(url);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la facture.');
@@ -197,7 +199,7 @@ const CheckoutPage = () => {
   };
   
   return (
-    <div className="container max-w-5xl mx-auto py-12 px-4 animate-fade-in">
+    <div className="container max-w-5xl mx-auto py-12 px-4">
       <h1 className="text-3xl font-bold mb-8">Finaliser la commande</h1>
       
       <div className="grid md:grid-cols-2 gap-8">
