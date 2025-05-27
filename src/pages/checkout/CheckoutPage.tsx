@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { supabase } from '../../lib/supabase';
-import { Loader2, AlertCircle, FileText, Info } from 'lucide-react';
+import { Loader2, AlertCircle, FileText, Info, CheckCircle } from 'lucide-react';
+import { Dialog } from '@headlessui/react';
 import { PayLaterConfirmModal } from '../../components/checkout/PayLaterConfirmModal';
 import { generateInvoiceId, generateStructuredCommunication, sendInvoiceToGoogleSheets } from '../../lib/googleSheets';
 
