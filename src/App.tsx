@@ -28,7 +28,6 @@ import CartPage from './pages/checkout/CartPage';
 import CheckoutPage from './pages/checkout/CheckoutPage';
 import OrderConfirmationPage from './pages/checkout/OrderConfirmationPage';
 import InvoiceConfirmationPage from './pages/checkout/InvoiceConfirmationPage';
-import BankTransferPage from './pages/checkout/BankTransferPage';
 import RegistrationsPage from './pages/registrations/RegistrationsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -104,7 +103,7 @@ function App() {
             path="/register" 
             element={user ? <Navigate to="/dashboard\" replace /> : <RegisterPage />} 
           />
-          <Route path="/reset-password\" element={<ResetPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         {/* Protected routes */}
@@ -124,7 +123,6 @@ function App() {
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order-confirmation" element={<OrderConfirmationPage />} />
           <Route path="/invoice-confirmation" element={<InvoiceConfirmationPage />} />
-          <Route path="/bank-transfer" element={<BankTransferPage />} />
           <Route path="/registrations" element={<RegistrationsPage />} />
         </Route>
       </Route>
