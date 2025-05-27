@@ -93,7 +93,7 @@ const CheckoutPage = () => {
       
       // Call our Supabase Edge Function to create an invoice
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-invoice-record`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-invoice`,
         {
           method: 'POST',
           headers: {
@@ -114,11 +114,11 @@ const CheckoutPage = () => {
         throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la facture.');
       }
 
-      const { invoiceNumber, amount, communication } = await response.json();
+      const { url, paymentType, invoiceUrl } = await response.json();
       
       // Clear cart and redirect
       clearCart();
-      navigate(`/invoice-confirmation`);
+      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(invoiceUrl || '')}`);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la facture.');
