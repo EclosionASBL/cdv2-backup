@@ -27,6 +27,7 @@ import ActivityDetailsPage from './pages/activities/ActivityDetailsPage';
 import CartPage from './pages/checkout/CartPage';
 import CheckoutPage from './pages/checkout/CheckoutPage';
 import OrderConfirmationPage from './pages/checkout/OrderConfirmationPage';
+import InvoiceConfirmationPage from './pages/checkout/InvoiceConfirmationPage';
 import RegistrationsPage from './pages/registrations/RegistrationsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -121,6 +122,7 @@ function App() {
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order-confirmation" element={<OrderConfirmationPage />} />
+          <Route path="/invoice-confirmation" element={<InvoiceConfirmationPage />} />
           <Route path="/registrations" element={<RegistrationsPage />} />
         </Route>
       </Route>

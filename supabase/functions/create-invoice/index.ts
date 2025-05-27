@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
     // Return the same format as create-checkout for consistency
     return new Response(
       JSON.stringify({ 
-        url: '/order-confirmation',
+        url: '/invoice-confirmation',
         paymentType: 'invoice',
         invoiceUrl: invoice.hosted_invoice_url
       }),
