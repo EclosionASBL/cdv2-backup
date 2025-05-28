@@ -133,6 +133,14 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to connect to PDF generation service: ${fetchError.message}`);
     }
 
+    // Check if the response is OK before trying to parse JSON
+    if (!pdfRes.ok) {
+      const errorText = await pdfRes.text();
+      console.error('PDF generation failed with status:', pdfRes.status);
+      console.error('Error response:', errorText);
+      throw new Error(`Failed to generate invoice PDF: ${pdfRes.status} - ${errorText}`);
+    }
+
     let pdfData;
     try {
       pdfData = await pdfRes.json();
@@ -140,11 +148,6 @@ Deno.serve(async (req) => {
     } catch (jsonError) {
       console.error('Error parsing PDF response JSON:', jsonError);
       throw new Error('Invalid response from PDF generation service');
-    }
-
-    if (!pdfRes.ok) {
-      console.error('PDF generation failed:', pdfData);
-      throw new Error(pdfData.error || `Failed to generate invoice PDF: ${pdfRes.status}`);
     }
 
     const pdfUrl = pdfData.pdf_url;
