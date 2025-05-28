@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
       throw new Error(pdfData.error || `Failed to generate invoice PDF: ${pdfRes.status}`);
     }
 
-    const pdfUrl = pdfData.pdf_url as string;
+    const pdfUrl = pdfData.pdf_url;
     if (!pdfUrl) {
       console.error('PDF URL is missing in response:', pdfData);
       throw new Error('PDF URL is missing in response');
@@ -210,19 +210,27 @@ Deno.serve(async (req) => {
         ]
       };
 
-      await client.sendAsync(message);
-      console.log('Email sent successfully via SMTP');
+      // Use callback-based send method instead of sendAsync
+      return new Promise((resolve, reject) => {
+        client.send(message, (err, result) => {
+          if (err) {
+            console.error('Error sending email with SMTP:', err);
+            reject(new Error(`Failed to send email: ${err.message || 'Unknown email error'}`));
+          } else {
+            console.log('Email sent successfully via SMTP:', result);
+            resolve(new Response(
+              JSON.stringify({ success: true, pdf_url: pdfUrl }),
+              { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            ));
+          }
+        });
+      });
     } catch (emailError: any) {
       console.error('Error sending email with SMTP:', emailError);
       console.error('Error details:', JSON.stringify(emailError));
       
       throw new Error(`Failed to send email: ${emailError.message || 'Unknown email error'}`);
     }
-
-    return new Response(
-      JSON.stringify({ success: true, pdf_url: pdfUrl }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
   } catch (error: any) {
     console.error('Error in send-invoice-email function:', error);
     console.error('Error stack:', error.stack);

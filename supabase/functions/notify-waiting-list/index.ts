@@ -146,8 +146,39 @@ Deno.serve(async (req) => {
         ]
       };
 
-      await client.sendAsync(message);
-      console.log('Email sent successfully via SMTP');
+      // Use callback-based send method instead of sendAsync
+      return new Promise((resolve, reject) => {
+        client.send(message, (err, result) => {
+          if (err) {
+            console.error('Error sending email with SMTP:', err);
+            resolve(new Response(
+              JSON.stringify({ 
+                success: false, 
+                error: "Email could not be sent, but waiting list status was updated." 
+              }),
+              {
+                status: 200, // Still return 200 to not break the flow
+                headers: {
+                  ...corsHeaders,
+                  "Content-Type": "application/json",
+                },
+              }
+            ));
+          } else {
+            console.log('Email sent successfully via SMTP:', result);
+            resolve(new Response(
+              JSON.stringify({ success: true }),
+              {
+                status: 200,
+                headers: {
+                  ...corsHeaders,
+                  "Content-Type": "application/json",
+                },
+              }
+            ));
+          }
+        });
+      });
     } catch (emailError: any) {
       console.error('Error sending email with SMTP:', emailError);
       console.error('Error details:', JSON.stringify(emailError));
@@ -166,17 +197,6 @@ Deno.serve(async (req) => {
         }
       );
     }
-
-    return new Response(
-      JSON.stringify({ success: true }),
-      {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      }
-    );
   } catch (error) {
     console.error("Error sending notification:", error);
     return new Response(
