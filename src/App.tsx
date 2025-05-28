@@ -104,7 +104,7 @@ function App() {
             path="/register" 
             element={user ? <Navigate to="/dashboard\" replace /> : <RegisterPage />} 
           />
-          <Route path="/reset-password\" element={<ResetPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         {/* Protected routes */}
