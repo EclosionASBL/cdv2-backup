@@ -517,35 +517,65 @@ Deno.serve(async (req) => {
     
     console.log('Uploading PDF to Supabase Storage');
     
-    // Upload PDF to Supabase Storage
-    const fileName = `invoices/${invoice_number}.pdf`;
-    const { error: uploadError } = await supabase.storage
-      .from('public')
-      .upload(fileName, pdfBytes, {
-        contentType: 'application/pdf',
-        upsert: true
-      });
-      
-    if (uploadError) {
-      console.error("Error uploading PDF:", uploadError);
+    // Upload PDF to Supabase Storage - FIXED: Use 'invoices' bucket instead of 'public'
+    const fileName = `${invoice_number}.pdf`;
+    
+    // Check if the bucket exists
+    const { data: buckets } = await supabase.storage.listBuckets();
+    console.log('Available buckets:', buckets?.map(b => b.name).join(', '));
+    
+    // Try to upload to the 'invoices' bucket first, if it exists
+    let uploadError = null;
+    let pdfUrl = null;
+    
+    // Try different buckets in order of preference
+    const bucketsToTry = ['invoices', 'public', 'storage'];
+    
+    for (const bucketName of bucketsToTry) {
+      if (buckets?.some(b => b.name === bucketName)) {
+        console.log(`Attempting to upload to '${bucketName}' bucket`);
+        
+        try {
+          const { error: uploadErr } = await supabase.storage
+            .from(bucketName)
+            .upload(`invoices/${fileName}`, pdfBytes, {
+              contentType: 'application/pdf',
+              upsert: true
+            });
+            
+          if (!uploadErr) {
+            // Get public URL
+            const { data: publicUrlData } = supabase.storage
+              .from(bucketName)
+              .getPublicUrl(`invoices/${fileName}`);
+              
+            pdfUrl = publicUrlData.publicUrl;
+            console.log('PDF uploaded successfully to bucket:', bucketName);
+            console.log('PDF public URL:', pdfUrl);
+            break; // Exit the loop if upload is successful
+          } else {
+            console.error(`Error uploading to '${bucketName}' bucket:`, uploadErr);
+            uploadError = uploadErr;
+          }
+        } catch (err) {
+          console.error(`Error trying to upload to '${bucketName}' bucket:`, err);
+          uploadError = err;
+        }
+      } else {
+        console.log(`Bucket '${bucketName}' does not exist, skipping`);
+      }
+    }
+    
+    if (!pdfUrl) {
+      console.error("Failed to upload PDF to any bucket");
       return new Response(
-        JSON.stringify({ error: "Failed to upload PDF: " + uploadError.message }),
+        JSON.stringify({ error: "Failed to upload PDF: " + (uploadError?.message || "No suitable storage bucket found") }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
     }
-    
-    console.log('PDF uploaded successfully, getting public URL');
-    
-    // Get public URL
-    const { data: publicUrlData } = supabase.storage
-      .from('public')
-      .getPublicUrl(fileName);
-      
-    const pdfUrl = publicUrlData.publicUrl;
-    console.log('PDF public URL:', pdfUrl);
     
     // Update invoice with PDF URL
     const { error: updateError } = await supabase
