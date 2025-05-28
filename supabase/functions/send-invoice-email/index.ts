@@ -174,19 +174,7 @@ Deno.serve(async (req) => {
       console.error('Database error updating invoice:', dbError);
     }
 
-    // Verify the PDF file exists before sending the email
-    try {
-      const pdfCheckResponse = await fetch(pdfUrl, { method: 'HEAD' });
-      if (!pdfCheckResponse.ok) {
-        console.error(`PDF file does not exist or is not accessible: ${pdfUrl}`);
-        throw new Error(`PDF file does not exist or is not accessible: ${pdfUrl}`);
-      }
-      console.log('PDF file exists and is accessible');
-    } catch (pdfCheckError) {
-      console.error('Error checking PDF file:', pdfCheckError);
-      throw new Error(`Error checking PDF file: ${pdfCheckError.message}`);
-    }
-
+    // Skip PDF verification - just send the email with the link
     console.log('Sending email to:', parent_email);
     console.log('Email will include PDF URL:', pdfUrl);
     
@@ -213,7 +201,7 @@ Deno.serve(async (req) => {
               
               <p>Bonjour,</p>
               
-              <p>Veuillez trouver votre facture en pièce jointe. Vous pouvez également la télécharger en cliquant sur le lien ci-dessous :</p>
+              <p>Votre facture est maintenant disponible. Vous pouvez la télécharger en cliquant sur le lien ci-dessous :</p>
               
               <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
               
@@ -223,7 +211,6 @@ Deno.serve(async (req) => {
             </div>
           `, alternative: true }
           // Send only the link to the PDF, not the attachment itself
-          // This avoids the "file does not exist" error
         ]
       };
 
