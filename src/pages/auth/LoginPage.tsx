@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../../stores/authStore';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 
 interface LoginFormData {
   email: string;
@@ -11,6 +11,7 @@ interface LoginFormData {
 
 const LoginPage = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const { signIn, isLoading, profile, isAdmin } = useAuthStore();
   
@@ -79,18 +80,27 @@ const LoginPage = () => {
               Mot de passe oublié?
             </Link>
           </div>
-          <input
-            id="password"
-            type="password"
-            className={`form-input ${errors.password ? 'border-red-500 focus:ring-red-500' : ''}`}
-            {...register('password', {
-              required: 'Mot de passe requis',
-              minLength: {
-                value: 6,
-                message: 'Le mot de passe doit contenir au moins 6 caractères',
-              },
-            })}
-          />
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              className={`form-input pr-10 ${errors.password ? 'border-red-500 focus:ring-red-500' : ''}`}
+              {...register('password', {
+                required: 'Mot de passe requis',
+                minLength: {
+                  value: 6,
+                  message: 'Le mot de passe doit contenir au moins 6 caractères',
+                },
+              })}
+            />
+            <button
+              type="button"
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+            </button>
+          </div>
           {errors.password && (
             <p className="form-error">{errors.password.message}</p>
           )}
