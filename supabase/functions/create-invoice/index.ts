@@ -157,7 +157,6 @@ Deno.serve(async (req) => {
     // Generate PDF and send it by email
     let pdfUrl: string | null = null;
     try {
-      console.log('Calling send-invoice-email function...');
       const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-invoice-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,28 +166,16 @@ Deno.serve(async (req) => {
         })
       });
 
-      if (!emailRes.ok) {
-        console.error('Error response from send-invoice-email:', emailRes.status, emailRes.statusText);
-        const errorText = await emailRes.text();
-        console.error('Error response body:', errorText);
-        throw new Error(`Failed to send invoice email: ${errorText}`);
-      }
-
       const emailData = await emailRes.json();
-      console.log('Response from send-invoice-email:', JSON.stringify(emailData));
-      
-      if (emailData.success && emailData.pdf_url) {
-        pdfUrl = emailData.pdf_url;
-        console.log('PDF URL received:', pdfUrl);
+      if (emailRes.ok) {
+        pdfUrl = emailData.pdf_url as string;
       } else {
-        console.error('No PDF URL in response:', emailData);
+        console.error('Erreur lors de l\'envoi de la facture:', emailData.error);
       }
     } catch (err) {
-      console.error('Error calling send-invoice-email:', err);
+      console.error('Erreur lors de l\'appel à send-invoice-email:', err);
     }
 
-    console.log('Returning response with pdfUrl:', pdfUrl);
-    
     return new Response(
       JSON.stringify({
         url: '/invoice-confirmation',
