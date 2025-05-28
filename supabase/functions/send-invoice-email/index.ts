@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     console.log('Verifying invoice exists:', invoice_number);
     const { data: invoiceData, error: invoiceError } = await supabase
       .from('invoices')
-      .select('*')
+      .select('*, user_id, registration_ids')
       .eq('invoice_number', invoice_number)
       .single();
 
@@ -109,6 +109,43 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
+    }
+
+    // Get user data
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('prenom, nom')
+      .eq('id', invoiceData.user_id)
+      .single();
+
+    if (userError) {
+      console.error("Error fetching user data:", userError);
+    }
+
+    // Get registration details
+    const { data: registrations, error: registrationsError } = await supabase
+      .from('registrations')
+      .select(`
+        id,
+        kid:kids(
+          prenom,
+          nom
+        ),
+        session:activity_id(
+          stage:stage_id(
+            title
+          ),
+          start_date,
+          end_date,
+          center:center_id(
+            name
+          )
+        )
+      `)
+      .in('id', invoiceData.registration_ids);
+
+    if (registrationsError) {
+      console.error("Error fetching registrations:", registrationsError);
     }
 
     console.log('Invoice found, generating PDF for invoice:', invoice_number);
@@ -174,6 +211,30 @@ Deno.serve(async (req) => {
       console.error('Database error updating invoice:', dbError);
     }
 
+    // Format registrations for email
+    let registrationsHtml = '';
+    if (registrations && registrations.length > 0) {
+      registrationsHtml = registrations.map(reg => {
+        // Unwrap nested objects if they're arrays
+        const kid = Array.isArray(reg.kid) ? reg.kid[0] : reg.kid;
+        const session = Array.isArray(reg.session) ? reg.session[0] : reg.session;
+        const stage = Array.isArray(session.stage) ? session.stage[0] : session.stage;
+        const center = Array.isArray(session.center) ? session.center[0] : session.center;
+        
+        const startDate = new Date(session.start_date).toLocaleDateString('fr-BE');
+        const endDate = new Date(session.end_date).toLocaleDateString('fr-BE');
+        
+        return `
+          <div style="margin-bottom: 15px; padding: 15px; background-color: #f8f9fa; border-radius: 8px;">
+            <h3 style="margin-top: 0; color: #4f46e5;">${stage.title}</h3>
+            <p><strong>Pour :</strong> ${kid.prenom} ${kid.nom}</p>
+            <p><strong>Dates :</strong> Du ${startDate} au ${endDate}</p>
+            <p><strong>Centre :</strong> ${center.name}</p>
+          </div>
+        `;
+      }).join('');
+    }
+
     // Skip PDF verification - just send the email with the link
     console.log('Sending email to:', parent_email);
     console.log('Email will include PDF URL:', pdfUrl);
@@ -190,24 +251,45 @@ Deno.serve(async (req) => {
         ssl: true,
       });
 
+      const parentName = userData?.prenom || 'Parent';
+      const dueDate = new Date(invoiceData.due_date);
+      const formattedDueDate = dueDate.toLocaleDateString('fr-BE');
+
       const message = {
         from: smtpSender,
         to: parent_email,
-        subject: 'Votre facture',
+        subject: 'Confirmation d\'inscription et facture - Éclosion ASBL',
         attachment: [
           { data: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h1 style="color: #4f46e5;">Votre facture est prête</h1>
+              <h1 style="color: #4f46e5;">Votre inscription est confirmée !</h1>
               
-              <p>Bonjour,</p>
+              <p>Bonjour ${parentName},</p>
               
-              <p>Votre facture est maintenant disponible. Vous pouvez la télécharger en cliquant sur le lien ci-dessous :</p>
+              <p>Nous avons le plaisir de vous confirmer l'inscription de votre enfant aux activités suivantes :</p>
               
-              <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
+              ${registrationsHtml}
               
-              <p>Merci de votre confiance !</p>
+              <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
+                <h2 style="margin-top: 0; color: #4f46e5;">Votre facture est prête</h2>
+                <p>Votre facture a été générée et est disponible ci-dessous. Vous avez jusqu'au <strong>${formattedDueDate}</strong> pour effectuer le paiement.</p>
+                <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
+              </div>
               
-              <p>L'équipe Éclosion</p>
+              <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+                <h2 style="margin-top: 0; color: #1f2937;">Que se passe-t-il maintenant ?</h2>
+                <p>Votre enfant est bien inscrit, même si le paiement n'est pas encore effectué.</p>
+                <p>Vous recevrez toutes les informations pratiques pour votre enfant une semaine avant le début des activités.</p>
+                <p>Pour toute question, n'hésitez pas à nous contacter :</p>
+                <ul>
+                  <li>Par téléphone : <strong>0470 470 503</strong></li>
+                  <li>Par email : <strong>info@eclosion.be</strong></li>
+                </ul>
+              </div>
+              
+              <p style="margin-top: 30px;">Merci de votre confiance !</p>
+              
+              <p>L'équipe Éclosion ASBL</p>
             </div>
           `, alternative: true }
           // Send only the link to the PDF, not the attachment itself
