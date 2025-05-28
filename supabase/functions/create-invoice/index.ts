@@ -172,7 +172,10 @@ Deno.serve(async (req) => {
       console.log('Calling send-invoice-email function');
       const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-invoice-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Pass the authorization token
+        },
         body: JSON.stringify({
           invoice_number: invoice.invoice_number,
           parent_email: user.email
