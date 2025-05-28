@@ -19,6 +19,7 @@ import KidsPage from './pages/profile/KidsPage';
 import NewKidPage from './pages/profile/NewKidPage';
 import EditKidPage from './pages/profile/EditKidPage';
 import KidDetailsPage from './pages/profile/KidDetailsPage';
+import InvoicesPage from './pages/profile/InvoicesPage';
 import AuthorizedPersonsPage from './pages/authorized-persons/AuthorizedPersonsPage';
 import NewAuthorizedPersonPage from './pages/authorized-persons/NewAuthorizedPersonPage';
 import EditAuthorizedPersonPage from './pages/authorized-persons/EditAuthorizedPersonPage';
@@ -110,6 +111,7 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/invoices" element={<InvoicesPage />} />
           <Route path="/kids" element={<KidsPage />} />
           <Route path="/kids/new" element={<NewKidPage />} />
           <Route path="/kids/edit/:id" element={<EditKidPage />} />
