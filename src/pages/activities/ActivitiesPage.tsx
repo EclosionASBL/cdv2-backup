@@ -4,6 +4,7 @@ import { useActivityStore } from '../../stores/activityStore';
 import { useKidStore } from '../../stores/kidStore';
 import { useCartStore } from '../../stores/cartStore';
 import { useWaitingListStore } from '../../stores/waitingListStore';
+import { useRegistrationStore } from '../../stores/registrationStore';
 import { Filter, Loader2, AlertCircle, ShoppingCart, Info, X, User, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import toast, { Toaster } from 'react-hot-toast';
@@ -146,6 +147,10 @@ const ActivitiesPage = () => {
     isLoading: isWaitingListLoading,
     fetchWaitingList
   } = useWaitingListStore();
+  const {
+    fetchRegistrations,
+    isKidRegistered
+  } = useRegistrationStore();
 
   const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
@@ -156,14 +161,15 @@ const ActivitiesPage = () => {
     fetchCenters();
     fetchPeriodes();
     fetchWaitingList();
-  }, [fetchKids, fetchCenters, fetchPeriodes, fetchWaitingList]);
+    fetchRegistrations();
+  }, [fetchKids, fetchCenters, fetchPeriodes, fetchWaitingList, fetchRegistrations]);
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters({ ...filters, [key]: value });
   };
 
-  const toggleActivitySelection = (id: string, isFull: boolean) => {
-    if (isFull) return; // Don't allow selection if the session is full
+  const toggleActivitySelection = (id: string, isFull: boolean, isAlreadyRegistered: boolean) => {
+    if (isFull || isAlreadyRegistered) return; // Don't allow selection if the session is full or already registered
     
     setSelectedActivities(prev => 
       prev.includes(id) 
@@ -344,6 +350,7 @@ const ActivitiesPage = () => {
                 {activities.map((activity) => {
                   const isSessionFull = (activity.registration_count || 0) >= activity.capacity;
                   const isWaiting = filters.kid_id ? isOnWaitingList(activity.id, filters.kid_id) : false;
+                  const isAlreadyRegistered = filters.kid_id ? isKidRegistered(filters.kid_id, activity.id) : false;
                   
                   return (
                     <div
@@ -351,7 +358,7 @@ const ActivitiesPage = () => {
                       className={clsx(
                         "bg-white rounded-xl shadow-md overflow-hidden transition-transform hover:scale-[1.02]",
                         selectedActivities.includes(activity.id) && "ring-2 ring-primary-500",
-                        isSessionFull && "opacity-90"
+                        (isSessionFull || isAlreadyRegistered) && "opacity-90"
                       )}
                     >
                       <div className="relative">
@@ -360,19 +367,19 @@ const ActivitiesPage = () => {
                           alt={activity.stage.title}
                           className="w-full h-48 object-cover"
                         />
-                        {!isSessionFull && (
+                        {!isSessionFull && !isAlreadyRegistered && (
                           <div
                             className={clsx(
                               "absolute top-4 right-4 cursor-pointer",
-                              isSessionFull && "cursor-not-allowed"
+                              (isSessionFull || isAlreadyRegistered) && "cursor-not-allowed"
                             )}
-                            onClick={() => toggleActivitySelection(activity.id, isSessionFull)}
+                            onClick={() => toggleActivitySelection(activity.id, isSessionFull, isAlreadyRegistered)}
                           >
                             <div className={clsx(
                               "w-6 h-6 rounded-full border-2",
                               selectedActivities.includes(activity.id)
                                 ? "bg-primary-500 border-primary-500"
-                                : isSessionFull
+                                : isSessionFull || isAlreadyRegistered
                                   ? "bg-gray-300 border-gray-300"
                                   : "bg-white border-gray-300"
                             )} />
@@ -383,6 +390,14 @@ const ActivitiesPage = () => {
                           <div className="absolute top-4 left-4">
                             <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
                               Complet
+                            </span>
+                          </div>
+                        )}
+
+                        {isAlreadyRegistered && (
+                          <div className="absolute top-4 left-4">
+                            <span className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                              Déjà inscrit
                             </span>
                           </div>
                         )}
@@ -427,7 +442,14 @@ const ActivitiesPage = () => {
                             Places: {activity.capacity - (activity.registration_count || 0)}/{activity.capacity}
                           </p>
                           
-                          {isSessionFull && (
+                          {isAlreadyRegistered ? (
+                            <div className="mt-2">
+                              <div className="flex items-center text-green-600 text-sm">
+                                <Clock className="h-4 w-4 mr-1" />
+                                <span>Déjà inscrit</span>
+                              </div>
+                            </div>
+                          ) : isSessionFull && (
                             <div className="mt-2">
                               {isWaiting ? (
                                 <div className="flex items-center text-amber-600 text-sm">
