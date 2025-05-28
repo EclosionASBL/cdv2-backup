@@ -22,10 +22,28 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { invoice_number, api_key } = await req.json() as GenerateInvoiceRequest;
+    console.log('Starting generate-invoice-pdf function');
+    
+    let requestData;
+    try {
+      requestData = await req.json() as GenerateInvoiceRequest;
+      console.log('Request data:', JSON.stringify(requestData));
+    } catch (parseError) {
+      console.error('Error parsing request JSON:', parseError);
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON in request body" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const { invoice_number, api_key } = requestData;
 
     // Validate required parameters
     if (!invoice_number || !api_key) {
+      console.error('Missing required parameters:', { invoice_number, hasApiKey: !!api_key });
       return new Response(
         JSON.stringify({ error: "Missing required parameters" }),
         {
@@ -37,7 +55,19 @@ Deno.serve(async (req) => {
 
     // Validate API key
     const expectedApiKey = Deno.env.get("UPDATE_INVOICE_API_KEY");
-    if (!expectedApiKey || api_key !== expectedApiKey) {
+    if (!expectedApiKey) {
+      console.error('UPDATE_INVOICE_API_KEY not set in environment');
+      return new Response(
+        JSON.stringify({ error: "Server configuration error" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+    
+    if (api_key !== expectedApiKey) {
+      console.error('Invalid API key provided');
       return new Response(
         JSON.stringify({ error: "Invalid API key" }),
         {
@@ -48,11 +78,24 @@ Deno.serve(async (req) => {
     }
 
     // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase environment variables');
+      return new Response(
+        JSON.stringify({ error: "Server configuration error" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Get invoice data
+    console.log('Fetching invoice data for:', invoice_number);
     const { data: invoice, error: invoiceError } = await supabase
       .from('invoices')
       .select(`
@@ -81,7 +124,10 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log('Invoice data retrieved successfully');
+
     // Get registrations data
+    console.log('Fetching registrations for invoice');
     const { data: registrations, error: registrationsError } = await supabase
       .from('registrations')
       .select(`
@@ -116,7 +162,10 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log('Registrations data retrieved successfully');
+
     // Create PDF document
+    console.log('Creating PDF document');
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595.28, 841.89]); // A4 size
     const { width, height } = page.getSize();
@@ -454,11 +503,14 @@ Deno.serve(async (req) => {
     });
     
     // Serialize the PDF to bytes
+    console.log('Serializing PDF document');
     const pdfBytes = await pdfDoc.save();
     
     // Upload PDF to Supabase Storage
     const fileName = `invoices/${invoice_number}.pdf`;
-    const { error: uploadError } = await supabase.storage
+    console.log('Uploading PDF to storage:', fileName);
+    
+    const { error: uploadError, data: uploadData } = await supabase.storage
       .from('public')
       .upload(fileName, pdfBytes, {
         contentType: 'application/pdf',
@@ -482,6 +534,7 @@ Deno.serve(async (req) => {
       .getPublicUrl(fileName);
       
     const pdfUrl = publicUrlData.publicUrl;
+    console.log('PDF URL generated:', pdfUrl);
     
     // Update invoice with PDF URL
     const { error: updateError } = await supabase
