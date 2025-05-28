@@ -168,6 +168,8 @@ Deno.serve(async (req) => {
     
     // Generate PDF and send it by email
     let pdfUrl: string | null = null;
+    let emailWarning: string | null = null;
+    
     try {
       console.log('Calling send-invoice-email function');
       const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-invoice-email`, {
@@ -195,9 +197,13 @@ Deno.serve(async (req) => {
 
       if (emailRes.ok) {
         pdfUrl = emailData.pdf_url as string;
-        console.log('Email sent successfully with PDF URL:', pdfUrl);
+        if (emailData.warning) {
+          emailWarning = emailData.warning;
+        }
+        console.log('Email process completed with PDF URL:', pdfUrl);
       } else {
         console.error('Erreur lors de l\'envoi de la facture:', emailData.error);
+        emailWarning = emailData.error || 'Erreur lors de l\'envoi de l\'email';
       }
     } catch (err) {
       console.error('Erreur lors de l\'appel à send-invoice-email:', err);
@@ -205,15 +211,22 @@ Deno.serve(async (req) => {
         console.error('Error details:', err.message);
         console.error('Error stack:', err.stack);
       }
+      emailWarning = 'Erreur technique lors de la génération du PDF ou de l\'envoi de l\'email';
+    }
+
+    const response = {
+      url: '/invoice-confirmation',
+      paymentType: 'invoice',
+      invoiceUrl: pdfUrl,
+      invoiceNumber: invoice.invoice_number
+    };
+    
+    if (emailWarning) {
+      Object.assign(response, { warning: emailWarning });
     }
 
     return new Response(
-      JSON.stringify({
-        url: '/invoice-confirmation',
-        paymentType: 'invoice',
-        invoiceUrl: pdfUrl,
-        invoiceNumber: invoice.invoice_number
-      }),
+      JSON.stringify(response),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
