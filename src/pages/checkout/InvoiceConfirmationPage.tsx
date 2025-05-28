@@ -87,16 +87,16 @@ const InvoiceConfirmationPage = () => {
         <div className="p-8">
           <div className="flex justify-center mb-6">
             <div className="p-3 bg-primary-100 rounded-full">
-              <FileText size={48} className="text-primary-600" />
+              <CheckCircle size={48} className="text-primary-600" />
             </div>
           </div>
           
           <h1 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-            Votre facture a été créée !
+            Votre inscription est confirmée !
           </h1>
           
           <p className="text-lg text-gray-600 mb-8 max-w-lg mx-auto text-center">
-            Votre facture a été générée et vous sera envoyée par email. Vous avez 20 jours pour effectuer le paiement.
+            Votre enfant est bien inscrit. Votre facture a été générée et vous sera envoyée par email. Vous avez 20 jours pour effectuer le paiement.
           </p>
 
           {invoiceUrl && (
@@ -145,9 +145,9 @@ const InvoiceConfirmationPage = () => {
                         </p>
                       </div>
                       <div>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          <FileText className="h-4 w-4 mr-1" />
-                          Facture en attente
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Inscrit
                         </span>
                         <p className="text-sm font-medium text-right mt-1">{reg.amount_paid} €</p>
                         {reg.price_type.includes('reduced') && (
@@ -155,6 +155,13 @@ const InvoiceConfirmationPage = () => {
                             Tarif réduit
                           </span>
                         )}
+                        
+                        <div className="mt-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <FileText className="h-4 w-4 mr-1" />
+                            Facture à payer dans les 20 jours
+                          </span>
+                        </div>
                         
                         {reg.invoice_url && (
                           <a 
