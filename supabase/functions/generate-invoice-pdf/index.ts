@@ -22,10 +22,36 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { invoice_number, api_key } = await req.json() as GenerateInvoiceRequest;
+    console.log('Starting generate-invoice-pdf function');
+    
+    // Get the authorization header from the incoming request
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error('Missing Authorization header');
+      return new Response(
+        JSON.stringify({ error: 'Missing Authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Parse request body
+    let requestData;
+    try {
+      requestData = await req.json() as GenerateInvoiceRequest;
+      console.log('Request data:', JSON.stringify(requestData));
+    } catch (parseError) {
+      console.error('Error parsing request JSON:', parseError);
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    const { invoice_number, api_key } = requestData;
 
     // Validate required parameters
     if (!invoice_number || !api_key) {
+      console.error('Missing required parameters:', { hasInvoiceNumber: !!invoice_number, hasApiKey: !!api_key });
       return new Response(
         JSON.stringify({ error: "Missing required parameters" }),
         {
@@ -38,6 +64,7 @@ Deno.serve(async (req) => {
     // Validate API key
     const expectedApiKey = Deno.env.get("UPDATE_INVOICE_API_KEY");
     if (!expectedApiKey || api_key !== expectedApiKey) {
+      console.error('Invalid API key');
       return new Response(
         JSON.stringify({ error: "Invalid API key" }),
         {
@@ -49,9 +76,11 @@ Deno.serve(async (req) => {
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    console.log('Fetching invoice data for:', invoice_number);
+    
     // Get invoice data
     const { data: invoice, error: invoiceError } = await supabase
       .from('invoices')
@@ -81,6 +110,8 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log('Fetching registrations for invoice:', invoice_number);
+    
     // Get registrations data
     const { data: registrations, error: registrationsError } = await supabase
       .from('registrations')
@@ -116,6 +147,8 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log('Creating PDF document');
+    
     // Create PDF document
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595.28, 841.89]); // A4 size
@@ -453,8 +486,12 @@ Deno.serve(async (req) => {
       color: rgb(0.5, 0.5, 0.5),
     });
     
+    console.log('PDF document created, serializing to bytes');
+    
     // Serialize the PDF to bytes
     const pdfBytes = await pdfDoc.save();
+    
+    console.log('Uploading PDF to Supabase Storage');
     
     // Upload PDF to Supabase Storage
     const fileName = `invoices/${invoice_number}.pdf`;
@@ -476,12 +513,15 @@ Deno.serve(async (req) => {
       );
     }
     
+    console.log('PDF uploaded successfully, getting public URL');
+    
     // Get public URL
     const { data: publicUrlData } = supabase.storage
       .from('public')
       .getPublicUrl(fileName);
       
     const pdfUrl = publicUrlData.publicUrl;
+    console.log('PDF public URL:', pdfUrl);
     
     // Update invoice with PDF URL
     const { error: updateError } = await supabase
@@ -492,6 +532,8 @@ Deno.serve(async (req) => {
     if (updateError) {
       console.error("Error updating invoice with PDF URL:", updateError);
       // Continue anyway, as we can still return the PDF URL
+    } else {
+      console.log('Invoice updated with PDF URL');
     }
     
     return new Response(

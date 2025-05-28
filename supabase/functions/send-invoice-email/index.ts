@@ -23,6 +23,16 @@ Deno.serve(async (req) => {
   try {
     console.log('Starting send-invoice-email function');
     
+    // Get the authorization header from the incoming request
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error('Missing Authorization header');
+      return new Response(
+        JSON.stringify({ error: 'Missing Authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
     // Parse request body
     let requestData;
     try {
@@ -86,7 +96,10 @@ Deno.serve(async (req) => {
     try {
       pdfRes = await fetch(`${supabaseUrl}/functions/v1/generate-invoice-pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': authHeader // Pass along the original authorization header
+        },
         body: JSON.stringify({ invoice_number, api_key: apiKey }),
       });
       console.log('PDF generation response status:', pdfRes.status);
