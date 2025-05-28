@@ -452,7 +452,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight * 2;
-    page.drawText('IBAN: BE12 3456 7890 1234', {
+    page.drawText('IBAN: BE64 3631 1005 7452', {
       x: margin,
       y: currentY,
       size: 10,
