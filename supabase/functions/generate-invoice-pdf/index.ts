@@ -240,14 +240,6 @@ Deno.serve(async (req) => {
       font: helveticaFont,
     });
     
-    currentY -= lineHeight;
-    page.drawText('TVA: BE0123456789', {
-      x: margin,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
     // Add client info
     currentY -= 40;
     page.drawText('Facturé à:', {
@@ -493,8 +485,8 @@ Deno.serve(async (req) => {
     
     // Add footer
     currentY = margin + 30;
-    page.drawText('Éclosion ASBL - 125 Rue Josse Impens, 1030 Schaerbeek - TVA: BE0123456789', {
-      x: width / 2 - 200,
+    page.drawText('Éclosion ASBL - 125 Rue Josse Impens, 1030 Schaerbeek', {
+      x: width / 2 - 180,
       y: currentY,
       size: 8,
       font: helveticaFont,
