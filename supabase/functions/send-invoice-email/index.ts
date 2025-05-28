@@ -178,7 +178,21 @@ Deno.serve(async (req) => {
         from: 'no-reply@eclosion.be',
         to: parent_email,
         subject: 'Votre facture',
-        html: `Bonjour,<br/><br/>Veuillez trouver votre facture ici : <a href="${pdfUrl}">télécharger</a>.<br/><br/>Merci !<br/>L'équipe Éclosion`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #4f46e5;">Votre facture est prête</h1>
+            
+            <p>Bonjour,</p>
+            
+            <p>Veuillez trouver votre facture en pièce jointe. Vous pouvez également la télécharger en cliquant sur le lien ci-dessous :</p>
+            
+            <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
+            
+            <p>Merci de votre confiance !</p>
+            
+            <p>L'équipe Éclosion</p>
+          </div>
+        `,
         attachments: [
           {
             filename: `${invoice_number}.pdf`,

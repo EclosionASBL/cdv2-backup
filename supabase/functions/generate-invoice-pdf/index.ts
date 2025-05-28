@@ -81,21 +81,10 @@ Deno.serve(async (req) => {
 
     console.log('Fetching invoice data for:', invoice_number);
     
-    // Get invoice data
+    // Get invoice data - FIXED: Use separate queries instead of a join that's causing issues
     const { data: invoice, error: invoiceError } = await supabase
       .from('invoices')
-      .select(`
-        *,
-        user:user_id(
-          prenom,
-          nom,
-          email,
-          adresse,
-          cpostal,
-          localite,
-          telephone
-        )
-      `)
+      .select('*')
       .eq('invoice_number', invoice_number)
       .single();
 
@@ -121,6 +110,24 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get user data separately
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('prenom, nom, email, adresse, cpostal, localite, telephone')
+      .eq('id', invoice.user_id)
+      .single();
+
+    if (userError) {
+      console.error("Error fetching user:", userError);
+      return new Response(
+        JSON.stringify({ error: "Error fetching user: " + userError.message }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     console.log('Fetching registrations for invoice:', invoice_number);
     
     // Get registrations data
@@ -130,7 +137,7 @@ Deno.serve(async (req) => {
         id,
         amount_paid,
         price_type,
-        kid:kid_id(
+        kid:kids(
           prenom,
           nom
         ),
@@ -251,7 +258,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText(`${invoice.user.prenom} ${invoice.user.nom}`, {
+    page.drawText(`${user.prenom} ${user.nom}`, {
       x: margin,
       y: currentY,
       size: 10,
@@ -259,7 +266,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText(`${invoice.user.adresse}`, {
+    page.drawText(`${user.adresse}`, {
       x: margin,
       y: currentY,
       size: 10,
@@ -267,7 +274,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText(`${invoice.user.cpostal} ${invoice.user.localite}`, {
+    page.drawText(`${user.cpostal} ${user.localite}`, {
       x: margin,
       y: currentY,
       size: 10,
@@ -275,7 +282,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText(`Email: ${invoice.user.email}`, {
+    page.drawText(`Email: ${user.email}`, {
       x: margin,
       y: currentY,
       size: 10,
@@ -283,7 +290,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText(`Téléphone: ${invoice.user.telephone || 'Non renseigné'}`, {
+    page.drawText(`Téléphone: ${user.telephone || 'Non renseigné'}`, {
       x: margin,
       y: currentY,
       size: 10,
@@ -339,17 +346,23 @@ Deno.serve(async (req) => {
     currentY -= 15;
     
     for (const reg of registrations || []) {
-      const startDate = new Date(reg.session.start_date).toLocaleDateString('fr-BE');
-      const endDate = new Date(reg.session.end_date).toLocaleDateString('fr-BE');
+      // Unwrap nested objects if they're arrays (handling potential Supabase quirk)
+      const kidData = Array.isArray(reg.kid) ? reg.kid[0] : reg.kid;
+      const sessionData = Array.isArray(reg.session) ? reg.session[0] : reg.session;
+      const stageData = Array.isArray(sessionData.stage) ? sessionData.stage[0] : sessionData.stage;
+      const centerData = Array.isArray(sessionData.center) ? sessionData.center[0] : sessionData.center;
       
-      page.drawText(`${reg.session.stage.title}`, {
+      const startDate = new Date(sessionData.start_date).toLocaleDateString('fr-BE');
+      const endDate = new Date(sessionData.end_date).toLocaleDateString('fr-BE');
+      
+      page.drawText(`${stageData.title}`, {
         x: col1,
         y: currentY,
         size: 10,
         font: helveticaFont,
       });
       
-      page.drawText(`${reg.kid.prenom} ${reg.kid.nom}`, {
+      page.drawText(`${kidData.prenom} ${kidData.nom}`, {
         x: col2,
         y: currentY,
         size: 10,
@@ -386,7 +399,7 @@ Deno.serve(async (req) => {
         color: rgb(0.5, 0.5, 0.5),
       });
       
-      page.drawText(`Centre: ${reg.session.center.name}`, {
+      page.drawText(`Centre: ${centerData.name}`, {
         x: col2,
         y: currentY,
         size: 8,
