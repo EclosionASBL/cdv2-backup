@@ -115,9 +115,14 @@ const CheckoutPage = () => {
         throw new Error(data.error || 'Une erreur est survenue lors de la création de la facture.');
       }
 
-      // Navigate to the invoice confirmation page without clearing the cart
-      // The cart will be cleared in the InvoiceConfirmationPage component
-      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(data.invoiceUrl || '')}`);
+      // Clear cart and redirect
+      clearCart();
+      
+      // Include registrationIds in the URL if available
+      const registrationIdsParam = data.registrationIds ? 
+        `&registrationIds=${encodeURIComponent(JSON.stringify(data.registrationIds))}` : '';
+        
+      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(data.invoiceUrl || '')}${registrationIdsParam}`);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la facture.');
@@ -354,11 +359,6 @@ const CheckoutPage = () => {
                           Tarif réduit
                         </span>
                       )}
-                      {item.price_type.includes('local') && (
-                        <span className="inline-block text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                          Tarif local
-                        </span>
-                      )}
                     </div>
                     <span className="font-medium">{item.price} €</span>
                   </div>
@@ -372,41 +372,16 @@ const CheckoutPage = () => {
                 </div>
               </div>
               
-              {error && (
-                <div className="bg-red-50 p-3 rounded-lg mb-4">
-                  <div className="flex items-start">
-                    <AlertCircle size={20} className="text-red-600 mr-2 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-700">{error}</p>
-                  </div>
-                </div>
-              )}
-              
               <div className="bg-primary-50 p-3 rounded-lg mb-4">
                 <div className="flex items-start">
                   <AlertCircle size={20} className="text-primary-600 mr-2 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-primary-700">
-                    Vous pourrez choisir entre un paiement immédiat ou différé à l'étape suivante.
+                    {isReducedPrice 
+                      ? "Vous bénéficiez du tarif réduit sur présentation de justificatifs."
+                      : "Vous pouvez bénéficier d'un tarif réduit si vos revenus sont inférieurs au seuil requis."}
                   </p>
                 </div>
               </div>
-              
-              <button
-                onClick={handleCheckout}
-                disabled={isLoading}
-                className="btn-primary w-full py-3 flex items-center justify-center"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin mr-2" />
-                    Chargement...
-                  </>
-                ) : (
-                  <>
-                    Procéder au paiement
-                    <ChevronRight size={18} className="ml-1" />
-                  </>
-                )}
-              </button>
             </div>
           </div>
         </div>
