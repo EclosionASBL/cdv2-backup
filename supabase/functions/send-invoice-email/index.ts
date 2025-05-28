@@ -73,6 +73,9 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log('Environment variables validated');
+    console.log('Initializing Resend with API key length:', resendApiKey.length);
+    
     const resend = new Resend(resendApiKey);
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -86,6 +89,7 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoice_number, api_key: apiKey }),
       });
+      console.log('PDF generation response status:', pdfRes.status);
     } catch (fetchError) {
       console.error('Network error calling generate-invoice-pdf:', fetchError);
       throw new Error(`Failed to connect to PDF generation service: ${fetchError.message}`);
@@ -94,6 +98,7 @@ Deno.serve(async (req) => {
     let pdfData;
     try {
       pdfData = await pdfRes.json();
+      console.log('PDF response data:', JSON.stringify(pdfData));
     } catch (jsonError) {
       console.error('Error parsing PDF response JSON:', jsonError);
       throw new Error('Invalid response from PDF generation service');
@@ -121,15 +126,19 @@ Deno.serve(async (req) => {
         
       if (updateError) {
         console.error('Error updating invoice with PDF URL:', updateError);
+      } else {
+        console.log('Invoice updated with PDF URL');
       }
     } catch (dbError) {
       console.error('Database error updating invoice:', dbError);
     }
 
     console.log('Sending email to:', parent_email);
+    console.log('Email will include PDF URL:', pdfUrl);
     
     // Send email with PDF link
     try {
+      console.log('Preparing to send email with Resend');
       const emailResult = await resend.emails.send({
         from: 'no-reply@eclosion.be',
         to: parent_email,
@@ -143,10 +152,24 @@ Deno.serve(async (req) => {
         ],
       });
       
-      console.log('Email sent successfully:', emailResult);
+      console.log('Email sent successfully:', JSON.stringify(emailResult));
     } catch (emailError: any) {
       console.error('Error sending email with Resend:', emailError);
       console.error('Error details:', JSON.stringify(emailError));
+      
+      // Log additional details about the error
+      if (emailError.response) {
+        console.error('Error response:', JSON.stringify(emailError.response));
+      }
+      
+      if (emailError.message) {
+        console.error('Error message:', emailError.message);
+      }
+      
+      if (emailError.code) {
+        console.error('Error code:', emailError.code);
+      }
+      
       throw new Error(`Failed to send email: ${emailError.message || 'Unknown email error'}`);
     }
 
