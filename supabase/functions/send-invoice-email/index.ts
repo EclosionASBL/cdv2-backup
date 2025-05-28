@@ -89,7 +89,26 @@ Deno.serve(async (req) => {
     const resend = new Resend(resendApiKey);
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Generating PDF for invoice:', invoice_number);
+    // First verify the invoice exists
+    console.log('Verifying invoice exists:', invoice_number);
+    const { data: invoiceData, error: invoiceError } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('invoice_number', invoice_number)
+      .single();
+
+    if (invoiceError || !invoiceData) {
+      console.error("Error fetching invoice:", invoiceError);
+      return new Response(
+        JSON.stringify({ error: "Invoice not found" }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    console.log('Invoice found, generating PDF for invoice:', invoice_number);
     
     // Generate PDF
     let pdfRes;
@@ -100,7 +119,10 @@ Deno.serve(async (req) => {
           'Content-Type': 'application/json',
           'Authorization': authHeader // Pass along the original authorization header
         },
-        body: JSON.stringify({ invoice_number, api_key: apiKey }),
+        body: JSON.stringify({ 
+          invoice_number, 
+          api_key: apiKey 
+        }),
       });
       console.log('PDF generation response status:', pdfRes.status);
     } catch (fetchError) {

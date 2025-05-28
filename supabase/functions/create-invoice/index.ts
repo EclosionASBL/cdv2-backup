@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // Pass the authorization token
+          'Authorization': authHeader // Pass the authorization token
         },
         body: JSON.stringify({
           invoice_number: invoice.invoice_number,

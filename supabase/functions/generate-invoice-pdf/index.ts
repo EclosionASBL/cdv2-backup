@@ -50,10 +50,10 @@ Deno.serve(async (req) => {
     const { invoice_number, api_key } = requestData;
 
     // Validate required parameters
-    if (!invoice_number || !api_key) {
-      console.error('Missing required parameters:', { hasInvoiceNumber: !!invoice_number, hasApiKey: !!api_key });
+    if (!invoice_number) {
+      console.error('Missing required parameter: invoice_number');
       return new Response(
-        JSON.stringify({ error: "Missing required parameters" }),
+        JSON.stringify({ error: "Missing required parameter: invoice_number" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -61,9 +61,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate API key
+    // Validate API key if provided
     const expectedApiKey = Deno.env.get("UPDATE_INVOICE_API_KEY");
-    if (!expectedApiKey || api_key !== expectedApiKey) {
+    if (api_key && expectedApiKey && api_key !== expectedApiKey) {
       console.error('Invalid API key');
       return new Response(
         JSON.stringify({ error: "Invalid API key" }),
@@ -99,8 +99,19 @@ Deno.serve(async (req) => {
       .eq('invoice_number', invoice_number)
       .single();
 
-    if (invoiceError || !invoice) {
+    if (invoiceError) {
       console.error("Error fetching invoice:", invoiceError);
+      return new Response(
+        JSON.stringify({ error: "Error fetching invoice: " + invoiceError.message }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!invoice) {
+      console.error("Invoice not found:", invoice_number);
       return new Response(
         JSON.stringify({ error: "Invoice not found" }),
         {
@@ -139,7 +150,7 @@ Deno.serve(async (req) => {
     if (registrationsError) {
       console.error("Error fetching registrations:", registrationsError);
       return new Response(
-        JSON.stringify({ error: "Failed to fetch registration details" }),
+        JSON.stringify({ error: "Failed to fetch registration details: " + registrationsError.message }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -505,7 +516,7 @@ Deno.serve(async (req) => {
     if (uploadError) {
       console.error("Error uploading PDF:", uploadError);
       return new Response(
-        JSON.stringify({ error: "Failed to upload PDF" }),
+        JSON.stringify({ error: "Failed to upload PDF: " + uploadError.message }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
