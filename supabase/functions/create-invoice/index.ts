@@ -212,7 +212,8 @@ Deno.serve(async (req) => {
         url: '/invoice-confirmation',
         paymentType: 'invoice',
         invoiceUrl: pdfUrl,
-        invoiceNumber: invoice.invoice_number
+        invoiceNumber: invoice.invoice_number,
+        registrationIds: registrationIds
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

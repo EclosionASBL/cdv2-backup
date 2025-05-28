@@ -117,7 +117,12 @@ const CheckoutPage = () => {
 
       // Clear cart and redirect
       clearCart();
-      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(data.invoiceUrl || '')}`);
+      
+      // Include registrationIds in the URL if available
+      const registrationIdsParam = data.registrationIds ? 
+        `&registrationIds=${encodeURIComponent(JSON.stringify(data.registrationIds))}` : '';
+        
+      navigate(`/invoice-confirmation?invoice=${encodeURIComponent(data.invoiceUrl || '')}${registrationIdsParam}`);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       setError(error.message || 'Une erreur est survenue lors de la création de la facture.');

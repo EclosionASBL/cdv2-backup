@@ -12,6 +12,7 @@ const InvoiceConfirmationPage = () => {
   const [error, setError] = useState<string | null>(null);
   
   const invoiceUrl = searchParams.get('invoice');
+  const registrationIdsParam = searchParams.get('registrationIds');
   
   useEffect(() => {
     // Clear the cart on successful payment
@@ -22,7 +23,7 @@ const InvoiceConfirmationPage = () => {
       try {
         setIsLoading(true);
         
-        const { data, error } = await supabase
+        let query = supabase
           .from('registrations')
           .select(`
             id,
@@ -47,8 +48,24 @@ const InvoiceConfirmationPage = () => {
             )
           `)
           .eq('payment_status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(5);
+          .order('created_at', { ascending: false });
+        
+        // If we have specific registration IDs, use them
+        if (registrationIdsParam) {
+          try {
+            const registrationIds = JSON.parse(registrationIdsParam);
+            if (Array.isArray(registrationIds) && registrationIds.length > 0) {
+              query = query.in('id', registrationIds);
+            }
+          } catch (parseError) {
+            console.error('Error parsing registration IDs:', parseError);
+          }
+        } else {
+          // If no specific IDs, limit to recent ones
+          query = query.limit(5);
+        }
+        
+        const { data, error } = await query;
         
         if (error) throw error;
         
@@ -62,7 +79,7 @@ const InvoiceConfirmationPage = () => {
     };
     
     fetchRegistrations();
-  }, [clearCart]);
+  }, [clearCart, registrationIdsParam]);
   
   return (
     <div className="container max-w-3xl mx-auto py-12 px-4 animate-fade-in">
