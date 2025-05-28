@@ -78,8 +78,11 @@ Deno.serve(async (req) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 20);
 
-    // Fixed amount of 95 euros
-    const totalAmount = 95;
+    // Calculate total amount based on cart items (prices are sent in cents)
+    const totalAmount = items.reduce(
+      (sum: number, item: CartItem) => sum + item.price / 100,
+      0
+    );
 
     // Array to collect registration IDs
     const registrationIds: string[] = [];
@@ -87,7 +90,7 @@ Deno.serve(async (req) => {
     // Create registrations with pending status
     for (const item of items) {
       // Convert price to proper format (should be in euros, not cents)
-      const priceInEuros = 95;
+      const priceInEuros = item.price / 100;
       
       const { data, error: regError } = await supabase
         .from('registrations')
