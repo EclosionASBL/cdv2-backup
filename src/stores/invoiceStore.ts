@@ -13,6 +13,29 @@ export interface Invoice {
   pdf_url: string | null;
   communication: string;
   registration_ids: string[];
+  registrations?: Registration[];
+}
+
+interface Registration {
+  id: string;
+  kid_id: string;
+  activity_id: string;
+  amount_paid: number;
+  price_type: string;
+  kid: {
+    prenom: string;
+    nom: string;
+  };
+  session: {
+    stage: {
+      title: string;
+    };
+    start_date: string;
+    end_date: string;
+    center: {
+      name: string;
+    };
+  };
 }
 
 interface InvoiceState {
@@ -31,36 +54,63 @@ export const useInvoiceStore = create<InvoiceState>((set) => ({
   fetchInvoices: async () => {
     set({ isLoading: true, error: null });
     try {
-      const { data, error } = await supabase
+      // First, fetch all invoices
+      const { data: invoices, error: invoicesError } = await supabase
         .from('invoices')
-        .select(`
-          *,
-          registrations:registration_ids(
-            id,
-            kid_id,
-            activity_id,
-            amount_paid,
-            price_type,
-            kid:kids(
-              prenom,
-              nom
-            ),
-            session:activity_id(
-              stage:stage_id(
-                title
-              ),
-              start_date,
-              end_date,
-              center:center_id(
-                name
-              )
-            )
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      set({ invoices: data || [] });
+      if (invoicesError) throw invoicesError;
+      if (!invoices) {
+        set({ invoices: [] });
+        return;
+      }
+
+      // For each invoice, fetch its registrations if it has any
+      const invoicesWithRegistrations = await Promise.all(
+        invoices.map(async (invoice) => {
+          if (!invoice.registration_ids?.length) {
+            return { ...invoice, registrations: [] };
+          }
+
+          const { data: registrations, error: registrationsError } = await supabase
+            .from('registrations')
+            .select(`
+              id,
+              kid_id,
+              activity_id,
+              amount_paid,
+              price_type,
+              kid:kids(
+                prenom,
+                nom
+              ),
+              session:activity_id(
+                stage:stage_id(
+                  title
+                ),
+                start_date,
+                end_date,
+                center:center_id(
+                  name
+                )
+              )
+            `)
+            .in('id', invoice.registration_ids);
+
+          if (registrationsError) {
+            console.error('Error fetching registrations:', registrationsError);
+            return { ...invoice, registrations: [] };
+          }
+
+          return {
+            ...invoice,
+            registrations: registrations || []
+          };
+        })
+      );
+
+      set({ invoices: invoicesWithRegistrations });
     } catch (error: any) {
       console.error('Error fetching invoices:', error);
       set({ error: error.message });
