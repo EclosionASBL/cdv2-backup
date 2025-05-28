@@ -77,12 +77,16 @@ Deno.serve(async (req) => {
 
     if (!resendApiKey) {
       console.error('Missing RESEND_API_KEY environment variable');
-      // Instead of failing, we'll continue without sending an email
-      console.log('Will generate PDF but skip email sending due to missing API key');
+      return new Response(
+        JSON.stringify({ error: 'Email service not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     console.log('Environment variables validated');
+    console.log('Initializing Resend with API key length:', resendApiKey.length);
     
+    const resend = new Resend(resendApiKey);
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // First verify the invoice exists
@@ -164,81 +168,58 @@ Deno.serve(async (req) => {
       console.error('Database error updating invoice:', dbError);
     }
 
-    // Only attempt to send email if we have a Resend API key
-    if (resendApiKey) {
-      console.log('Sending email to:', parent_email);
-      console.log('Email will include PDF URL:', pdfUrl);
+    console.log('Sending email to:', parent_email);
+    console.log('Email will include PDF URL:', pdfUrl);
+    
+    // Send email with PDF link
+    try {
+      console.log('Preparing to send email with Resend');
+      const emailResult = await resend.emails.send({
+        from: 'no-reply@eclosion.be',
+        to: parent_email,
+        subject: 'Votre facture',
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #4f46e5;">Votre facture est prête</h1>
+            
+            <p>Bonjour,</p>
+            
+            <p>Veuillez trouver votre facture en pièce jointe. Vous pouvez également la télécharger en cliquant sur le lien ci-dessous :</p>
+            
+            <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
+            
+            <p>Merci de votre confiance !</p>
+            
+            <p>L'équipe Éclosion</p>
+          </div>
+        `,
+        attachments: [
+          {
+            filename: `${invoice_number}.pdf`,
+            path: pdfUrl,
+          },
+        ],
+      });
       
-      try {
-        console.log('Initializing Resend with API key length:', resendApiKey.length);
-        const resend = new Resend(resendApiKey);
-        
-        console.log('Preparing to send email with Resend');
-        const emailResult = await resend.emails.send({
-          from: 'no-reply@eclosion.be',
-          to: parent_email,
-          subject: 'Votre facture',
-          html: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h1 style="color: #4f46e5;">Votre facture est prête</h1>
-              
-              <p>Bonjour,</p>
-              
-              <p>Veuillez trouver votre facture en pièce jointe. Vous pouvez également la télécharger en cliquant sur le lien ci-dessous :</p>
-              
-              <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
-              
-              <p>Merci de votre confiance !</p>
-              
-              <p>L'équipe Éclosion</p>
-            </div>
-          `,
-          attachments: [
-            {
-              filename: `${invoice_number}.pdf`,
-              path: pdfUrl,
-            },
-          ],
-        });
-        
-        console.log('Email sent successfully:', JSON.stringify(emailResult));
-      } catch (emailError: any) {
-        console.error('Error sending email with Resend:', emailError);
-        console.error('Error details:', JSON.stringify(emailError));
-        
-        // Log additional details about the error
-        if (emailError.response) {
-          console.error('Error response:', JSON.stringify(emailError.response));
-        }
-        
-        if (emailError.message) {
-          console.error('Error message:', emailError.message);
-        }
-        
-        if (emailError.code) {
-          console.error('Error code:', emailError.code);
-        }
-        
-        // Continue with success response but include warning about email
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            pdf_url: pdfUrl,
-            warning: "PDF was generated but email could not be sent. Please check your Resend API key."
-          }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
+      console.log('Email sent successfully:', JSON.stringify(emailResult));
+    } catch (emailError: any) {
+      console.error('Error sending email with Resend:', emailError);
+      console.error('Error details:', JSON.stringify(emailError));
+      
+      // Log additional details about the error
+      if (emailError.response) {
+        console.error('Error response:', JSON.stringify(emailError.response));
       }
-    } else {
-      // No Resend API key, return success with PDF but warning about email
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          pdf_url: pdfUrl,
-          warning: "PDF was generated but email was not sent due to missing Resend API key."
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      
+      if (emailError.message) {
+        console.error('Error message:', emailError.message);
+      }
+      
+      if (emailError.code) {
+        console.error('Error code:', emailError.code);
+      }
+      
+      throw new Error(`Failed to send email: ${emailError.message || 'Unknown email error'}`);
     }
 
     return new Response(
