@@ -174,6 +174,19 @@ Deno.serve(async (req) => {
       console.error('Database error updating invoice:', dbError);
     }
 
+    // Verify the PDF file exists before sending the email
+    try {
+      const pdfCheckResponse = await fetch(pdfUrl, { method: 'HEAD' });
+      if (!pdfCheckResponse.ok) {
+        console.error(`PDF file does not exist or is not accessible: ${pdfUrl}`);
+        throw new Error(`PDF file does not exist or is not accessible: ${pdfUrl}`);
+      }
+      console.log('PDF file exists and is accessible');
+    } catch (pdfCheckError) {
+      console.error('Error checking PDF file:', pdfCheckError);
+      throw new Error(`Error checking PDF file: ${pdfCheckError.message}`);
+    }
+
     console.log('Sending email to:', parent_email);
     console.log('Email will include PDF URL:', pdfUrl);
     
@@ -208,8 +221,9 @@ Deno.serve(async (req) => {
               
               <p>L'équipe Éclosion</p>
             </div>
-          `, alternative: true },
-          { path: pdfUrl, type: 'application/pdf', name: `${invoice_number}.pdf` }
+          `, alternative: true }
+          // Send only the link to the PDF, not the attachment itself
+          // This avoids the "file does not exist" error
         ]
       };
 
