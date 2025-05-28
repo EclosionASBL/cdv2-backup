@@ -115,8 +115,8 @@ const CheckoutPage = () => {
         throw new Error(data.error || 'Une erreur est survenue lors de la création de la facture.');
       }
 
-      // Clear cart and redirect
-      clearCart();
+      // Note: We're removing the clearCart() call here
+      // The cart will be cleared in the InvoiceConfirmationPage component
       
       // Include registrationIds in the URL if available
       const registrationIdsParam = data.registrationIds ? 
