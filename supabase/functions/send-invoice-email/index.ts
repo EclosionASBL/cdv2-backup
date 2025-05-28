@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
-import { Resend } from 'npm:resend@2.1.0';
+import { SMTPClient } from 'npm:emailjs@3.2.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -60,14 +60,19 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const apiKey = Deno.env.get('UPDATE_INVOICE_API_KEY');
-    const resendApiKey = Deno.env.get('RESEND_API_KEY');
+    
+    // SMTP configuration
+    const smtpUser = Deno.env.get('SMTP_USER');
+    const smtpPassword = Deno.env.get('SMTP_PASSWORD');
+    const smtpHost = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
+    const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '465');
+    const smtpSender = Deno.env.get('SMTP_SENDER') || 'stage-notif@eclosion.be';
 
     if (!supabaseUrl || !supabaseKey || !apiKey) {
       console.error('Missing environment variables:', { 
         hasSupabaseUrl: !!supabaseUrl, 
         hasSupabaseKey: !!supabaseKey, 
-        hasApiKey: !!apiKey,
-        hasResendApiKey: !!resendApiKey
+        hasApiKey: !!apiKey
       });
       return new Response(
         JSON.stringify({ error: 'Server configuration error' }),
@@ -75,8 +80,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!resendApiKey) {
-      console.error('Missing RESEND_API_KEY environment variable');
+    if (!smtpUser || !smtpPassword) {
+      console.error('Missing SMTP configuration');
       return new Response(
         JSON.stringify({ error: 'Email service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -84,9 +89,7 @@ Deno.serve(async (req) => {
     }
 
     console.log('Environment variables validated');
-    console.log('Initializing Resend with API key length:', resendApiKey.length);
     
-    const resend = new Resend(resendApiKey);
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // First verify the invoice exists
@@ -171,53 +174,47 @@ Deno.serve(async (req) => {
     console.log('Sending email to:', parent_email);
     console.log('Email will include PDF URL:', pdfUrl);
     
-    // Send email with PDF link
+    // Send email with SMTP
     try {
-      console.log('Preparing to send email with Resend');
-      const emailResult = await resend.emails.send({
-        from: 'no-reply@eclosion.be',
+      console.log('Preparing to send email with SMTP');
+      
+      const client = new SMTPClient({
+        user: smtpUser,
+        password: smtpPassword,
+        host: smtpHost,
+        port: smtpPort,
+        ssl: true,
+      });
+
+      const message = {
+        from: smtpSender,
         to: parent_email,
         subject: 'Votre facture',
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #4f46e5;">Votre facture est prête</h1>
-            
-            <p>Bonjour,</p>
-            
-            <p>Veuillez trouver votre facture en pièce jointe. Vous pouvez également la télécharger en cliquant sur le lien ci-dessous :</p>
-            
-            <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
-            
-            <p>Merci de votre confiance !</p>
-            
-            <p>L'équipe Éclosion</p>
-          </div>
-        `,
-        attachments: [
-          {
-            filename: `${invoice_number}.pdf`,
-            path: pdfUrl,
-          },
-        ],
-      });
-      
-      console.log('Email sent successfully:', JSON.stringify(emailResult));
+        attachment: [
+          { data: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+              <h1 style="color: #4f46e5;">Votre facture est prête</h1>
+              
+              <p>Bonjour,</p>
+              
+              <p>Veuillez trouver votre facture en pièce jointe. Vous pouvez également la télécharger en cliquant sur le lien ci-dessous :</p>
+              
+              <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
+              
+              <p>Merci de votre confiance !</p>
+              
+              <p>L'équipe Éclosion</p>
+            </div>
+          `, alternative: true },
+          { path: pdfUrl, type: 'application/pdf', name: `${invoice_number}.pdf` }
+        ]
+      };
+
+      await client.sendAsync(message);
+      console.log('Email sent successfully via SMTP');
     } catch (emailError: any) {
-      console.error('Error sending email with Resend:', emailError);
+      console.error('Error sending email with SMTP:', emailError);
       console.error('Error details:', JSON.stringify(emailError));
-      
-      // Log additional details about the error
-      if (emailError.response) {
-        console.error('Error response:', JSON.stringify(emailError.response));
-      }
-      
-      if (emailError.message) {
-        console.error('Error message:', emailError.message);
-      }
-      
-      if (emailError.code) {
-        console.error('Error code:', emailError.code);
-      }
       
       throw new Error(`Failed to send email: ${emailError.message || 'Unknown email error'}`);
     }
