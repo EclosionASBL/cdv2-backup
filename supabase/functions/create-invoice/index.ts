@@ -154,11 +154,33 @@ Deno.serve(async (req) => {
       // Continue anyway, as this is not critical
     }
     
+    // Generate PDF and send it by email
+    let pdfUrl: string | null = null;
+    try {
+      const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-invoice-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoice_number: invoice.invoice_number,
+          parent_email: user.email
+        })
+      });
+
+      const emailData = await emailRes.json();
+      if (emailRes.ok) {
+        pdfUrl = emailData.pdf_url as string;
+      } else {
+        console.error('Erreur lors de l\'envoi de la facture:', emailData.error);
+      }
+    } catch (err) {
+      console.error('Erreur lors de l\'appel à send-invoice-email:', err);
+    }
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         url: '/invoice-confirmation',
         paymentType: 'invoice',
-        invoiceUrl: null, // Will be implemented later
+        invoiceUrl: pdfUrl,
         invoiceNumber: invoice.invoice_number
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
