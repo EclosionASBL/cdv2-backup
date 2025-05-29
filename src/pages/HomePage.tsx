@@ -216,7 +216,7 @@ const HomePage = () => {
                 </svg>
               </div>
               <p className="text-gray-600 mb-4">
-                "Nous tenions à vous remercier pour la qualité de l’accueil et des activités et pour la gentillesse et le professionnalisme des animateurs. Faustine et Baptiste ont passé de supers moments et c’est avec plaisir que nous les inscrirons de nouveau. Merci encore!
+                "Nous tenions à vous remercier pour la qualité de l'accueil et des activités et pour la gentillesse et le professionnalisme des animateurs. Faustine et Baptiste ont passé de supers moments et c'est avec plaisir que nous les inscrirons de nouveau. Merci encore!
               </p>
               <div className="flex items-center">
                 <div className="flex-shrink-0">
@@ -294,7 +294,7 @@ const HomePage = () => {
                 </div>
                 <div className="ml-3">
                   <p className="text-sm font-medium text-gray-900">Amal</p>
-                  <p className="text-sm text-gray-500">Maman à Ixelles/p>
+                  <p className="text-sm text-gray-500">Maman à Ixelles</p>
                 </div>
               </div>
             </div>
