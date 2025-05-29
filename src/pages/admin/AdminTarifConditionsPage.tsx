@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useTarifConditionStore } from '../../stores/tarifConditionStore';
 import { useSchoolStore } from '../../stores/schoolStore';
 import { Plus, Pencil, Trash2, AlertTriangle, Loader2, X } from 'lucide-react';
