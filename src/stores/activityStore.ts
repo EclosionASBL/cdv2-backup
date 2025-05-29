@@ -58,6 +58,7 @@ interface ActivityState {
   fetchActivity: (id: string) => Promise<void>;
   setFilters: (filters: ActivityFilters) => void;
   clearFilters: () => void;
+  clearKidFilter: () => void; // New function to clear kid_id filter
   fetchCenters: () => Promise<void>;
   fetchPeriodes: () => Promise<void>;
   getPrice: (activity: Activity, kid_postal: string | null, kid_school: string | null) => Promise<{
@@ -238,6 +239,15 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
   clearFilters: () => {
     set({ filters: {} });
     get().fetchActivities({});
+  },
+  
+  clearKidFilter: () => {
+    set(state => ({ 
+      filters: { 
+        ...state.filters, 
+        kid_id: undefined 
+      } 
+    }));
   },
   
   fetchCenters: async () => {
