@@ -30,7 +30,7 @@ const SessionFilters = ({
   return (
     <div className="bg-white rounded-xl shadow-md p-6 mb-6">
       <h2 className="text-lg font-semibold mb-4">Filtres</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
           <label className="form-label">Centre</label>
           <select
