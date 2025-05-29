@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { supabase } from '../../lib/supabase';
-import { Loader2, AlertCircle, CreditCard, Lock, FileText, CheckCircle, Info } from 'lucide-react';
+import { Loader2, AlertCircle, FileText, Info } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import { PayLaterConfirmModal } from '../../components/checkout/PayLaterConfirmModal';
 
@@ -61,7 +61,16 @@ const CheckoutPage = () => {
     setIsReducedPriceModalOpen(false);
   };
 
-  const handlePayLater = () => {
+  const handleValidateInscriptions = () => {
+    // Check if user profile is complete
+    if (!profile || !profile.prenom || !profile.nom || !profile.adresse || !profile.cpostal || !profile.localite || !profile.telephone) {
+      setError('Veuillez compléter votre profil avant de continuer. Des informations sont manquantes.');
+      setTimeout(() => {
+        navigate('/profile');
+      }, 3000);
+      return;
+    }
+    
     setIsPayLaterModalOpen(true);
   };
   
@@ -132,81 +141,6 @@ const CheckoutPage = () => {
     }
   };
   
-  const handleCheckout = async () => {
-    if (!user) {
-      setError('Vous devez être connecté pour effectuer un paiement.');
-      return;
-    }
-
-    if (items.length === 0) {
-      setError('Votre panier est vide.');
-      return;
-    }
-
-    // Validate prices
-    const invalidItems = items.filter(item => !item.price || item.price <= 0);
-    if (invalidItems.length > 0) {
-      setError('Certains articles ont un prix invalide.');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        throw new Error('Erreur lors de la récupération de la session: ' + sessionError.message);
-      }
-      
-      if (!session?.access_token) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
-      
-      // Call our Supabase Edge Function to create a Stripe checkout session
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            items: items.map(item => ({
-              ...item,
-              price: item.price * 100 // Convert to cents for Stripe
-            })),
-            payLater: false,
-            successUrl: `${window.location.origin}/order-confirmation?method=immediate`,
-            cancelUrl: `${window.location.origin}/cart`,
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Une erreur est survenue lors de la création de la session de paiement.');
-      }
-      
-      const { url } = await response.json();
-      
-      if (!url) {
-        throw new Error('Aucune URL de paiement n\'a été reçue.');
-      }
-
-      // Redirect to Stripe Checkout
-      window.location.href = url;
-    } catch (error: any) {
-      console.error('Error creating checkout session:', error);
-      setError(error.message || 'Une erreur est survenue lors de la création de la session de paiement.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
   return (
     <div className="container max-w-5xl mx-auto py-12 px-4 animate-fade-in">
       <h1 className="text-3xl font-bold mb-8">Finaliser la commande</h1>
@@ -274,7 +208,7 @@ const CheckoutPage = () => {
                 {isReducedPrice && reducedPriceConfirmed && (
                   <div className="bg-green-50 p-3 rounded-lg">
                     <div className="flex items-start">
-                      <CheckCircle size={20} className="text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                      <Info className="text-green-600 mr-2 flex-shrink-0 mt-0.5" />
                       <p className="text-sm text-green-700">
                         Vous avez déclaré sur l'honneur que vos revenus sont inférieurs au seuil requis pour bénéficier du tarif réduit.
                       </p>
@@ -285,7 +219,7 @@ const CheckoutPage = () => {
               
               <div className="space-y-4">
                 <button
-                  onClick={handleCheckout}
+                  onClick={handleValidateInscriptions}
                   disabled={isLoading}
                   className="w-full btn-primary py-3 flex items-center justify-center"
                 >
@@ -296,36 +230,11 @@ const CheckoutPage = () => {
                     </span>
                   ) : (
                     <span className="flex items-center">
-                      <CreditCard className="h-5 w-5 mr-2" />
-                      Payer maintenant
-                    </span>
-                  )}
-                </button>
-                
-                <button
-                  onClick={handlePayLater}
-                  disabled={isLoading}
-                  className="w-full btn-outline py-3 flex items-center justify-center"
-                >
-                  {isLoading ? (
-                    <span className="flex items-center">
-                      <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                      Traitement en cours...
-                    </span>
-                  ) : (
-                    <span className="flex items-center">
                       <FileText className="h-5 w-5 mr-2" />
-                      Payer plus tard (facture)
+                      Valider les inscriptions
                     </span>
                   )}
                 </button>
-              </div>
-              
-              <div className="mt-4 text-sm text-gray-600">
-                <p className="flex items-center">
-                  <Lock className="h-4 w-4 mr-1 text-gray-500" />
-                  Paiement sécurisé par Stripe
-                </p>
               </div>
               
               {error && (

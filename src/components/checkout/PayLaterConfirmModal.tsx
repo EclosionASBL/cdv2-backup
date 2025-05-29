@@ -1,5 +1,5 @@
 import { Dialog } from '@headlessui/react';
-import { AlertCircle } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useState } from 'react';
 
 interface PayLaterConfirmModalProps {
@@ -24,11 +24,11 @@ export const PayLaterConfirmModal = ({ isOpen, onClose, onConfirm }: PayLaterCon
         <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
           <div className="flex items-start mb-4">
             <div className="flex-shrink-0">
-              <AlertCircle className="h-6 w-6 text-primary-600" />
+              <Info className="h-6 w-6 text-primary-600" />
             </div>
             <div className="ml-3">
               <Dialog.Title className="text-lg font-semibold text-gray-900">
-                Paiement par facture
+                Confirmation d'inscription
               </Dialog.Title>
             </div>
           </div>
