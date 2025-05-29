@@ -72,6 +72,9 @@ const SessionTable = ({
             {sessions.map((session) => {
               const stage = stages.find(s => s.id === session.stage_id);
               const center = centers.find(c => c.id === session.center_id);
+              const registrationCount = session.registration_count || 0;
+              const remainingPlaces = session.capacity - registrationCount;
+              const isFull = remainingPlaces <= 0;
               
               return (
                 <tr key={session.id} className="hover:bg-gray-50">
@@ -107,9 +110,19 @@ const SessionTable = ({
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                    {/* TODO: Replace with actual number of registrations */}
-                    0
+                  <td className="px-4 py-3 whitespace-nowrap text-sm">
+                    <span className={clsx(
+                      "font-medium",
+                      isFull ? "text-red-600" : "text-gray-700"
+                    )}>
+                      {registrationCount}
+                    </span>
+                    <span className="text-gray-500">/{session.capacity}</span>
+                    {isFull && (
+                      <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        Complet
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
                     {waitingListCounts[session.id] ? (

@@ -41,6 +41,7 @@ interface Session {
   remarques?: string;
   tarif_condition_id?: string;
   visible_from?: string;
+  registration_count?: number;
 }
 
 interface AdminState {
@@ -133,7 +134,36 @@ export const useAdminStore = create<AdminState>((set, get) => ({
         .order('start_date');
 
       if (error) throw error;
-      set({ sessions: data || [] });
+      
+      // Fetch registration counts for all sessions
+      const sessionIds = data?.map(s => s.id) || [];
+      let registrationCountMap: Record<string, number> = {};
+      
+      if (sessionIds.length > 0) {
+        const { data: registrations, error: regError } = await supabase
+          .from('registrations')
+          .select('activity_id')
+          .in('activity_id', sessionIds)
+          .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
+          
+        if (regError) throw regError;
+        
+        // Count registrations for each activity
+        if (registrations) {
+          sessionIds.forEach(sessionId => {
+            const count = registrations.filter(reg => reg.activity_id === sessionId).length;
+            registrationCountMap[sessionId] = count;
+          });
+        }
+      }
+      
+      // Add registration count to each session
+      const sessionsWithCounts = data?.map(session => ({
+        ...session,
+        registration_count: registrationCountMap[session.id] || 0
+      })) || [];
+      
+      set({ sessions: sessionsWithCounts });
     } catch (error: any) {
       set({ error: error.message });
     } finally {
