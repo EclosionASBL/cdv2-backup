@@ -149,8 +149,8 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
         const { data: regCounts, error: regError } = await supabase
           .from('registrations')
           .select('*', { count: 'exact' })
-          .eq('payment_status', 'paid')
-          .in('activity_id', sessionIds);
+          .in('activity_id', sessionIds)
+          .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
           
         if (regError) throw regError;
         
@@ -214,7 +214,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
         .from('registrations')
         .select('*', { count: 'exact' })
         .eq('activity_id', id)
-        .eq('payment_status', 'paid');
+        .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
 
       if (regCountError) throw regCountError;
 
