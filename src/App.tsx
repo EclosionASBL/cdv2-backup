@@ -45,6 +45,7 @@ import AdminParascolaireSessionsPage from './pages/admin/AdminParascolaireSessio
 import AdminTarifConditionsPage from './pages/admin/AdminTarifConditionsPage';
 import AdminSchoolsPage from './pages/admin/AdminSchoolsPage';
 import AdminWaitingListPage from './pages/admin/AdminWaitingListPage';
+import AdminInclusionRequestsPage from './pages/admin/AdminInclusionRequestsPage';
 
 // Components
 import LoadingScreen from './components/common/LoadingScreen';
@@ -144,6 +145,7 @@ function App() {
           <Route path="/admin/tarifs" element={<AdminTarifConditionsPage />} />
           <Route path="/admin/ecoles" element={<AdminSchoolsPage />} />
           <Route path="/admin/waiting-list" element={<AdminWaitingListPage />} />
+          <Route path="/admin/inclusion-requests" element={<AdminInclusionRequestsPage />} />
         </Route>
       </Route>
 
