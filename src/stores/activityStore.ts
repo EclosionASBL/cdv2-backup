@@ -58,7 +58,7 @@ interface ActivityState {
   fetchActivity: (id: string) => Promise<void>;
   setFilters: (filters: ActivityFilters) => void;
   clearFilters: () => void;
-  clearKidFilter: () => void; // New function to clear kid_id filter
+  clearKidFilter: () => void;
   fetchCenters: () => Promise<void>;
   fetchPeriodes: () => Promise<void>;
   getPrice: (activity: Activity, kid_postal: string | null, kid_school: string | null) => Promise<{
@@ -146,19 +146,21 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       let registrationCountMap: Record<string, number> = {};
       
       if (sessionIds.length > 0) {
-        const { data: regCounts, error: regError } = await supabase
+        const { data: registrations, error: regError } = await supabase
           .from('registrations')
-          .select('*', { count: 'exact' })
+          .select('activity_id')
           .in('activity_id', sessionIds)
           .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
           
         if (regError) throw regError;
         
         // Count registrations for each activity
-        if (regCounts) {
-          sessionIds.forEach(sessionId => {
-            const count = regCounts.filter(reg => reg.activity_id === sessionId).length;
-            registrationCountMap[sessionId] = count;
+        if (registrations) {
+          registrations.forEach(reg => {
+            if (!registrationCountMap[reg.activity_id]) {
+              registrationCountMap[reg.activity_id] = 0;
+            }
+            registrationCountMap[reg.activity_id]++;
           });
         }
       }
@@ -210,9 +212,9 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       if (error) throw error;
 
       // Get registration count for this activity
-      const { data: regCounts, error: regCountError } = await supabase
+      const { data: registrations, error: regCountError } = await supabase
         .from('registrations')
-        .select('*', { count: 'exact' })
+        .select('activity_id')
         .eq('activity_id', id)
         .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
 
@@ -220,7 +222,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
 
       const activityWithCount = {
         ...data,
-        registration_count: regCounts?.length || 0
+        registration_count: registrations?.length || 0
       };
 
       set({ currentActivity: activityWithCount });

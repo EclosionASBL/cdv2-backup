@@ -195,7 +195,7 @@ const CartPage = () => {
                 <div className="flex items-start">
                   <AlertCircle size={20} className="text-primary-600 mr-2 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-primary-700">
-                    Vous pourrez choisir entre un paiement immédiat ou différé à l'étape suivante.
+                    Vous recevrez une facture par email et aurez 20 jours pour effectuer le paiement.
                   </p>
                 </div>
               </div>
