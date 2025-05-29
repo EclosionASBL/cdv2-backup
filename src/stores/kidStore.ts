@@ -41,6 +41,28 @@ interface KidStoreState {
   refreshPhotoUrl: (kidId: string) => Promise<void>;
 }
 
+// Helper function to create signed URL with retries
+const createSignedUrlWithRetry = async (path: string, maxRetries = 3, delay = 1000): Promise<string | null> => {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const { data: signed, error } = await supabase
+        .storage
+        .from('kid-photos')
+        .createSignedUrl(path, 3600);
+
+      if (error) throw error;
+      return signed?.signedUrl || null;
+    } catch (err) {
+      if (attempt === maxRetries - 1) {
+        console.error('Failed to create signed URL after retries:', err);
+        return null;
+      }
+      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
+    }
+  }
+  return null;
+};
+
 export const useKidStore = create<KidStoreState>((set, get) => ({
   kids: [],
   currentKid: null,
@@ -75,11 +97,8 @@ export const useKidStore = create<KidStoreState>((set, get) => ({
       const kids = await Promise.all(
         (data || []).map(async (kid) => {
           if (!kid.photo_url) return kid;
-          const { data: signed } = await supabase
-            .storage
-            .from('kid-photos')
-            .createSignedUrl(kid.photo_url, 3600); // 1h
-          return { ...kid, photo_signed_url: signed?.signedUrl };
+          const signedUrl = await createSignedUrlWithRetry(kid.photo_url);
+          return { ...kid, photo_signed_url: signedUrl };
         })
       );
 
@@ -111,11 +130,7 @@ export const useKidStore = create<KidStoreState>((set, get) => ({
 
       let photo_signed_url: string | null = null;
       if (data.photo_url) {
-        const { data: signed } = await supabase
-          .storage
-          .from('kid-photos')
-          .createSignedUrl(data.photo_url, 3600);
-        photo_signed_url = signed?.signedUrl ?? null;
+        photo_signed_url = await createSignedUrlWithRetry(data.photo_url);
       }
 
       const kid = { ...data, photo_signed_url } as KidWithDetails;
@@ -230,13 +245,8 @@ export const useKidStore = create<KidStoreState>((set, get) => ({
       
       if (uploadError) throw uploadError;
 
-      // 3. Get a fresh signed URL
-      const { data: signed } = await supabase
-        .storage
-        .from('kid-photos')
-        .createSignedUrl(path, 3600);
-      
-      const signedUrl = signed?.signedUrl || null;
+      // 3. Get a fresh signed URL with retries
+      const signedUrl = await createSignedUrlWithRetry(path);
 
       // 4. Update the store
       const list = get().kids;
@@ -263,14 +273,10 @@ export const useKidStore = create<KidStoreState>((set, get) => ({
       const kid = get().kids.find(k => k.id === kidId);
       if (!kid?.photo_url) return;
 
-      const { data: signed } = await supabase
-        .storage
-        .from('kid-photos')
-        .createSignedUrl(kid.photo_url, 3600);
+      const signedUrl = await createSignedUrlWithRetry(kid.photo_url);
+      if (!signedUrl) return;
 
-      if (!signed?.signedUrl) return;
-
-      const updatedKid = { ...kid, photo_signed_url: signed.signedUrl };
+      const updatedKid = { ...kid, photo_signed_url: signedUrl };
       const updatedKids = get().kids.map(k => k.id === kidId ? updatedKid : k);
       set({ kids: updatedKids, currentKid: updatedKid });
     } catch (err) {
