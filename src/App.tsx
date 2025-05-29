@@ -98,13 +98,13 @@ function App() {
         <Route element={<AuthLayout />}>
           <Route 
             path="/login" 
-            element={user ? <Navigate to="/dashboard\" replace /> : <LoginPage />} 
+            element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} 
           />
           <Route 
             path="/register" 
-            element={user ? <Navigate to="/dashboard\" replace /> : <RegisterPage />} 
+            element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage />} 
           />
-          <Route path="/reset-password\" element={<ResetPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         {/* Protected routes */}
