@@ -225,8 +225,8 @@ const HomePage = () => {
                   </div>
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-900">Sophie M.</p>
-                  <p className="text-sm text-gray-500">Maman de Léa, 8 ans</p>
+                  <p className="text-sm font-medium text-gray-900">M.</p>
+                  <p className="text-sm text-gray-500">Maman de Faustine et Baptiste</p>
                 </div>
               </div>
             </div>
