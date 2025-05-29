@@ -45,8 +45,13 @@ supabase.auth.onAuthStateChange((event, session) => {
   
   // Handle password recovery
   if (event === 'PASSWORD_RECOVERY') {
-    // The password recovery flow will be handled by the ResetPasswordPage component
-    // which will detect this state and show the password reset form
-    window.location.href = '/reset-password?recovery=true';
+    // Check if we're already on the reset-password page
+    if (!window.location.pathname.startsWith('/reset-password')) {
+      // Only redirect if we're not already on the reset-password page
+      // This preserves the hash parameters in the URL which contain the recovery token
+      window.location.href = '/reset-password?recovery=true';
+    }
+    // If we're already on the reset-password page, do nothing
+    // This allows the ResetPasswordPage component to handle the recovery flow
   }
 });
