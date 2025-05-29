@@ -216,7 +216,7 @@ const HomePage = () => {
                 </svg>
               </div>
               <p className="text-gray-600 mb-4">
-                "Ma fille a participé au stage de cirque et elle en est revenue enchantée ! Les animateurs étaient professionnels et attentionnés. Je recommande vivement !"
+                "Nous tenions à vous remercier pour la qualité de l’accueil et des activités et pour la gentillesse et le professionnalisme des animateurs. Faustine et Baptiste ont passé de supers moments et c’est avec plaisir que nous les inscrirons de nouveau. Merci encore!
               </p>
               <div className="flex items-center">
                 <div className="flex-shrink-0">
