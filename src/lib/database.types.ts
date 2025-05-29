@@ -361,6 +361,38 @@ export interface Database {
           status?: string
         }
       }
+      inclusion_requests: {
+        Row: {
+          id: string
+          user_id: string
+          kid_id: string
+          activity_id: string
+          request_date: string
+          status: 'pending' | 'approved' | 'rejected' | 'converted'
+          inclusion_details: Json
+          admin_notes: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          kid_id: string
+          activity_id: string
+          request_date: string
+          status?: 'pending' | 'approved' | 'rejected' | 'converted'
+          inclusion_details: Json
+          admin_notes?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          kid_id?: string
+          activity_id?: string
+          request_date?: string
+          status?: 'pending' | 'approved' | 'rejected' | 'converted'
+          inclusion_details?: Json
+          admin_notes?: string | null
+        }
+      }
     }
     Views: {
       [_ in never]: never
