@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useCartStore } from '../../stores/cartStore';
-import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText, ExternalLink, Clock } from 'lucide-react';
+import { CheckCircle, Calendar, Home, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const InvoiceConfirmationPage = () => {
@@ -12,6 +12,7 @@ const InvoiceConfirmationPage = () => {
   const [error, setError] = useState<string | null>(null);
   
   const invoiceUrl = searchParams.get('invoice');
+  const registrationIdsParam = searchParams.get('registrationIds');
   
   useEffect(() => {
     // Clear the cart on successful payment
@@ -22,7 +23,7 @@ const InvoiceConfirmationPage = () => {
       try {
         setIsLoading(true);
         
-        const { data, error } = await supabase
+        let query = supabase
           .from('registrations')
           .select(`
             id,
@@ -47,8 +48,24 @@ const InvoiceConfirmationPage = () => {
             )
           `)
           .eq('payment_status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(5);
+          .order('created_at', { ascending: false });
+        
+        // If we have specific registration IDs, use them
+        if (registrationIdsParam) {
+          try {
+            const registrationIds = JSON.parse(registrationIdsParam);
+            if (Array.isArray(registrationIds) && registrationIds.length > 0) {
+              query = query.in('id', registrationIds);
+            }
+          } catch (parseError) {
+            console.error('Error parsing registration IDs:', parseError);
+          }
+        } else {
+          // If no specific IDs, limit to recent ones
+          query = query.limit(5);
+        }
+        
+        const { data, error } = await query;
         
         if (error) throw error;
         
@@ -62,7 +79,7 @@ const InvoiceConfirmationPage = () => {
     };
     
     fetchRegistrations();
-  }, [clearCart]);
+  }, [clearCart, registrationIdsParam]);
   
   return (
     <div className="container max-w-3xl mx-auto py-12 px-4 animate-fade-in">
@@ -70,16 +87,16 @@ const InvoiceConfirmationPage = () => {
         <div className="p-8">
           <div className="flex justify-center mb-6">
             <div className="p-3 bg-primary-100 rounded-full">
-              <FileText size={48} className="text-primary-600" />
+              <CheckCircle size={48} className="text-primary-600" />
             </div>
           </div>
           
           <h1 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-            Votre facture a été créée !
+            Votre inscription est confirmée !
           </h1>
           
           <p className="text-lg text-gray-600 mb-8 max-w-lg mx-auto text-center">
-            Votre facture a été générée et vous sera envoyée par email. Vous avez 20 jours pour effectuer le paiement.
+            Votre enfant est bien inscrit. Votre facture a été générée et vous sera envoyée par email. Vous avez 20 jours pour effectuer le paiement.
           </p>
 
           {invoiceUrl && (
@@ -128,9 +145,9 @@ const InvoiceConfirmationPage = () => {
                         </p>
                       </div>
                       <div>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          <Clock className="h-4 w-4 mr-1" />
-                          Facture en attente
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Inscrit
                         </span>
                         <p className="text-sm font-medium text-right mt-1">{reg.amount_paid} €</p>
                         {reg.price_type.includes('reduced') && (
@@ -138,6 +155,13 @@ const InvoiceConfirmationPage = () => {
                             Tarif réduit
                           </span>
                         )}
+                        
+                        <div className="mt-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <FileText className="h-4 w-4 mr-1" />
+                            Facture à payer dans les 20 jours
+                          </span>
+                        </div>
                         
                         {reg.invoice_url && (
                           <a 

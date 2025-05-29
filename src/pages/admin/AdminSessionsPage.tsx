@@ -143,8 +143,7 @@ const AdminSessionsPage = () => {
         remarques: formData.remarques,
         tarif_condition_id: formData.tarif_condition_id,
         visible_from: formData.visible_from,
-        active: true,
-        price_full: parseFloat(formData.prix_normal.toString()) // Set price_full from prix_normal
+        active: true
       };
 
       if (editingSession) {

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { validateBelgianNRN } from '../../utils/validateBelgianNRN';
 import { getAgeFromDate } from '../../utils/date';
+import { optimizeImageIfNeeded } from '../../utils/imageUtils';
 import clsx from 'clsx';
 import { toast, Toaster } from 'react-hot-toast';
 
@@ -156,15 +157,15 @@ const Field = ({
           {type === 'textarea' ? (
             <textarea
               value={value || ''}
-              onChange={e => onChange?.(e.target.value)}
-              className="form-textarea w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+              onChange={(e) => onChange?.(e.target.value)}
+              className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 ${error ? 'border-red-300' : ''}`}
               rows={4}
             />
           ) : type === 'select' ? (
             <select
               value={value || ''}
-              onChange={e => onChange?.(e.target.value)}
-              className="form-select w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+              onChange={(e) => onChange?.(e.target.value)}
+              className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 ${error ? 'border-red-300' : ''}`}
             >
               {options.map(opt => (
                 <option key={opt.value} value={opt.value}>
@@ -197,8 +198,8 @@ const Field = ({
             <input
               type={type}
               value={value || ''}
-              onChange={e => onChange?.(e.target.value)}
-              className="form-input w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+              onChange={(e) => onChange?.(e.target.value)}
+              className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 ${error ? 'border-red-300' : ''}`}
             />
           )}
           {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
@@ -401,7 +402,9 @@ const KidDetailsPage = () => {
                       if (file.size > 5 * 1024 * 1024) return alert('Max 5 Mo');
                       if (!['image/jpeg','image/png'].includes(file.type)) return alert('JPG/PNG seulement');
                       try {
-                        await uploadPhoto(kid.id, file);
+                        // Optimiser l'image avant de l'uploader
+                        const optimizedFile = await optimizeImageIfNeeded(file);
+                        await uploadPhoto(kid.id, optimizedFile);
                         await refreshPhotoUrl(kid.id);
                         setPhotoTimestamp(Date.now());
                         toast.success('Photo mise à jour !');

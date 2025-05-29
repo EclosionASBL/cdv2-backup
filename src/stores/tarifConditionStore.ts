@@ -78,9 +78,10 @@ export const useTarifConditionStore = create<TarifConditionState>((set, get) => 
   deleteCondition: async (id) => {
     set({ isLoading: true, error: null });
     try {
+      // Instead of deleting the record, mark it as inactive
       const { error } = await supabase
         .from('tarif_conditions')
-        .delete()
+        .update({ active: false })
         .eq('id', id);
 
       if (error) throw error;

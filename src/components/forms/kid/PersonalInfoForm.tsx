@@ -5,6 +5,7 @@ import { useSchoolStore } from '../../../stores/schoolStore';
 import { Loader2, Upload } from 'lucide-react';
 import { validateBelgianNRN } from '../../../utils/validateBelgianNRN';
 import BelgianNRNInput from '../../common/BelgianNRNInput';
+import { optimizeImageIfNeeded } from '../../../utils/imageUtils';
 
 interface PersonalInfoFormData {
   nom: string;
@@ -47,7 +48,7 @@ const PersonalInfoForm = ({ onComplete, initialData }: PersonalInfoFormProps) =>
     fetchSchools();
   }, [fetchSchools]);
 
-  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       setPhotoFile(null);
@@ -65,12 +66,20 @@ const PersonalInfoForm = ({ onComplete, initialData }: PersonalInfoFormProps) =>
       return;
     }
 
-    setPhotoFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoPreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Optimiser l'image avant de la définir
+      const optimizedFile = await optimizeImageIfNeeded(file);
+      setPhotoFile(optimizedFile);
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(optimizedFile);
+    } catch (error) {
+      console.error('Erreur lors de l\'optimisation de l\'image:', error);
+      alert('Erreur lors du traitement de l\'image');
+    }
   };
 
   const onSubmit = async (data: PersonalInfoFormData) => {

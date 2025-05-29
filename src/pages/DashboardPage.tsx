@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useKidStore } from '../stores/kidStore';
-import { CalendarDays, UserCircle2, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText } from 'lucide-react';
+import { CalendarDays, User, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import clsx from 'clsx';
 import { getAgeFromDate } from '../utils/date';
@@ -40,6 +40,8 @@ const DashboardPage = () => {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [isLoadingRegistrations, setIsLoadingRegistrations] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
 
   useEffect(() => {
     if (user && !profile) {
@@ -48,6 +50,7 @@ const DashboardPage = () => {
     if (user) {
       fetchKids();
       fetchRegistrations();
+      fetchInvoices();
     }
   }, [user, profile, fetchProfile, fetchKids]);
 
@@ -85,11 +88,33 @@ const DashboardPage = () => {
       if (error) throw error;
       
       setRegistrations(data || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching registrations:', err);
       setRegistrationError('Error fetching registrations');
     } finally {
       setIsLoadingRegistrations(false);
+    }
+  };
+
+  const fetchInvoices = async () => {
+    if (!user) return;
+    
+    try {
+      setIsLoadingInvoices(true);
+      
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(3);
+      
+      if (error) throw error;
+      
+      setInvoices(data || []);
+    } catch (err) {
+      console.error('Error fetching invoices:', err);
+    } finally {
+      setIsLoadingInvoices(false);
     }
   };
 
@@ -115,7 +140,7 @@ const DashboardPage = () => {
         <div className="bg-white rounded-xl shadow-md p-6">
           <div className="flex items-center mb-4">
             <div className="p-2 bg-primary-100 rounded-lg mr-4">
-              <UserCircle2 className="h-6 w-6 text-primary-600" />
+              <User className="h-6 w-6 text-primary-600" />
             </div>
             <h2 className="text-xl font-semibold">Mon profil</h2>
           </div>
@@ -313,6 +338,84 @@ const DashboardPage = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Invoices Section */}
+      <div className="mt-8 bg-white rounded-xl shadow-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-primary-100 rounded-lg mr-4">
+              <FileText className="h-6 w-6 text-primary-600" />
+            </div>
+            <h2 className="text-xl font-semibold">Mes factures récentes</h2>
+          </div>
+          <Link
+            to="/profile/invoices"
+            className="text-primary-600 hover:text-primary-700 font-medium text-sm"
+          >
+            Voir toutes mes factures
+          </Link>
+        </div>
+        
+        {isLoadingInvoices ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+          </div>
+        ) : invoices.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-gray-600">Aucune facture disponible.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {invoices.map((invoice) => (
+              <div key={invoice.id} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium">Facture {invoice.invoice_number}</h3>
+                    <p className="text-sm text-gray-600">
+                      Émise le {new Date(invoice.created_at).toLocaleDateString('fr-FR')}
+                    </p>
+                    {invoice.due_date && (
+                      <p className="text-sm text-gray-600">
+                        Échéance: {new Date(invoice.due_date).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      invoice.status === 'paid' 
+                        ? 'bg-green-100 text-green-800' 
+                        : invoice.status === 'cancelled'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {invoice.status === 'paid' ? (
+                        <><CheckCircle className="h-3 w-3 mr-1" /> Payé</>
+                      ) : invoice.status === 'cancelled' ? (
+                        <><AlertTriangle className="h-3 w-3 mr-1" /> Annulé</>
+                      ) : (
+                        <><Clock className="h-3 w-3 mr-1" /> En attente</>
+                      )}
+                    </span>
+                    <span className="text-sm font-medium mt-1">{invoice.amount} €</span>
+                    
+                    {invoice.pdf_url && (
+                      <a 
+                        href={invoice.pdf_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary-600 hover:text-primary-700 text-xs mt-2 flex items-center"
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        Voir la facture
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tax Certificate Section - only shown for eligible users */}

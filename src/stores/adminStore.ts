@@ -30,8 +30,6 @@ interface Session {
   start_date: string;
   end_date: string;
   capacity: number;
-  price_full: number;
-  price_reduced: number | null;
   active: boolean;
   stage?: Stage;
   center?: Center;
@@ -43,6 +41,7 @@ interface Session {
   remarques?: string;
   tarif_condition_id?: string;
   visible_from?: string;
+  registration_count?: number;
 }
 
 interface AdminState {
@@ -119,8 +118,6 @@ export const useAdminStore = create<AdminState>((set, get) => ({
           start_date,
           end_date,
           capacity,
-          price_full,
-          price_reduced,
           prix_normal,
           prix_reduit,
           tarif_condition_id,
@@ -137,7 +134,36 @@ export const useAdminStore = create<AdminState>((set, get) => ({
         .order('start_date');
 
       if (error) throw error;
-      set({ sessions: data || [] });
+      
+      // Fetch registration counts for all sessions
+      const sessionIds = data?.map(s => s.id) || [];
+      let registrationCountMap: Record<string, number> = {};
+      
+      if (sessionIds.length > 0) {
+        const { data: registrations, error: regError } = await supabase
+          .from('registrations')
+          .select('activity_id')
+          .in('activity_id', sessionIds)
+          .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
+          
+        if (regError) throw regError;
+        
+        // Count registrations for each activity
+        if (registrations) {
+          sessionIds.forEach(sessionId => {
+            const count = registrations.filter(reg => reg.activity_id === sessionId).length;
+            registrationCountMap[sessionId] = count;
+          });
+        }
+      }
+      
+      // Add registration count to each session
+      const sessionsWithCounts = data?.map(session => ({
+        ...session,
+        registration_count: registrationCountMap[session.id] || 0
+      })) || [];
+      
+      set({ sessions: sessionsWithCounts });
     } catch (error: any) {
       set({ error: error.message });
     } finally {
@@ -248,14 +274,9 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   createSession: async (session) => {
     set({ isLoading: true, error: null });
     try {
-      const sessionData = {
-        ...session,
-        price_full: session.prix_normal // Ensure price_full is set from prix_normal
-      };
-      
       const { error } = await supabase
         .from('sessions')
-        .insert([sessionData]);
+        .insert([session]);
 
       if (error) throw error;
       await get().fetchSessions();
@@ -269,14 +290,9 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   updateSession: async (id, updates) => {
     set({ isLoading: true, error: null });
     try {
-      const sessionUpdates = {
-        ...updates,
-        price_full: updates.prix_normal ?? updates.price_full // Ensure price_full is updated when prix_normal changes
-      };
-
       const { error } = await supabase
         .from('sessions')
-        .update(sessionUpdates)
+        .update(updates)
         .eq('id', id);
 
       if (error) throw error;

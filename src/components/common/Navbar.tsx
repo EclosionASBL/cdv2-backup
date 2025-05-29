@@ -4,7 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { 
   Menu, X, ShoppingCart, ChevronDown, 
-  User, LogOut, Home, CalendarDays, Users, UserPlus 
+  User, LogOut, Home, CalendarDays, Users, UserPlus, FileText 
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -143,6 +143,13 @@ const Navbar = () => {
                         >
                           Mes inscriptions
                         </Link>
+                        <Link
+                          to="/profile/invoices"
+                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          Mes factures
+                        </Link>
                         <button
                           onClick={handleSignOut}
                           className="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -252,6 +259,16 @@ const Navbar = () => {
                   <div className="flex items-center">
                     <UserPlus size={18} className="mr-2" />
                     Personnes autorisées
+                  </div>
+                </Link>
+                <Link 
+                  to="/profile/invoices"
+                  className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
+                  onClick={toggleMenu}
+                >
+                  <div className="flex items-center">
+                    <FileText size={18} className="mr-2" />
+                    Mes factures
                   </div>
                 </Link>
                 <button

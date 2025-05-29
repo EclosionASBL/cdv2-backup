@@ -1,5 +1,4 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
-import Stripe from 'npm:stripe@17.7.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,114 +30,74 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+    console.log('Starting create-invoice function');
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    if (!stripeSecretKey) {
-      throw new Error('Configuration Stripe manquante');
-    }
-
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Configuration Supabase manquante');
+      throw new Error('Configuration Supabase manquante. Veuillez contacter le support.');
     }
 
-    const stripe = Stripe(stripeSecretKey);
     // Use service role key to bypass RLS
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { items } = await req.json();
+    const requestData = await req.json().catch(() => null);
+    if (!requestData || !requestData.items) {
+      throw new Error('Données de requête invalides. Le panier est requis.');
+    }
 
-    if (!items?.length) {
-      throw new Error('Le panier est vide');
+    const { items } = requestData;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Le panier est vide. Veuillez ajouter des articles avant de continuer.');
     }
 
     // Get user from auth header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      throw new Error('En-tête d\'autorisation manquant');
+      throw new Error('En-tête d\'autorisation manquant. Veuillez vous reconnecter.');
     }
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError) {
-      throw new Error('Erreur d\'authentification: ' + authError.message);
+      throw new Error(`Erreur d'authentification: ${authError.message}`);
     }
 
     if (!user) {
-      throw new Error('Utilisateur non authentifié');
+      throw new Error('Utilisateur non authentifié. Veuillez vous reconnecter.');
     }
 
-    // Get or create customer
-    let customerId: string;
-    const { data: existingCustomer, error: customerError } = await supabase
-      .from('stripe_customers')
-      .select('customer_id')
-      .eq('user_id', user.id)
-      .single();
+    console.log('User authenticated:', user.id);
 
-    if (customerError && customerError.code !== 'PGRST116') {
-      throw new Error('Erreur lors de la récupération du client: ' + customerError.message);
-    }
-
-    if (existingCustomer?.customer_id) {
-      customerId = existingCustomer.customer_id;
-    } else {
-      // Create a new customer in Stripe
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('prenom, nom, email, telephone, adresse, cpostal, localite')
-        .eq('id', user.id)
-        .single();
-
-      if (userError) {
-        throw new Error('Erreur lors de la récupération des données utilisateur: ' + userError.message);
-      }
-
-      try {
-        const customer = await stripe.customers.create({
-          email: user.email,
-          name: userData ? `${userData.prenom} ${userData.nom}` : undefined,
-          phone: userData?.telephone,
-          address: userData ? {
-            line1: userData.adresse,
-            postal_code: userData.cpostal,
-            city: userData.localite,
-            country: 'BE',
-          } : undefined,
-          metadata: {
-            user_id: user.id
-          }
-        });
-
-        // Save the customer ID in our database
-        const { error: insertError } = await supabase
-          .from('stripe_customers')
-          .insert({
-            user_id: user.id,
-            customer_id: customer.id
-          });
-
-        if (insertError) {
-          throw new Error('Erreur lors de la sauvegarde du client: ' + insertError.message);
-        }
-
-        customerId = customer.id;
-      } catch (stripeError: any) {
-        throw new Error('Erreur lors de la création du client Stripe: ' + stripeError.message);
-      }
-    }
-
+    // Generate invoice number
+    const invoiceNumber = generateInvoiceNumber();
+    
+    // Generate structured communication
+    const communication = generateStructuredCommunication();
+    
     // Calculate due date (20 days from now)
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 20);
+
+    // Calculate total amount based on cart items (prices are sent in cents)
+    const totalAmount = items.reduce(
+      (sum: number, item: CartItem) => sum + item.price / 100,
+      0
+    );
+
+    console.log('Invoice details:', { invoiceNumber, totalAmount, dueDate: dueDate.toISOString() });
 
     // Array to collect registration IDs
     const registrationIds: string[] = [];
 
     // Create registrations with pending status
     for (const item of items) {
+      // Convert price to proper format (should be in euros, not cents)
+      const priceInEuros = item.price / 100;
+      
       const { data, error: regError } = await supabase
         .from('registrations')
         .insert({
@@ -147,7 +106,7 @@ Deno.serve(async (req) => {
           activity_id: item.activity_id,
           price_type: item.price_type,
           reduced_declaration: item.reduced_declaration,
-          amount_paid: item.price / 100, // Convert from cents to euros
+          amount_paid: priceInEuros,
           payment_status: 'pending',
           due_date: dueDate.toISOString(),
           reminder_sent: false
@@ -155,83 +114,119 @@ Deno.serve(async (req) => {
         .select('id');
 
       if (regError) {
-        throw new Error('Error creating registration: ' + regError.message);
+        throw new Error(`Erreur lors de la création de l'inscription: ${regError.message}`);
       }
 
-      if (data && data.length > 0) {
-        registrationIds.push(data[0].id);
+      if (!data || data.length === 0) {
+        throw new Error('Erreur lors de la création de l\'inscription: aucun ID retourné');
       }
+
+      registrationIds.push(data[0].id);
     }
 
-    // Create invoice with minimal metadata
-    const invoice = await stripe.invoices.create({
-      customer: customerId,
-      collection_method: 'send_invoice',
-      days_until_due: 20,
-      auto_advance: true,
-      description: 'Stages Éclosion ASBL',
-      metadata: {
+    console.log('Created registrations:', registrationIds);
+
+    // Create invoice record
+    const { data: invoice, error: invoiceError } = await supabase
+      .from('invoices')
+      .insert({
         user_id: user.id,
-        registration_ids: registrationIds.join(',')
-      }
-    });
+        invoice_number: invoiceNumber,
+        amount: totalAmount,
+        status: 'pending',
+        due_date: dueDate.toISOString(),
+        communication: communication,
+        registration_ids: registrationIds
+      })
+      .select()
+      .single();
 
-    // Add line items to invoice
-    for (const item of items) {
-      // Create a product with minimal metadata
-      const product = await stripe.products.create({
-        name: `${item.activityName} (${item.kidName})`,
-        description: item.dateRange
-      });
-
-      // Create price with minimal metadata
-      const price = await stripe.prices.create({
-        product: product.id,
-        currency: 'eur',
-        unit_amount: Math.round(item.price) // Price should be in cents
-      });
-
-      // Create invoice item
-      await stripe.invoiceItems.create({
-        customer: customerId,
-        invoice: invoice.id,
-        price: price.id
-      });
+    if (invoiceError) {
+      throw new Error(`Erreur lors de la création de la facture: ${invoiceError.message}`);
     }
 
-    // Update registrations with invoice_id and invoice_url
+    if (!invoice) {
+      throw new Error('Erreur lors de la création de la facture: aucune facture créée');
+    }
+
+    console.log('Invoice created:', invoice.invoice_number);
+
+    // Update registrations with invoice_id
     const { error: updateError } = await supabase
       .from('registrations')
       .update({
-        invoice_id: invoice.id,
-        invoice_url: invoice.hosted_invoice_url
+        invoice_id: invoice.invoice_number
       })
       .in('id', registrationIds);
 
     if (updateError) {
-      console.error('Error updating registrations with invoice_id:', updateError);
+      console.error('Erreur lors de la mise à jour des inscriptions avec l\'ID de facture:', updateError);
       // Continue anyway, as this is not critical
+    } else {
+      console.log('Registrations updated with invoice ID');
+    }
+    
+    // Generate PDF and send it by email
+    let pdfUrl: string | null = null;
+    try {
+      console.log('Calling send-invoice-email function');
+      const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-invoice-email`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': authHeader // Pass the authorization token
+        },
+        body: JSON.stringify({
+          invoice_number: invoice.invoice_number,
+          parent_email: user.email
+        })
+      });
+
+      console.log('Email function response status:', emailRes.status);
+      
+      let emailData;
+      try {
+        emailData = await emailRes.json();
+        console.log('Email function response:', JSON.stringify(emailData));
+      } catch (jsonError) {
+        console.error('Error parsing email response JSON:', jsonError);
+        throw new Error('Invalid response from email service');
+      }
+
+      if (emailRes.ok) {
+        pdfUrl = emailData.pdf_url as string;
+        console.log('Email sent successfully with PDF URL:', pdfUrl);
+      } else {
+        console.error('Erreur lors de l\'envoi de la facture:', emailData.error);
+      }
+    } catch (err) {
+      console.error('Erreur lors de l\'appel à send-invoice-email:', err);
+      if (err instanceof Error) {
+        console.error('Error details:', err.message);
+        console.error('Error stack:', err.stack);
+      }
     }
 
-    // Finalize and send the invoice
-    await stripe.invoices.finalizeInvoice(invoice.id);
-    await stripe.invoices.sendInvoice(invoice.id);
-
-    // Return the same format as create-checkout for consistency
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         url: '/invoice-confirmation',
         paymentType: 'invoice',
-        invoiceUrl: invoice.hosted_invoice_url
+        invoiceUrl: pdfUrl,
+        invoiceNumber: invoice.invoice_number,
+        registrationIds: registrationIds
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error creating invoice:', error);
+    
+    // Ensure we always return a string message
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : 'Une erreur inattendue est survenue lors de la création de la facture';
+
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Une erreur inattendue est survenue'
-      }),
+      JSON.stringify({ error: errorMessage }),
       { 
         status: 400, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -239,3 +234,28 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+// Helper function to generate a unique invoice number
+function generateInvoiceNumber(): string {
+  const prefix = 'INV';
+  const timestamp = Date.now().toString().slice(-6);
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `${prefix}-${timestamp}-${random}`;
+}
+
+// Helper function to generate a structured communication code for bank transfers
+function generateStructuredCommunication(): string {
+  // Generate 10 random digits, starting with 0
+  const digits = '0' + Array.from({ length: 9 }, () => Math.floor(Math.random() * 10)).join('');
+  
+  // Calculate check digit (modulo 97, or 97 if result is 0)
+  const base = parseInt(digits, 10);
+  let checkDigits = 97 - (base % 97);
+  if (checkDigits === 0) checkDigits = 97;
+  
+  // Format with leading zero for check digits if needed
+  const formattedCheckDigits = checkDigits < 10 ? `0${checkDigits}` : `${checkDigits}`;
+  
+  // Format as +++xxx/xxxx/xxxxx+++
+  return `+++${digits.slice(0, 3)}/${digits.slice(3, 7)}/${digits.slice(7, 10)}${formattedCheckDigits}+++`;
+}

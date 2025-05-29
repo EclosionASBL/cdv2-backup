@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { LayoutGrid, LogOut, Building2, Calendar, Clock, Users, CreditCard, MessageSquare, Tag, GraduationCap, School, List as ListWait } from 'lucide-react';
+import { LayoutGrid, LogOut, Building2, Calendar, Clock, Users, CreditCard, MessageSquare, Tag, GraduationCap, School, List as ListWait, FileText } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
 const AdminNavbar = () => {
@@ -53,7 +53,8 @@ const AdminNavbar = () => {
         { label: 'Paiements', icon: CreditCard, href: '/admin/payments' },
         { label: 'Communication', icon: MessageSquare, href: '/admin/messaging' },
         { label: 'Conditions tarifaires', icon: Tag, href: '/admin/tarifs' },
-        { label: 'Écoles', icon: School, href: '/admin/ecoles' }
+        { label: 'Écoles', icon: School, href: '/admin/ecoles' },
+        { label: 'Demandes d\'inclusion', icon: FileText, href: '/admin/inclusion-requests' }
       ]
     }
   ];

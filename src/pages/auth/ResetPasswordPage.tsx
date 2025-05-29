@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../../stores/authStore';
-import { Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Loader2, CheckCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface ResetPasswordFormData {
@@ -19,6 +19,8 @@ const ResetPasswordPage = () => {
   const [resetError, setResetError] = useState<string | null>(null);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [isPasswordUpdated, setIsPasswordUpdated] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { resetPassword, isLoading } = useAuthStore();
@@ -119,18 +121,27 @@ const ResetPasswordPage = () => {
             <label htmlFor="password" className="form-label">
               Nouveau mot de passe
             </label>
-            <input
-              id="password"
-              type="password"
-              className={`form-input ${errorsNewPassword.password ? 'border-red-500 focus:ring-red-500' : ''}`}
-              {...registerNewPassword('password', {
-                required: 'Mot de passe requis',
-                minLength: {
-                  value: 6,
-                  message: 'Le mot de passe doit contenir au moins 6 caractères',
-                },
-              })}
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                className={`form-input pr-10 ${errorsNewPassword.password ? 'border-red-500 focus:ring-red-500' : ''}`}
+                {...registerNewPassword('password', {
+                  required: 'Mot de passe requis',
+                  minLength: {
+                    value: 6,
+                    message: 'Le mot de passe doit contenir au moins 6 caractères',
+                  },
+                })}
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
             {errorsNewPassword.password && (
               <p className="form-error">{errorsNewPassword.password.message}</p>
             )}
@@ -140,15 +151,24 @@ const ResetPasswordPage = () => {
             <label htmlFor="confirmPassword" className="form-label">
               Confirmer le mot de passe
             </label>
-            <input
-              id="confirmPassword"
-              type="password"
-              className={`form-input ${errorsNewPassword.confirmPassword ? 'border-red-500 focus:ring-red-500' : ''}`}
-              {...registerNewPassword('confirmPassword', {
-                required: 'Veuillez confirmer votre mot de passe',
-                validate: (value) => value === newPassword || 'Les mots de passe ne correspondent pas',
-              })}
-            />
+            <div className="relative">
+              <input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                className={`form-input pr-10 ${errorsNewPassword.confirmPassword ? 'border-red-500 focus:ring-red-500' : ''}`}
+                {...registerNewPassword('confirmPassword', {
+                  required: 'Veuillez confirmer votre mot de passe',
+                  validate: (value) => value === newPassword || 'Les mots de passe ne correspondent pas',
+                })}
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              >
+                {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
             {errorsNewPassword.confirmPassword && (
               <p className="form-error">{errorsNewPassword.confirmPassword.message}</p>
             )}

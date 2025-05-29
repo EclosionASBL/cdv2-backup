@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAdminStore } from '../../stores/adminStore';
 import { Plus, Pencil, Trash2, AlertTriangle, Loader2, Upload } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { optimizeImageIfNeeded } from '../../utils/imageUtils';
 
 interface Stage {
   id: string;
@@ -69,7 +70,7 @@ const AdminStagesPage = () => {
     setFormErrors({});
   };
 
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -83,12 +84,20 @@ const AdminStagesPage = () => {
       return;
     }
 
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Optimiser l'image avant de la définir
+      const optimizedFile = await optimizeImageIfNeeded(file, 800);
+      setImageFile(optimizedFile);
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(optimizedFile);
+    } catch (error) {
+      console.error('Erreur lors de l\'optimisation de l\'image:', error);
+      alert('Erreur lors du traitement de l\'image');
+    }
   };
 
   const uploadImage = async (stageId: string): Promise<string | null> => {
@@ -264,7 +273,7 @@ const AdminStagesPage = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {stage.title}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 max-w-md truncate overflow-hidden">
                     {stage.description}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

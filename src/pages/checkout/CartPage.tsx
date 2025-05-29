@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCartStore, CartItem } from '../../stores/cartStore';
 import { useKidStore } from '../../stores/kidStore';
+import { useActivityStore } from '../../stores/activityStore';
 import { ShoppingCart, Trash2, AlertCircle, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { AddMoreStagesModal } from '../../components/checkout/AddMoreStagesModal';
 
 const CartPage = () => {
   const { items, removeItem, clearCart, total } = useCartStore();
   const { kids, fetchKids } = useKidStore();
+  const { clearKidFilter } = useActivityStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAddMoreStagesModalOpen, setIsAddMoreStagesModalOpen] = useState(false);
   const navigate = useNavigate();
   
   useEffect(() => {
@@ -17,7 +21,18 @@ const CartPage = () => {
   }, [fetchKids]);
   
   const handleCheckout = () => {
+    setIsAddMoreStagesModalOpen(true);
+  };
+  
+  const handleProceedToPayment = () => {
+    setIsAddMoreStagesModalOpen(false);
     navigate('/checkout');
+  };
+
+  const handleAddMoreStages = () => {
+    setIsAddMoreStagesModalOpen(false);
+    clearKidFilter();
+    navigate('/activities');
   };
   
   if (items.length === 0) {
@@ -180,7 +195,7 @@ const CartPage = () => {
                 <div className="flex items-start">
                   <AlertCircle size={20} className="text-primary-600 mr-2 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-primary-700">
-                    Vous pourrez choisir entre un paiement immédiat ou différé à l'étape suivante.
+                    Vous recevrez une facture par email et aurez 20 jours pour effectuer le paiement.
                   </p>
                 </div>
               </div>
@@ -197,7 +212,7 @@ const CartPage = () => {
                   </>
                 ) : (
                   <>
-                    Procéder au paiement
+                    {items.length > 1 ? 'Valider les inscriptions' : 'Valider l\'inscription'}
                     <ChevronRight size={18} className="ml-1" />
                   </>
                 )}
@@ -206,6 +221,14 @@ const CartPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Add More Stages Confirmation Modal */}
+      <AddMoreStagesModal
+        isOpen={isAddMoreStagesModalOpen}
+        onClose={() => setIsAddMoreStagesModalOpen(false)}
+        onConfirmProceed={handleProceedToPayment}
+        onConfirmAddMore={handleAddMoreStages}
+      />
     </div>
   );
 };

@@ -31,7 +31,7 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setProfile: (profile: UserProfile | null) => void;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<{ user: User | null, error: Error | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string, options?: { redirectTo?: string }) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -91,24 +91,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signUp: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase.auth.signUp({ 
+      const { data, error } = await supabase.auth.signUp({ 
         email, 
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/dashboard`
         }
       });
+      
       if (error) throw error;
       
-      // Fetch profile after successful sign up
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        set({ user });
-        await get().fetchProfile();
-      }
+      // Return the user object so the component can check email confirmation status
+      return { user: data.user, error: null };
     } catch (error: any) {
       set({ error: error.message });
-      throw error;
+      return { user: null, error };
     } finally {
       set({ isLoading: false });
     }

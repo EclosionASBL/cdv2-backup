@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useWaitingListStore } from '../../stores/waitingListStore';
 import { useCartStore } from '../../stores/cartStore';
+import { useRegistrationStore } from '../../stores/registrationStore';
 import { Loader2, CheckCircle, Clock, ArrowLeft, Filter, Search, FileText, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import toast, { Toaster } from 'react-hot-toast';
@@ -51,13 +52,15 @@ const RegistrationsPage = () => {
   } = useWaitingListStore();
   
   const { addItem } = useCartStore();
+  const { fetchRegistrations } = useRegistrationStore();
   
   useEffect(() => {
-    fetchRegistrations();
+    fetchDetailedRegistrations();
     fetchWaitingList();
-  }, [fetchWaitingList]);
+    fetchRegistrations(); // Also fetch simplified registrations for the store
+  }, [fetchWaitingList, fetchRegistrations]);
   
-  const fetchRegistrations = async () => {
+  const fetchDetailedRegistrations = async () => {
     try {
       setIsLoading(true);
       
@@ -246,7 +249,7 @@ const RegistrationsPage = () => {
 
   const getWaitingListStatusText = (entry: any) => {
     if (entry.status === 'invited') {
-      // Calculate remaining time
+      // Calculate remaining time if expires_at is set
       if (entry.expires_at) {
         const expiresAt = new Date(entry.expires_at);
         const now = new Date();
@@ -257,6 +260,14 @@ const RegistrationsPage = () => {
       return 'Place disponible';
     }
     return 'En attente';
+  };
+
+  // Unwrap arrays for kid and parent if needed
+  const unwrapEntry = (entry: any) => {
+    const kid = Array.isArray(entry.kid) ? entry.kid[0] : entry.kid;
+    const parent = Array.isArray(entry.parent) ? entry.parent[0] : entry.parent;
+    const session = Array.isArray(entry.session) ? entry.session[0] : entry.session;
+    return { ...entry, kid, parent, session };
   };
   
   const filteredRegistrations = registrations

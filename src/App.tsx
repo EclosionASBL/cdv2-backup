@@ -19,6 +19,7 @@ import KidsPage from './pages/profile/KidsPage';
 import NewKidPage from './pages/profile/NewKidPage';
 import EditKidPage from './pages/profile/EditKidPage';
 import KidDetailsPage from './pages/profile/KidDetailsPage';
+import InvoicesPage from './pages/profile/InvoicesPage';
 import AuthorizedPersonsPage from './pages/authorized-persons/AuthorizedPersonsPage';
 import NewAuthorizedPersonPage from './pages/authorized-persons/NewAuthorizedPersonPage';
 import EditAuthorizedPersonPage from './pages/authorized-persons/EditAuthorizedPersonPage';
@@ -44,6 +45,7 @@ import AdminParascolaireSessionsPage from './pages/admin/AdminParascolaireSessio
 import AdminTarifConditionsPage from './pages/admin/AdminTarifConditionsPage';
 import AdminSchoolsPage from './pages/admin/AdminSchoolsPage';
 import AdminWaitingListPage from './pages/admin/AdminWaitingListPage';
+import AdminInclusionRequestsPage from './pages/admin/AdminInclusionRequestsPage';
 
 // Components
 import LoadingScreen from './components/common/LoadingScreen';
@@ -103,13 +105,14 @@ function App() {
             path="/register" 
             element={user ? <Navigate to="/dashboard\" replace /> : <RegisterPage />} 
           />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/reset-password/*\" element={<ResetPasswordPage />} />
         </Route>
 
         {/* Protected routes */}
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/invoices" element={<InvoicesPage />} />
           <Route path="/kids" element={<KidsPage />} />
           <Route path="/kids/new" element={<NewKidPage />} />
           <Route path="/kids/edit/:id" element={<EditKidPage />} />
@@ -142,6 +145,7 @@ function App() {
           <Route path="/admin/tarifs" element={<AdminTarifConditionsPage />} />
           <Route path="/admin/ecoles" element={<AdminSchoolsPage />} />
           <Route path="/admin/waiting-list" element={<AdminWaitingListPage />} />
+          <Route path="/admin/inclusion-requests" element={<AdminInclusionRequestsPage />} />
         </Route>
       </Route>
 
