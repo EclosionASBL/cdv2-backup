@@ -243,6 +243,11 @@ const ActivitiesPage = () => {
 
   const showNoFiltersMessage = !filters.kid_id || !filters.center_id || !filters.periode;
 
+  const handleInfoClick = (e: React.MouseEvent, activity: any) => {
+    e.stopPropagation(); // Prevent the card click event from firing
+    setSelectedActivity(activity);
+  };
+
   return (
     <div className="container max-w-7xl mx-auto py-12 px-4">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
@@ -356,10 +361,11 @@ const ActivitiesPage = () => {
                     <div
                       key={activity.id}
                       className={clsx(
-                        "bg-white rounded-xl shadow-md overflow-hidden transition-transform hover:scale-[1.02]",
+                        "bg-white rounded-xl shadow-md overflow-hidden transition-transform hover:scale-[1.02] cursor-pointer",
                         selectedActivities.includes(activity.id) && "ring-2 ring-primary-500",
                         (isSessionFull || isAlreadyRegistered) && "opacity-90"
                       )}
+                      onClick={() => toggleActivitySelection(activity.id, isSessionFull, isAlreadyRegistered)}
                     >
                       <div className="relative">
                         <ImageWithFallback
@@ -370,10 +376,9 @@ const ActivitiesPage = () => {
                         {!isSessionFull && !isAlreadyRegistered && (
                           <div
                             className={clsx(
-                              "absolute top-4 right-4 cursor-pointer",
+                              "absolute top-4 right-4",
                               (isSessionFull || isAlreadyRegistered) && "cursor-not-allowed"
                             )}
-                            onClick={() => toggleActivitySelection(activity.id, isSessionFull, isAlreadyRegistered)}
                           >
                             <div className={clsx(
                               "w-6 h-6 rounded-full border-2",
@@ -412,7 +417,7 @@ const ActivitiesPage = () => {
                             </div>
                           </div>
                           <button
-                            onClick={() => setSelectedActivity(activity)}
+                            onClick={(e) => handleInfoClick(e, activity)}
                             className="text-gray-400 hover:text-gray-600"
                           >
                             <Info className="h-5 w-5" />
@@ -458,7 +463,10 @@ const ActivitiesPage = () => {
                                 </div>
                               ) : (
                                 <button
-                                  onClick={() => handleJoinWaitingList(activity.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent card selection
+                                    handleJoinWaitingList(activity.id);
+                                  }}
                                   disabled={joiningWaitingList === activity.id}
                                   className="btn-outline py-1 px-3 text-sm w-full"
                                 >
