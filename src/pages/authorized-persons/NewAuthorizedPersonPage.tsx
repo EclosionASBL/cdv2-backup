@@ -4,6 +4,7 @@ import { useAuthorizedPersonsStore } from '../../stores/authorizedPersonsStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useForm } from 'react-hook-form';
 import { Loader2, Upload, ArrowLeft } from 'lucide-react';
+import { optimizeImageIfNeeded } from '../../utils/imageUtils';
 
 interface FormData {
   first_name: string;
@@ -26,16 +27,24 @@ const NewAuthorizedPersonPage = () => {
     formState: { errors }
   } = useForm<FormData>();
 
-  const handlePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    setPhotoFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoPreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Optimiser l'image avant de la définir
+      const optimizedFile = await optimizeImageIfNeeded(file);
+      setPhotoFile(optimizedFile);
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPhotoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(optimizedFile);
+    } catch (error) {
+      console.error('Erreur lors de l\'optimisation de l\'image:', error);
+      alert('Erreur lors du traitement de l\'image');
+    }
   };
 
   const onSubmit = async (data: FormData) => {

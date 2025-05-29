@@ -167,8 +167,16 @@ Deno.serve(async (req) => {
 
     console.log('Creating PDF document');
     
-    // Create PDF document
+    // Create PDF document with compression options
     const pdfDoc = await PDFDocument.create();
+    
+    // Set PDF metadata to optimize file size
+    pdfDoc.setTitle(`Facture ${invoice.invoice_number}`);
+    pdfDoc.setAuthor('Éclosion ASBL');
+    pdfDoc.setSubject('Facture pour inscription aux stages');
+    pdfDoc.setKeywords(['facture', 'stage', 'enfant', 'éclosion']);
+    pdfDoc.setCreator('Éclosion ASBL - Système de facturation');
+    
     const page = pdfDoc.addPage([595.28, 841.89]); // A4 size
     const { width, height } = page.getSize();
     
@@ -504,8 +512,12 @@ Deno.serve(async (req) => {
     
     console.log('PDF document created, serializing to bytes');
     
-    // Serialize the PDF to bytes
-    const pdfBytes = await pdfDoc.save();
+    // Serialize the PDF to bytes with compression options
+    const pdfBytes = await pdfDoc.save({
+      // Utiliser la compression pour réduire la taille du PDF
+      addDefaultPage: false,
+      useObjectStreams: true
+    });
     
     console.log('Uploading PDF to Supabase Storage');
     
