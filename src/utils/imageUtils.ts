@@ -45,33 +45,55 @@ export const optimizeImage = async (
 /**
  * Vérifie si une image dépasse une certaine taille et l'optimise si nécessaire
  * @param file Le fichier image
- * @param sizeThresholdKB Seuil en KB au-delà duquel l'image sera optimisée
+ * @param maxDimension Dimension maximale souhaitée (par défaut 800px)
  * @returns Promise avec le fichier original ou optimisé
  */
 export const optimizeImageIfNeeded = async (
   file: File,
-  sizeThresholdKB = 500
+  maxDimension = 800
 ): Promise<File> => {
   if (!file.type.startsWith('image/')) {
     return file;
   }
   
-  // Si l'image est déjà petite, pas besoin d'optimiser
-  if (file.size <= sizeThresholdKB * 1024) {
+  // Définir des seuils de taille pour différents niveaux de compression
+  const SIZE_THRESHOLD_SMALL = 250 * 1024;  // 250KB
+  const SIZE_THRESHOLD_MEDIUM = 500 * 1024; // 500KB
+  const SIZE_THRESHOLD_LARGE = 1 * 1024 * 1024; // 1MB
+  const SIZE_THRESHOLD_XLARGE = 2 * 1024 * 1024; // 2MB
+  
+  // Si l'image est déjà très petite, pas besoin d'optimiser
+  if (file.size <= SIZE_THRESHOLD_SMALL) {
     return file;
   }
   
   // Déterminer les paramètres d'optimisation en fonction de la taille
   let quality = 0.8;
-  let maxDimension = 800;
+  let maxWidthOrHeight = maxDimension;
   
-  if (file.size > 2 * 1024 * 1024) { // > 2MB
-    quality = 0.7;
-    maxDimension = 1200;
-  } else if (file.size > 1 * 1024 * 1024) { // > 1MB
+  if (file.size > SIZE_THRESHOLD_XLARGE) { // > 2MB
+    quality = 0.5; // Compression très agressive
+    maxWidthOrHeight = 1000;
+  } else if (file.size > SIZE_THRESHOLD_LARGE) { // > 1MB
+    quality = 0.6; // Compression agressive
+    maxWidthOrHeight = 1200;
+  } else if (file.size > SIZE_THRESHOLD_MEDIUM) { // > 500KB
+    quality = 0.7; // Compression modérée
+    maxWidthOrHeight = 1000;
+  } else {
+    // Entre 250KB et 500KB
     quality = 0.75;
-    maxDimension = 1000;
+    maxWidthOrHeight = 800;
   }
   
-  return optimizeImage(file, maxDimension, quality);
+  // Appliquer la compression avec les paramètres déterminés
+  const compressedFile = await optimizeImage(file, maxWidthOrHeight, quality);
+  
+  // Si la compression n'a pas été suffisante, essayer une compression plus agressive
+  if (compressedFile.size > SIZE_THRESHOLD_MEDIUM) {
+    console.log('Compression initiale insuffisante, application d\'une compression plus agressive');
+    return optimizeImage(compressedFile, Math.min(maxWidthOrHeight, 800), 0.6);
+  }
+  
+  return compressedFile;
 };
