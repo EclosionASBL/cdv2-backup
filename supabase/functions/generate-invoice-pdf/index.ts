@@ -1,10 +1,12 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
 import { PDFDocument, rgb, StandardFonts } from 'npm:pdf-lib@1.17.1';
 
+// Define CORS headers with explicit content-type
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': '*',
+  'Content-Type': 'application/json'
 };
 
 interface GenerateInvoiceRequest {
@@ -13,11 +15,11 @@ interface GenerateInvoiceRequest {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight request
-  if (req.method === "OPTIONS") {
+  // Handle CORS preflight requests first
+  if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
-      headers: corsHeaders,
+      headers: corsHeaders
     });
   }
 
@@ -30,58 +32,78 @@ Deno.serve(async (req) => {
       console.error('Missing Authorization header');
       return new Response(
         JSON.stringify({ error: 'Missing Authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { 
+          status: 401, 
+          headers: corsHeaders 
+        }
       );
     }
-    
-    // Parse request body
-    let requestData;
+
+    // Parse request body with error handling
+    let requestData: GenerateInvoiceRequest;
     try {
-      requestData = await req.json() as GenerateInvoiceRequest;
+      requestData = await req.json();
       console.log('Request data:', JSON.stringify(requestData));
     } catch (parseError) {
       console.error('Error parsing request JSON:', parseError);
       return new Response(
         JSON.stringify({ error: 'Invalid JSON in request body' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { 
+          status: 400, 
+          headers: corsHeaders 
+        }
       );
     }
-    
+
     const { invoice_number, api_key } = requestData;
 
     // Validate required parameters
     if (!invoice_number) {
       console.error('Missing required parameter: invoice_number');
       return new Response(
-        JSON.stringify({ error: "Missing required parameter: invoice_number" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        JSON.stringify({ error: 'Missing required parameter: invoice_number' }),
+        { 
+          status: 400, 
+          headers: corsHeaders 
         }
       );
     }
 
-    // Validate API key if provided
-    const expectedApiKey = Deno.env.get("UPDATE_INVOICE_API_KEY");
-    if (api_key && expectedApiKey && api_key !== expectedApiKey) {
+    // Initialize environment variables with fallbacks
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const expectedApiKey = Deno.env.get('UPDATE_INVOICE_API_KEY');
+
+    // Validate required environment variables
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing required environment variables');
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error' }),
+        { 
+          status: 500, 
+          headers: corsHeaders 
+        }
+      );
+    }
+
+    // Validate API key if provided and expected
+    if (expectedApiKey && api_key !== expectedApiKey) {
       console.error('Invalid API key');
       return new Response(
-        JSON.stringify({ error: "Invalid API key" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        JSON.stringify({ error: 'Invalid API key' }),
+        { 
+          status: 401, 
+          headers: corsHeaders 
         }
       );
     }
 
     // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Fetching invoice data for:', invoice_number);
     
-    // Get invoice data - FIXED: Use separate queries instead of a join that's causing issues
+    // Get invoice data
     const { data: invoice, error: invoiceError } = await supabase
       .from('invoices')
       .select('*')
@@ -89,28 +111,28 @@ Deno.serve(async (req) => {
       .single();
 
     if (invoiceError) {
-      console.error("Error fetching invoice:", invoiceError);
+      console.error('Error fetching invoice:', invoiceError);
       return new Response(
-        JSON.stringify({ error: "Error fetching invoice: " + invoiceError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        JSON.stringify({ error: 'Error fetching invoice: ' + invoiceError.message }),
+        { 
+          status: 500, 
+          headers: corsHeaders 
         }
       );
     }
 
     if (!invoice) {
-      console.error("Invoice not found:", invoice_number);
+      console.error('Invoice not found:', invoice_number);
       return new Response(
-        JSON.stringify({ error: "Invoice not found" }),
-        {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        JSON.stringify({ error: 'Invoice not found' }),
+        { 
+          status: 404, 
+          headers: corsHeaders 
         }
       );
     }
 
-    // Get user data separately
+    // Get user data
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('prenom, nom, email, adresse, cpostal, localite, telephone')
@@ -118,18 +140,16 @@ Deno.serve(async (req) => {
       .single();
 
     if (userError) {
-      console.error("Error fetching user:", userError);
+      console.error('Error fetching user:', userError);
       return new Response(
-        JSON.stringify({ error: "Error fetching user: " + userError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        JSON.stringify({ error: 'Error fetching user: ' + userError.message }),
+        { 
+          status: 500, 
+          headers: corsHeaders 
         }
       );
     }
 
-    console.log('Fetching registrations for invoice:', invoice_number);
-    
     // Get registrations data
     const { data: registrations, error: registrationsError } = await supabase
       .from('registrations')
@@ -155,12 +175,12 @@ Deno.serve(async (req) => {
       .in('id', invoice.registration_ids);
 
     if (registrationsError) {
-      console.error("Error fetching registrations:", registrationsError);
+      console.error('Error fetching registrations:', registrationsError);
       return new Response(
-        JSON.stringify({ error: "Failed to fetch registration details: " + registrationsError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        JSON.stringify({ error: 'Failed to fetch registration details: ' + registrationsError.message }),
+        { 
+          status: 500, 
+          headers: corsHeaders 
         }
       );
     }
@@ -170,7 +190,7 @@ Deno.serve(async (req) => {
     // Create PDF document with compression options
     const pdfDoc = await PDFDocument.create();
     
-    // Set PDF metadata to optimize file size
+    // Set PDF metadata
     pdfDoc.setTitle(`Facture ${invoice.invoice_number}`);
     pdfDoc.setAuthor('Éclosion ASBL');
     pdfDoc.setSubject('Facture pour inscription aux stages');
@@ -299,7 +319,6 @@ Deno.serve(async (req) => {
     
     // Add table header
     currentY -= 40;
-    const tableTop = currentY;
     const col1 = margin;
     const col2 = margin + 200;
     const col3 = margin + 300;
@@ -346,7 +365,6 @@ Deno.serve(async (req) => {
     currentY -= 15;
     
     for (const reg of registrations || []) {
-      // Unwrap nested objects if they're arrays (handling potential Supabase quirk)
       const kidData = Array.isArray(reg.kid) ? reg.kid[0] : reg.kid;
       const sessionData = Array.isArray(reg.session) ? reg.session[0] : reg.session;
       const stageData = Array.isArray(sessionData.stage) ? sessionData.stage[0] : sessionData.stage;
@@ -512,28 +530,24 @@ Deno.serve(async (req) => {
     
     console.log('PDF document created, serializing to bytes');
     
-    // Serialize the PDF to bytes with compression options
+    // Serialize the PDF to bytes with compression
     const pdfBytes = await pdfDoc.save({
-      // Utiliser la compression pour réduire la taille du PDF
       addDefaultPage: false,
       useObjectStreams: true
     });
     
     console.log('Uploading PDF to Supabase Storage');
     
-    // Upload PDF to Supabase Storage - FIXED: Use 'invoices' bucket instead of 'public'
     const fileName = `${invoice_number}.pdf`;
     
-    // Check if the bucket exists
+    // Check available buckets
     const { data: buckets } = await supabase.storage.listBuckets();
     console.log('Available buckets:', buckets?.map(b => b.name).join(', '));
     
-    // Try to upload to the 'invoices' bucket first, if it exists
-    let uploadError = null;
-    let pdfUrl = null;
-    
     // Try different buckets in order of preference
     const bucketsToTry = ['invoices', 'public', 'storage'];
+    let uploadError = null;
+    let pdfUrl = null;
     
     for (const bucketName of bucketsToTry) {
       if (buckets?.some(b => b.name === bucketName)) {
@@ -548,7 +562,6 @@ Deno.serve(async (req) => {
             });
             
           if (!uploadErr) {
-            // Get public URL
             const { data: publicUrlData } = supabase.storage
               .from(bucketName)
               .getPublicUrl(`invoices/${fileName}`);
@@ -556,7 +569,7 @@ Deno.serve(async (req) => {
             pdfUrl = publicUrlData.publicUrl;
             console.log('PDF uploaded successfully to bucket:', bucketName);
             console.log('PDF public URL:', pdfUrl);
-            break; // Exit the loop if upload is successful
+            break;
           } else {
             console.error(`Error uploading to '${bucketName}' bucket:`, uploadErr);
             uploadError = uploadErr;
@@ -565,18 +578,18 @@ Deno.serve(async (req) => {
           console.error(`Error trying to upload to '${bucketName}' bucket:`, err);
           uploadError = err;
         }
-      } else {
-        console.log(`Bucket '${bucketName}' does not exist, skipping`);
       }
     }
     
     if (!pdfUrl) {
-      console.error("Failed to upload PDF to any bucket");
+      console.error('Failed to upload PDF to any bucket');
       return new Response(
-        JSON.stringify({ error: "Failed to upload PDF: " + (uploadError?.message || "No suitable storage bucket found") }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        JSON.stringify({ 
+          error: 'Failed to upload PDF: ' + (uploadError?.message || 'No suitable storage bucket found') 
+        }),
+        { 
+          status: 500, 
+          headers: corsHeaders 
         }
       );
     }
@@ -588,8 +601,7 @@ Deno.serve(async (req) => {
       .eq('invoice_number', invoice_number);
       
     if (updateError) {
-      console.error("Error updating invoice with PDF URL:", updateError);
-      // Continue anyway, as we can still return the PDF URL
+      console.error('Error updating invoice with PDF URL:', updateError);
     } else {
       console.log('Invoice updated with PDF URL');
     }
@@ -601,16 +613,18 @@ Deno.serve(async (req) => {
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders
       }
     );
   } catch (error) {
-    console.error("Error generating invoice PDF:", error);
+    console.error('Error generating invoice PDF:', error);
     return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
+      JSON.stringify({ 
+        error: error.message || 'Internal server error' 
+      }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders
       }
     );
   }
