@@ -72,7 +72,7 @@ const SessionTable = ({
             {sessions.map((session) => {
               const stage = stages.find(s => s.id === session.stage_id);
               const center = centers.find(c => c.id === session.center_id);
-              const registrationCount = session.registration_count || 0;
+              const registrationCount = session.current_registrations || 0;
               const remainingPlaces = session.capacity - registrationCount;
               const isFull = remainingPlaces <= 0;
               

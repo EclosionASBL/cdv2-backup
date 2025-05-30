@@ -54,7 +54,7 @@ const ImageWithFallback = ({ src, alt, className }: { src: string | null, alt: s
 };
 
 const ActivityModal = ({ activity, onClose }: ActivityModalProps) => {
-  const isSessionFull = (activity.registration_count || 0) >= activity.capacity;
+  const isSessionFull = (activity.current_registrations || 0) >= activity.capacity;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -97,7 +97,7 @@ const ActivityModal = ({ activity, onClose }: ActivityModalProps) => {
             </div>
             <div>
               <h3 className="font-semibold text-gray-700">Places disponibles</h3>
-              <p>{isSessionFull ? 'Complet' : `${activity.capacity - (activity.registration_count || 0)}/${activity.capacity} places`}</p>
+              <p>{isSessionFull ? 'Complet' : `${activity.capacity - (activity.current_registrations || 0)}/${activity.capacity} places`}</p>
             </div>
             <div>
               <h3 className="font-semibold text-gray-700">Prix</h3>
@@ -407,7 +407,7 @@ const ActivitiesPage = () => {
             <>
               <div className="grid md:grid-cols-2 gap-6">
                 {activities.map((activity) => {
-                  const isSessionFull = (activity.registration_count || 0) >= activity.capacity;
+                  const isSessionFull = (activity.current_registrations || 0) >= activity.capacity;
                   const isWaiting = filters.kid_id ? isOnWaitingList(activity.id, filters.kid_id) : false;
                   const isAlreadyRegistered = filters.kid_id ? isKidRegistered(filters.kid_id, activity.id) : false;
                   const needsInclusion = kidHasSpecialNeeds;
@@ -507,7 +507,7 @@ const ActivitiesPage = () => {
                             </span>
                           )}
                           <p className="text-xs">
-                            Places: {activity.capacity - (activity.registration_count || 0)}/{activity.capacity}
+                            Places: {activity.capacity - (activity.current_registrations || 0)}/{activity.capacity}
                           </p>
                           
                           {isAlreadyRegistered ? (

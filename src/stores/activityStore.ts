@@ -33,7 +33,7 @@ export interface Activity {
   tarif_condition_id: string | null;
   calculated_main_price?: number;
   calculated_reduced_price?: number | null;
-  registration_count?: number;
+  current_registrations: number;
 }
 
 interface ActivityFilters {
@@ -140,31 +140,6 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
 
       if (!kidData) throw new Error('Kid not found');
 
-      // Get registration counts for all sessions
-      const sessionIds = data?.map(s => s.id) || [];
-      
-      let registrationCountMap: Record<string, number> = {};
-      
-      if (sessionIds.length > 0) {
-        const { data: registrations, error: regError } = await supabase
-          .from('registrations')
-          .select('activity_id')
-          .in('activity_id', sessionIds)
-          .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
-          
-        if (regError) throw regError;
-        
-        // Count registrations for each activity
-        if (registrations) {
-          registrations.forEach(reg => {
-            if (!registrationCountMap[reg.activity_id]) {
-              registrationCountMap[reg.activity_id] = 0;
-            }
-            registrationCountMap[reg.activity_id]++;
-          });
-        }
-      }
-
       // Filter by kid's age and calculate prices
       let filteredData = data || [];
       filteredData = await Promise.all(filteredData.map(async (session) => {
@@ -179,7 +154,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
             ...session,
             calculated_main_price: mainPrice,
             calculated_reduced_price: reducedPrice,
-            registration_count: registrationCountMap[session.id] || 0
+            current_registrations: session.current_registrations || 0
           };
         }
         return null;
@@ -211,18 +186,9 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
         
       if (error) throw error;
 
-      // Get registration count for this activity
-      const { data: registrations, error: regCountError } = await supabase
-        .from('registrations')
-        .select('activity_id')
-        .eq('activity_id', id)
-        .in('payment_status', ['paid', 'pending']); // Count both paid and pending registrations
-
-      if (regCountError) throw regCountError;
-
       const activityWithCount = {
         ...data,
-        registration_count: registrations?.length || 0
+        current_registrations: data.current_registrations || 0
       };
 
       set({ currentActivity: activityWithCount });
