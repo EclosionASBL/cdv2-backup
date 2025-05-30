@@ -280,8 +280,6 @@ const KidDetailsPage = () => {
     return <LoadingScreen />;
   }
 
-  const isPersonalInfoIncomplete = !editedData.personal.n_national;
-
   const toggleSection = (section: string) => {
     setExpandedSection(prev => (prev === section ? null : section));
   };
@@ -320,9 +318,7 @@ const KidDetailsPage = () => {
       if (!data.prenom) errors.prenom = 'Le prénom est requis';
       if (!data.nom) errors.nom = 'Le nom est requis';
       if (!data.date_naissance) errors.date_naissance = 'La date de naissance est requise';
-      if (!data.n_national) {
-        errors.n_national = 'Le numéro national est requis';
-      } else if (!validateBelgianNRN(data.n_national.replace(/\D/g, ''))) {
+      if (data.n_national && !validateBelgianNRN(data.n_national.replace(/\D/g, ''))) {
         errors.n_national = 'Numéro national invalide';
       }
     }
@@ -433,14 +429,7 @@ const KidDetailsPage = () => {
 
       {/* Sections */}
       <Section
-        title={
-          <div className="flex items-center space-x-2">
-            <span>Informations personnelles</span>
-            {expandedSection !== 'personal' && isPersonalInfoIncomplete && (
-              <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-medium">Incomplet</span>
-            )}
-          </div>
-        }
+        title="Informations personnelles"
         icon={<User className="h-5 w-5 text-primary-600" />}
         isExpanded={expandedSection === 'personal'}
         onToggle={() => toggleSection('personal')}
@@ -479,16 +468,7 @@ const KidDetailsPage = () => {
             type="date"
           />
           <Field
-            label={
-              <div className="flex items-center justify-between">
-                <span>Numéro national</span>
-                {!editedData.personal.n_national && (
-                  <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-medium">
-                    Incomplet
-                  </span>
-                )}
-              </div>
-            }
+            label="Numéro national"
             value={editedData.personal.n_national}
             isEditing={editingSections.personal}
             onChange={v => updateField('personal','n_national',v)}
