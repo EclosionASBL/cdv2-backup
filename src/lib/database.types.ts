@@ -393,6 +393,71 @@ export interface Database {
           admin_notes?: string | null
         }
       }
+      sessions: {
+        Row: {
+          id: string
+          created_at: string
+          stage_id: string
+          center_id: string
+          start_date: string
+          end_date: string
+          capacity: number
+          periode: string
+          active: boolean
+          nombre_jours: number | null
+          prix_normal: number
+          prix_reduit: number | null
+          prix_local: number | null
+          prix_local_reduit: number | null
+          remarques: string | null
+          tarif_condition_id: string | null
+          visible_from: string | null
+          semaine: string | null
+          current_registrations: number
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          stage_id: string
+          center_id: string
+          start_date: string
+          end_date: string
+          capacity: number
+          periode: string
+          active?: boolean
+          nombre_jours?: number | null
+          prix_normal: number
+          prix_reduit?: number | null
+          prix_local?: number | null
+          prix_local_reduit?: number | null
+          remarques?: string | null
+          tarif_condition_id?: string | null
+          visible_from?: string | null
+          semaine?: string | null
+          current_registrations?: number
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          stage_id?: string
+          center_id?: string
+          start_date?: string
+          end_date?: string
+          capacity?: number
+          periode?: string
+          active?: boolean
+          nombre_jours?: number | null
+          prix_normal?: number
+          prix_reduit?: number | null
+          prix_local?: number | null
+          prix_local_reduit?: number | null
+          remarques?: string | null
+          tarif_condition_id?: string | null
+          visible_from?: string | null
+          semaine?: string | null
+          current_registrations?: number
+        }
+      }
     }
     Views: {
       [_ in never]: never
