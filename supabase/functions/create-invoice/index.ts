@@ -72,11 +72,17 @@ Deno.serve(async (req) => {
 
     console.log('User authenticated:', user.id);
 
-    // Generate invoice number
-    const invoiceNumber = generateInvoiceNumber();
+    // Generate invoice number with new format CDV-YYMMDD-00001
+    const invoiceNumber = await generateInvoiceNumber(supabase);
     
-    // Generate structured communication
-    const communication = generateStructuredCommunication();
+    // Get kid information for the first item to generate structured communication
+    const firstItem = items[0];
+    if (!firstItem || !firstItem.kid_id) {
+      throw new Error('Informations sur l\'enfant manquantes pour générer la communication structurée.');
+    }
+    
+    // Generate structured communication based on kid's birth date and invoice number
+    const communication = await generateStructuredCommunication(supabase, firstItem.kid_id, invoiceNumber);
     
     // Calculate due date (20 days from now)
     const dueDate = new Date();
@@ -235,27 +241,52 @@ Deno.serve(async (req) => {
   }
 });
 
-// Helper function to generate a unique invoice number
-function generateInvoiceNumber(): string {
-  const prefix = 'INV';
-  const timestamp = Date.now().toString().slice(-6);
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `${prefix}-${timestamp}-${random}`;
+// Helper function to generate a unique invoice number with format CDV-YYMMDD-00001
+async function generateInvoiceNumber(supabase: any): Promise<string> {
+  const today = new Date();
+  const dateFormat = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+  
+  // Call the database function to get the next sequence number
+  const { data, error } = await supabase.rpc('get_next_invoice_sequence', {
+    p_date: today.toISOString().split('T')[0]
+  });
+  
+  if (error) {
+    console.error('Error getting next invoice sequence:', error);
+    throw new Error('Failed to generate invoice number');
+  }
+  
+  // Format the sequence number with leading zeros
+  const sequenceNumber = data.toString().padStart(5, '0');
+  
+  return `CDV-${dateFormat}-${sequenceNumber}`;
 }
 
-// Helper function to generate a structured communication code for bank transfers
-function generateStructuredCommunication(): string {
-  // Generate 10 random digits, starting with 0
-  const digits = '0' + Array.from({ length: 9 }, () => Math.floor(Math.random() * 10)).join('');
+// Helper function to generate a structured communication code based on kid's birth date and invoice number
+async function generateStructuredCommunication(supabase: any, kidId: string, invoiceNumber: string): Promise<string> {
+  // Get kid's birth date
+  const { data: kid, error: kidError } = await supabase
+    .from('kids')
+    .select('date_naissance')
+    .eq('id', kidId)
+    .single();
   
-  // Calculate check digit (modulo 97, or 97 if result is 0)
-  const base = parseInt(digits, 10);
-  let checkDigits = 97 - (base % 97);
-  if (checkDigits === 0) checkDigits = 97;
+  if (kidError || !kid) {
+    console.error('Error fetching kid data:', kidError);
+    throw new Error('Failed to fetch kid data for structured communication');
+  }
   
-  // Format with leading zero for check digits if needed
-  const formattedCheckDigits = checkDigits < 10 ? `0${checkDigits}` : `${checkDigits}`;
+  // Extract year, month, and day from birth date
+  const birthDate = new Date(kid.date_naissance);
+  const birthYear = birthDate.getFullYear().toString().slice(-2);
+  const birthMonth = (birthDate.getMonth() + 1).toString().padStart(2, '0');
+  const birthDay = birthDate.getDate().toString().padStart(2, '0');
   
-  // Format as +++xxx/xxxx/xxxxx+++
-  return `+++${digits.slice(0, 3)}/${digits.slice(3, 7)}/${digits.slice(7, 10)}${formattedCheckDigits}+++`;
+  // Extract invoice sequence from invoice number (last 5 digits)
+  const invoiceSequence = invoiceNumber.split('-')[2];
+  
+  // Format as +++0YY-MMDD-IIIII+++
+  const structuredComm = `+++0${birthYear}-${birthMonth}${birthDay}-${invoiceSequence}+++`;
+  
+  return structuredComm;
 }

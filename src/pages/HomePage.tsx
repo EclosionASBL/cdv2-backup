@@ -141,45 +141,20 @@ const HomePage = () => {
                   </div>
                 </div>
               ))
-            ) : topActivities.length > 0 ? (
-              topActivities.map((activity) => (
-                <div
-                  key={activity.id}
-                  className="card group"
-                >
-                  <div className="relative overflow-hidden">
-                    <img
-                      src={activity.image_url || `https://images.pexels.com/photos/8522577/pexels-photo-8522577.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2`}
-                      alt={activity.nom}
-                      className="h-52 w-full object-cover transition-transform group-hover:scale-105"
-                    />
-                    <div className="absolute top-3 right-3 bg-accent-500 text-white px-2 py-1 rounded-lg text-sm font-medium">
-                      {activity.categorie}
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <h3 className="text-lg font-semibold mb-1">{activity.nom}</h3>
-                    <p className="text-gray-600 text-sm mb-2">
-                      {new Date(activity.dateDebut).toLocaleDateString('fr-FR')} - {new Date(activity.dateFin).toLocaleDateString('fr-FR')}
-                    </p>
-                    <p className="text-gray-500 text-sm mb-3">
-                      Centre: {activity.centre} | {activity.ageMin}-{activity.ageMax} ans
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-lg font-bold text-primary-600">{activity.prix} €</span>
-                      <Link
-                        to={`/activities/${activity.id}`}
-                        className="bg-primary-50 text-primary-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-primary-100"
-                      >
-                        Détails
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              ))
             ) : (
-              <div className="col-span-4 py-12 text-center">
-                <p className="text-gray-500">Aucun stage disponible pour le moment.</p>
+              <div className="col-span-full py-12 text-center">
+                <div className="bg-white rounded-xl shadow-md p-8 mx-auto max-w-2xl">
+                  <h3 className="text-2xl font-bold text-gray-800 mb-4">Disponible bientôt</h3>
+                  <p className="text-gray-600 mb-6">
+                    Notre catalogue de stages est en cours de préparation. Revenez bientôt pour découvrir notre sélection d'activités passionnantes pour vos enfants.
+                  </p>
+                  <Link
+                    to="/register"
+                    className="btn-primary inline-block"
+                  >
+                    Créer un compte pour être informé
+                  </Link>
+                </div>
               </div>
             )}
           </div>
@@ -216,8 +191,8 @@ const HomePage = () => {
                 </svg>
               </div>
               <p className="text-gray-600 mb-4">
-                "Nous tenions à vous remercier pour la qualité de l'accueil et des activités et pour la gentillesse et le professionnalisme des animateurs. Faustine et Baptiste ont passé de supers moments et c'est avec plaisir que nous les inscrirons de nouveau. Merci encore!
-              </p>
+                "Nous tenions à vous remercier pour la qualité de l'accueil et des activités et pour la gentillesse et le professionnalisme des animateurs. Faustine et Baptiste ont passé de supers moments et c'est avec plaisir que nous les inscrirons de nouveau. Merci encore!"
+              </p>              
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
