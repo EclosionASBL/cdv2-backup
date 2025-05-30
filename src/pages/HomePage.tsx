@@ -191,17 +191,17 @@ const HomePage = () => {
                 </svg>
               </div>
               <p className="text-gray-600 mb-4">
-                "Ma fille a participé au stage de cirque et elle en est revenue enchantée ! Les animateurs étaient professionnels et attentionnés. Je recommande vivement !"
+                "Nous tenions à vous remercier pour la qualité de l'accueil et des activités et pour la gentillesse et le professionnalisme des animateurs. Faustine et Baptiste ont passé de supers moments et c'est avec plaisir que nous les inscrirons de nouveau. Merci encore!"
               </p>
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
-                    <span className="text-primary-600 font-semibold">S</span>
+                    <span className="text-primary-600 font-semibold">M</span>
                   </div>
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-900">Sophie M.</p>
-                  <p className="text-sm text-gray-500">Maman de Léa, 8 ans</p>
+                  <p className="text-sm font-medium text-gray-900">M.</p>
+                  <p className="text-sm text-gray-500">Maman de Faustine et Baptiste</p>
                 </div>
               </div>
             </div>
@@ -225,7 +225,7 @@ const HomePage = () => {
                 </svg>
               </div>
               <p className="text-gray-600 mb-4">
-                "Les stages de sciences sont passionnants et très bien organisés. Mon fils a appris beaucoup de choses tout en s'amusant. Je recommande à tous les parents !"
+                "Nous sommes ravi de cette première expérience avec vous. Merci aux animateurs pour leur énergie et leur accueil chaleureux."
               </p>
               <div className="flex items-center">
                 <div className="flex-shrink-0">
@@ -234,8 +234,8 @@ const HomePage = () => {
                   </div>
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-900">Thomas B.</p>
-                  <p className="text-sm text-gray-500">Papa de Lucas, 10 ans</p>
+                  <p className="text-sm font-medium text-gray-900">T.B.</p>
+                  <p className="text-sm text-gray-500">Papa de Thomas à Ixelles</p>
                 </div>
               </div>
             </div>
@@ -259,7 +259,7 @@ const HomePage = () => {
                 </svg>
               </div>
               <p className="text-gray-600 mb-4">
-                "J'adore le système d'inscription en ligne, c'est rapide et pratique. Mes enfants ont participé aux stages de cuisine et de nature, ils étaient ravis !"
+                "Bravo à l'équipe! Chouette ambiance, animateur.rice.s souriant.e.s, top! Chouette "spectacle" à la fin de la semaine, très bonne idée de proposer une auberge espagnole"
               </p>
               <div className="flex items-center">
                 <div className="flex-shrink-0">
@@ -268,8 +268,8 @@ const HomePage = () => {
                   </div>
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-900">Amélie D.</p>
-                  <p className="text-sm text-gray-500">Maman de Tom et Julie</p>
+                  <p className="text-sm font-medium text-gray-900">Amal</p>
+                  <p className="text-sm text-gray-500">Maman à Ixelles</p>
                 </div>
               </div>
             </div>
