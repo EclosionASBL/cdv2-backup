@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAdminStore } from '../../stores/adminStore';
 import { useTarifConditionStore } from '../../stores/tarifConditionStore';
 import { useWaitingListStore } from '../../stores/waitingListStore';
-import { Plus, AlertTriangle, Loader2, List as ListWait } from 'lucide-react';
+import { Plus, AlertTriangle, Loader2, List as ListWait, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -50,6 +50,7 @@ const AdminSessionsPage = () => {
     prix_reduit: 0
   });
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Filter state
   const [selectedCenter, setSelectedCenter] = useState<string | null>(null);
@@ -166,6 +167,19 @@ const AdminSessionsPage = () => {
     }
   };
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchSessions();
+      toast.success('Données actualisées');
+    } catch (error) {
+      toast.error('Erreur lors de l\'actualisation');
+      console.error('Error refreshing sessions:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const filteredSessions = sessions.filter((s) =>
     (!selectedCenter || s.center_id === selectedCenter) &&
     (!selectedPeriode || s.periode === selectedPeriode) &&
@@ -200,6 +214,14 @@ const AdminSessionsPage = () => {
           <p className="text-gray-600 mt-1">Gérez les sessions de stages et leur planification</p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="btn-outline flex items-center"
+          >
+            <RefreshCw className={`h-5 w-5 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Actualiser
+          </button>
           <Link
             to="/admin/waiting-list"
             className="btn-outline flex items-center"
