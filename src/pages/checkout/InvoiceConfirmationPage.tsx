@@ -179,6 +179,22 @@ const InvoiceConfirmationPage = () => {
                   </div>
                 ))}
               </div>
+
+              {registrations.length > 0 && registrations[0].invoice_id && (
+                <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h3 className="font-semibold text-blue-800 mb-2">Instructions de paiement</h3>
+                  <p className="text-blue-700 mb-2">Veuillez effectuer votre paiement par virement bancaire avec les informations suivantes :</p>
+                  <ul className="space-y-2 text-blue-700">
+                    <li><span className="font-medium">IBAN :</span> BE64 3631 1005 7452</li>
+                    <li><span className="font-medium">BIC :</span> BBRUBEBB</li>
+                    <li><span className="font-medium">Bénéficiaire :</span> Éclosion ASBL</li>
+                    <li><span className="font-medium">Communication :</span> <span className="font-bold">{registrations[0].invoice_id}</span></li>
+                  </ul>
+                  <p className="text-sm text-blue-600 mt-2">
+                    Utilisez le numéro de facture comme communication libre lors de votre virement.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="bg-yellow-50 p-4 rounded-lg mb-8">

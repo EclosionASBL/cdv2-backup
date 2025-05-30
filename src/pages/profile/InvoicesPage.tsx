@@ -213,9 +213,9 @@ const InvoicesPage = () => {
                       <div>
                         <p className="text-yellow-700 font-medium">Paiement en attente</p>
                         <p className="text-yellow-600 text-sm">
-                          Veuillez effectuer le paiement par virement bancaire avec la communication structurée suivante:
+                          Veuillez effectuer le paiement par virement bancaire avec le numéro de facture comme communication:
                         </p>
-                        <p className="text-yellow-800 font-mono font-medium mt-1">{invoice.communication}</p>
+                        <p className="text-yellow-800 font-mono font-medium mt-1">{invoice.invoice_number}</p>
                       </div>
                     </div>
                   </div>
