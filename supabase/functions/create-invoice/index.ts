@@ -72,17 +72,11 @@ Deno.serve(async (req) => {
 
     console.log('User authenticated:', user.id);
 
-    // Generate invoice number with new format CDV-YYMMDD-00001
+    // Generate invoice number with format CDV-YYMMDD-00001
     const invoiceNumber = await generateInvoiceNumber(supabase);
     
-    // Get kid information for the first item to generate structured communication
-    const firstItem = items[0];
-    if (!firstItem || !firstItem.kid_id) {
-      throw new Error('Informations sur l\'enfant manquantes pour générer la communication structurée.');
-    }
-    
-    // Generate structured communication based on kid's birth date and invoice number
-    const communication = await generateStructuredCommunication(supabase, firstItem.kid_id, invoiceNumber);
+    // Use the invoice number as the communication
+    const communication = invoiceNumber;
     
     // Calculate due date (20 days from now)
     const dueDate = new Date();
@@ -253,40 +247,14 @@ async function generateInvoiceNumber(supabase: any): Promise<string> {
   
   if (error) {
     console.error('Error getting next invoice sequence:', error);
-    throw new Error('Failed to generate invoice number');
+    // Fallback to a timestamp-based number if the RPC fails
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `CDV-${dateFormat}-${random}`;
   }
   
   // Format the sequence number with leading zeros
   const sequenceNumber = data.toString().padStart(5, '0');
   
   return `CDV-${dateFormat}-${sequenceNumber}`;
-}
-
-// Helper function to generate a structured communication code based on kid's birth date and invoice number
-async function generateStructuredCommunication(supabase: any, kidId: string, invoiceNumber: string): Promise<string> {
-  // Get kid's birth date
-  const { data: kid, error: kidError } = await supabase
-    .from('kids')
-    .select('date_naissance')
-    .eq('id', kidId)
-    .single();
-  
-  if (kidError || !kid) {
-    console.error('Error fetching kid data:', kidError);
-    throw new Error('Failed to fetch kid data for structured communication');
-  }
-  
-  // Extract year, month, and day from birth date
-  const birthDate = new Date(kid.date_naissance);
-  const birthYear = birthDate.getFullYear().toString().slice(-2);
-  const birthMonth = (birthDate.getMonth() + 1).toString().padStart(2, '0');
-  const birthDay = birthDate.getDate().toString().padStart(2, '0');
-  
-  // Extract invoice sequence from invoice number (last 5 digits)
-  const invoiceSequence = invoiceNumber.split('-')[2];
-  
-  // Format as +++0YY-MMDD-IIIII+++
-  const structuredComm = `+++0${birthYear}-${birthMonth}${birthDay}-${invoiceSequence}+++`;
-  
-  return structuredComm;
 }

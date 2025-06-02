@@ -57,7 +57,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
-
+  
   useEffect(() => {
     // Check for password recovery in URL
     const checkPasswordRecovery = async () => {
@@ -99,13 +99,13 @@ function App() {
         <Route element={<AuthLayout />}>
           <Route 
             path="/login" 
-            element={user ? <Navigate to="/dashboard\" replace /> : <LoginPage />} 
+            element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} 
           />
           <Route 
             path="/register" 
-            element={user ? <Navigate to="/dashboard\" replace /> : <RegisterPage />} 
+            element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage />} 
           />
-          <Route path="/reset-password/*\" element={<ResetPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         {/* Protected routes */}
