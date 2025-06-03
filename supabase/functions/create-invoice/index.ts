@@ -27,6 +27,8 @@ async function generateInvoiceNumber(supabase: any, centerTag: string): Promise<
   const yearSuffix = currentYear.toString().slice(-2); // Get last two digits of the year
 
   // Call the database function to get the next sequence number
+  // Note: We still pass the tag parameter for the function signature,
+  // but the function now only uses the year for sequencing
   const { data, error } = await supabase.rpc('get_next_invoice_sequence', {
     p_tag: centerTag,
     p_year: currentYear
@@ -118,7 +120,7 @@ Deno.serve(async (req) => {
     const centerTag = sessionData.center.tag;
     console.log('Center tag for invoice:', centerTag);
 
-    // Generate invoice number with new format CDV-TAG-YY00001
+    // Generate invoice number with format CDV-TAG-YY00001
     const invoiceNumber = await generateInvoiceNumber(supabase, centerTag);
     
     // Use the invoice number as the communication
