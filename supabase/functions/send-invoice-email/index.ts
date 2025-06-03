@@ -266,15 +266,24 @@ Deno.serve(async (req) => {
               
               <p>Bonjour ${parentName},</p>
               
+              <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
+                <h2 style="margin-top: 0; color: #4f46e5;">Informations de paiement</h2>
+                <p>Votre facture a été générée. Vous avez jusqu'au <strong>${formattedDueDate}</strong> pour effectuer le paiement.</p>
+                
+                <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                  <p style="margin: 5px 0;"><strong>Montant :</strong> ${invoiceData.amount} €</p>
+                  <p style="margin: 5px 0;"><strong>IBAN :</strong> BE64 3631 1005 7452</p>
+                  <p style="margin: 5px 0;"><strong>BIC :</strong> BBRUBEBB</p>
+                  <p style="margin: 5px 0;"><strong>Bénéficiaire :</strong> Éclosion ASBL</p>
+                  <p style="margin: 5px 0;"><strong>Communication :</strong> ${invoiceData.communication}</p>
+                </div>
+                
+                <p style="margin-top: 15px;"><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;">Télécharger la facture</a></p>
+              </div>
+              
               <p>Nous avons le plaisir de vous confirmer l'inscription de votre enfant aux activités suivantes :</p>
               
               ${registrationsHtml}
-              
-              <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
-                <h2 style="margin-top: 0; color: #4f46e5;">Votre facture est prête</h2>
-                <p>Votre facture a été générée et est disponible ci-dessous. Vous avez jusqu'au <strong>${formattedDueDate}</strong> pour effectuer le paiement.</p>
-                <p><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Télécharger la facture</a></p>
-              </div>
               
               <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
                 <h2 style="margin-top: 0; color: #1f2937;">Que se passe-t-il maintenant ?</h2>
