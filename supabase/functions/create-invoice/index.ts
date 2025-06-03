@@ -20,6 +20,32 @@ interface CartItem {
   imageUrl?: string;
 }
 
+// Helper function to generate a unique invoice number with format CDV-TAG-YY00001
+async function generateInvoiceNumber(supabase: any, centerTag: string): Promise<string> {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const yearSuffix = currentYear.toString().slice(-2); // Get last two digits of the year
+
+  // Call the database function to get the next sequence number
+  const { data, error } = await supabase.rpc('get_next_invoice_sequence', {
+    p_tag: centerTag,
+    p_year: currentYear
+  });
+
+  if (error) {
+    console.error('Error getting next invoice sequence:', error);
+    // Fallback to a timestamp-based number if the RPC fails
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `CDV-${centerTag}-${yearSuffix}${random}`; // Fallback format
+  }
+
+  // Format the sequence number with leading zeros
+  const sequenceNumber = data.toString().padStart(5, '0');
+
+  return `CDV-${centerTag}-${yearSuffix}${sequenceNumber}`;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight request
   if (req.method === "OPTIONS") {
@@ -72,8 +98,28 @@ Deno.serve(async (req) => {
 
     console.log('User authenticated:', user.id);
 
-    // Generate invoice number with format CDV-YYMMDD-00001
-    const invoiceNumber = await generateInvoiceNumber(supabase);
+    // Get the tag from the first item's activity's center
+    const firstItem = items[0];
+    if (!firstItem || !firstItem.activity_id) {
+      throw new Error('Informations sur l\'activité manquantes pour générer le numéro de facture.');
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('sessions')
+      .select('center:centers!center_id(tag)')
+      .eq('id', firstItem.activity_id)
+      .single();
+
+    if (sessionError || !sessionData?.center?.tag) {
+      console.error('Error fetching center tag:', sessionError);
+      throw new Error('Impossible de récupérer le tag du centre pour la facturation.');
+    }
+    
+    const centerTag = sessionData.center.tag;
+    console.log('Center tag for invoice:', centerTag);
+
+    // Generate invoice number with new format CDV-TAG-YY00001
+    const invoiceNumber = await generateInvoiceNumber(supabase, centerTag);
     
     // Use the invoice number as the communication
     const communication = invoiceNumber;
@@ -234,27 +280,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-
-// Helper function to generate a unique invoice number with format CDV-YYMMDD-00001
-async function generateInvoiceNumber(supabase: any): Promise<string> {
-  const today = new Date();
-  const dateFormat = `${today.getFullYear().toString().slice(-2)}${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
-  
-  // Call the database function to get the next sequence number
-  const { data, error } = await supabase.rpc('get_next_invoice_sequence', {
-    p_date: today.toISOString().split('T')[0]
-  });
-  
-  if (error) {
-    console.error('Error getting next invoice sequence:', error);
-    // Fallback to a timestamp-based number if the RPC fails
-    const timestamp = Date.now().toString().slice(-6);
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    return `CDV-${dateFormat}-${random}`;
-  }
-  
-  // Format the sequence number with leading zeros
-  const sequenceNumber = data.toString().padStart(5, '0');
-  
-  return `CDV-${dateFormat}-${sequenceNumber}`;
-}
