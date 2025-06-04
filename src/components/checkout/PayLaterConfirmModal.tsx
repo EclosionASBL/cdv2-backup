@@ -1,18 +1,19 @@
 import { Dialog } from '@headlessui/react';
-import { Info } from 'lucide-react';
+import { Info, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
 interface PayLaterConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  isLoading: boolean;
 }
 
-export const PayLaterConfirmModal = ({ isOpen, onClose, onConfirm }: PayLaterConfirmModalProps) => {
+export const PayLaterConfirmModal = ({ isOpen, onClose, onConfirm, isLoading }: PayLaterConfirmModalProps) => {
   const [isConfirmed, setIsConfirmed] = useState(false);
 
   const handleConfirm = () => {
-    if (!isConfirmed) return;
+    if (!isConfirmed || isLoading) return;
     onConfirm();
   };
 
@@ -63,17 +64,25 @@ export const PayLaterConfirmModal = ({ isOpen, onClose, onConfirm }: PayLaterCon
             <button
               type="button"
               onClick={onClose}
-              className="btn-outline"
+              disabled={isLoading}
+              className={`btn-outline ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               Annuler
             </button>
             <button
               type="button"
               onClick={handleConfirm}
-              disabled={!isConfirmed}
-              className={`btn-primary ${!isConfirmed ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!isConfirmed || isLoading}
+              className={`btn-primary ${(!isConfirmed || isLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              Valider l'inscription
+              {isLoading ? (
+                <span className="flex items-center">
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Traitement en cours...
+                </span>
+              ) : (
+                'Valider l\'inscription'
+              )}
             </button>
           </div>
         </div>

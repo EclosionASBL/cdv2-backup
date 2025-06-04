@@ -62,9 +62,13 @@ const CheckoutPage = () => {
   };
 
   const handleValidateInscriptions = () => {
+    // Set loading state immediately to prevent double clicks
+    setIsLoading(true);
+    
     // Check if user profile is complete
     if (!profile || !profile.prenom || !profile.nom || !profile.adresse || !profile.cpostal || !profile.localite || !profile.telephone) {
       setError('Veuillez compléter votre profil avant de continuer. Des informations sont manquantes.');
+      setIsLoading(false); // Reset loading state
       setTimeout(() => {
         navigate('/profile');
       }, 3000);
@@ -77,15 +81,16 @@ const CheckoutPage = () => {
   const handlePayLaterConfirm = async () => {
     if (!user) {
       setError('Vous devez être connecté pour effectuer un paiement.');
+      setIsLoading(false); // Reset loading state
       return;
     }
 
     if (items.length === 0) {
       setError('Votre panier est vide.');
+      setIsLoading(false); // Reset loading state
       return;
     }
 
-    setIsLoading(true);
     setError(null);
     
     try {
@@ -352,8 +357,12 @@ const CheckoutPage = () => {
       {/* Pay Later Confirmation Modal */}
       <PayLaterConfirmModal
         isOpen={isPayLaterModalOpen}
-        onClose={() => setIsPayLaterModalOpen(false)}
+        onClose={() => {
+          setIsPayLaterModalOpen(false);
+          setIsLoading(false); // Reset loading state if modal is closed
+        }}
         onConfirm={handlePayLaterConfirm}
+        isLoading={isLoading}
       />
     </div>
   );
