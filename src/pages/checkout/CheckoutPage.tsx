@@ -352,8 +352,12 @@ const CheckoutPage = () => {
       {/* Pay Later Confirmation Modal */}
       <PayLaterConfirmModal
         isOpen={isPayLaterModalOpen}
-        onClose={() => setIsPayLaterModalOpen(false)}
+        onClose={() => {
+          setIsPayLaterModalOpen(false);
+          setIsLoading(false); // Reset loading state if modal is closed
+        }}
         onConfirm={handlePayLaterConfirm}
+        isLoading={isLoading}
       />
     </div>
   );

@@ -120,12 +120,6 @@ Deno.serve(async (req) => {
     const centerTag = sessionData.center.tag;
     console.log('Center tag for invoice:', centerTag);
 
-    // Generate invoice number with format CDV-TAG-YY00001
-    const invoiceNumber = await generateInvoiceNumber(supabase, centerTag);
-    
-    // Use the invoice number as the communication
-    const communication = invoiceNumber;
-    
     // Calculate due date (20 days from now)
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 20);
@@ -136,43 +130,49 @@ Deno.serve(async (req) => {
       0
     );
 
-    console.log('Invoice details:', { invoiceNumber, totalAmount, dueDate: dueDate.toISOString() });
+    console.log('Total amount:', totalAmount);
 
-    // Array to collect registration IDs
-    const registrationIds: string[] = [];
-
-    // Create registrations with pending status
-    for (const item of items) {
+    // Array to collect registration data for bulk insert
+    const registrationsToInsert = items.map((item: CartItem) => {
       // Convert price to proper format (should be in euros, not cents)
       const priceInEuros = item.price / 100;
       
-      const { data, error: regError } = await supabase
-        .from('registrations')
-        .insert({
-          user_id: user.id,
-          kid_id: item.kid_id,
-          activity_id: item.activity_id,
-          price_type: item.price_type,
-          reduced_declaration: item.reduced_declaration,
-          amount_paid: priceInEuros,
-          payment_status: 'pending',
-          due_date: dueDate.toISOString(),
-          reminder_sent: false
-        })
-        .select('id');
+      return {
+        user_id: user.id,
+        kid_id: item.kid_id,
+        activity_id: item.activity_id,
+        price_type: item.price_type,
+        reduced_declaration: item.reduced_declaration,
+        amount_paid: priceInEuros,
+        payment_status: 'pending',
+        due_date: dueDate.toISOString(),
+        reminder_sent: false
+      };
+    });
 
-      if (regError) {
-        throw new Error(`Erreur lors de la création de l'inscription: ${regError.message}`);
-      }
+    // Bulk insert all registrations in a single operation
+    const { data: registrations, error: regError } = await supabase
+      .from('registrations')
+      .insert(registrationsToInsert)
+      .select('id');
 
-      if (!data || data.length === 0) {
-        throw new Error('Erreur lors de la création de l\'inscription: aucun ID retourné');
-      }
-
-      registrationIds.push(data[0].id);
+    if (regError) {
+      throw new Error(`Erreur lors de la création des inscriptions: ${regError.message}`);
     }
 
+    if (!registrations || registrations.length === 0) {
+      throw new Error('Erreur lors de la création des inscriptions: aucun ID retourné');
+    }
+
+    // Extract registration IDs
+    const registrationIds = registrations.map(reg => reg.id);
     console.log('Created registrations:', registrationIds);
+
+    // Now that registrations are successfully created, generate the invoice number
+    const invoiceNumber = await generateInvoiceNumber(supabase, centerTag);
+    
+    // Use the invoice number as the communication
+    const communication = invoiceNumber;
 
     // Create invoice record
     const { data: invoice, error: invoiceError } = await supabase
