@@ -49,7 +49,7 @@ interface WaitingListState {
   addToWaitingList: (activityId: string, kidId: string) => Promise<void>;
   removeFromWaitingList: (id: string) => Promise<void>;
   offerSeat: (id: string) => Promise<void>;
-  convertToRegistration: (id: string) => Promise<void>;
+  markEntryConverted: (id: string) => Promise<void>;
   cancelWaitingListEntry: (id: string) => Promise<void>;
   isOnWaitingList: (activityId: string, kidId: string) => boolean;
 }
@@ -261,100 +261,10 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
     }
   },
 
-  convertToRegistration: async (id) => {
+  markEntryConverted: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      // Get the waiting list entry
-      const { data: waitingEntry, error: fetchError } = await supabase
-        .from('waiting_list')
-        .select(`
-          *,
-          session:activity_id(
-            prix_normal,
-            prix_reduit,
-            prix_local,
-            prix_local_reduit,
-            tarif_condition_id
-          ),
-          kid:kid_id(
-            cpostal,
-            ecole
-          )
-        `)
-        .eq('id', id)
-        .single();
-
-      if (fetchError) throw fetchError;
-      if (!waitingEntry) throw new Error('Waiting list entry not found');
-
-      // Unwrap arrays if needed
-      const kid = Array.isArray(waitingEntry.kid) ? waitingEntry.kid[0] : waitingEntry.kid;
-      const session = Array.isArray(waitingEntry.session) ? waitingEntry.session[0] : waitingEntry.session;
-
-      // Check if a registration already exists for this kid and activity
-      const { data: existingReg, error: regCheckError } = await supabase
-        .from('registrations')
-        .select('id')
-        .eq('kid_id', waitingEntry.kid_id)
-        .eq('activity_id', waitingEntry.activity_id)
-        .maybeSingle();
-        
-      if (regCheckError) throw regCheckError;
-      
-      // Only create a new registration if one doesn't already exist
-      if (!existingReg) {
-        // Determine price based on kid's postal code and school
-        let priceType = 'normal';
-        let price = session.prix_normal;
-
-        // Check if the session has a tarif condition
-        if (session.prix_local && session.tarif_condition_id) {
-          // Get tarif condition for this session
-          const { data: condition } = await supabase
-            .from('tarif_conditions')
-            .select('*')
-            .eq('id', session.tarif_condition_id)
-            .single();
-
-          if (condition) {
-            // Check if kid's postal code or school matches the condition
-            const postalMatch = kid.cpostal && 
-              condition.code_postaux_autorises?.includes(kid.cpostal);
-            
-            const schoolMatch = kid.ecole && 
-              condition.school_ids?.includes(kid.ecole);
-
-            if (postalMatch || schoolMatch) {
-              priceType = 'local';
-              price = session.prix_local;
-            }
-          }
-        }
-
-        // Create registration
-        const { error: registrationError } = await supabase
-          .from('registrations')
-          .insert({
-            user_id: waitingEntry.user_id,
-            kid_id: waitingEntry.kid_id,
-            activity_id: waitingEntry.activity_id,
-            payment_status: 'pending',
-            amount_paid: price,
-            price_type: priceType,
-            reduced_declaration: false
-          });
-
-        if (registrationError) {
-          // If there's a unique constraint violation, it means the registration already exists
-          if (registrationError.code === '23505') {
-            console.log('Registration already exists, continuing with waiting list update');
-          } else {
-            throw registrationError;
-          }
-        }
-      }
-
-      // Update waiting list entry status
+      // Update waiting list entry status to 'converted'
       const { error: updateError } = await supabase
         .from('waiting_list')
         .update({ status: 'converted' })
@@ -364,7 +274,7 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
 
       await get().fetchWaitingList();
     } catch (error: any) {
-      console.error('Error converting to registration:', error);
+      console.error('Error marking waiting list entry as converted:', error);
       set({ error: error.message });
       throw error;
     } finally {
