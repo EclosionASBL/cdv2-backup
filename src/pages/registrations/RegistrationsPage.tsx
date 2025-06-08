@@ -142,8 +142,31 @@ const RegistrationsPage = () => {
         return;
       }
       
-      // Convert to registration
-      await convertToRegistration(entry.id);
+      // Check if a registration already exists for this kid and activity
+      const { data: existingReg, error: regCheckError } = await supabase
+        .from('registrations')
+        .select('id')
+        .eq('kid_id', entry.kid_id)
+        .eq('activity_id', entry.activity_id)
+        .maybeSingle();
+        
+      if (regCheckError) {
+        console.error("Error checking existing registration:", regCheckError);
+        toast.error("Une erreur est survenue lors de la vérification");
+        return;
+      }
+      
+      // If registration already exists, don't try to create a new one
+      if (!existingReg) {
+        // Convert to registration only if it doesn't exist yet
+        await convertToRegistration(entry.id);
+      } else {
+        // Just update the waiting list status
+        await supabase
+          .from('waiting_list')
+          .update({ status: 'converted' })
+          .eq('id', entry.id);
+      }
       
       // Get session details for cart
       const { data: sessionData, error: sessionError } = await supabase
@@ -182,6 +205,10 @@ const RegistrationsPage = () => {
       });
       
       toast.success("Place validée ! Redirection vers le panier...");
+      
+      // Refresh data
+      await fetchWaitingList();
+      await fetchDetailedRegistrations();
       
       // Redirect to cart after a short delay
       setTimeout(() => {

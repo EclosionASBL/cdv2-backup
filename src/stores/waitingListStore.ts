@@ -138,16 +138,42 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase
+      // First check if an entry already exists
+      const { data: existingEntry, error: checkError } = await supabase
         .from('waiting_list')
-        .insert({
-          activity_id: activityId,
-          kid_id: kidId,
-          user_id: user.id,
-          status: 'waiting'
-        });
+        .select('id, status')
+        .eq('activity_id', activityId)
+        .eq('kid_id', kidId)
+        .maybeSingle();
+        
+      if (checkError) throw checkError;
+      
+      // If entry exists but was cancelled, update it instead of creating a new one
+      if (existingEntry) {
+        if (existingEntry.status === 'cancelled') {
+          const { error: updateError } = await supabase
+            .from('waiting_list')
+            .update({ status: 'waiting' })
+            .eq('id', existingEntry.id);
+            
+          if (updateError) throw updateError;
+        } else {
+          throw new Error('Vous êtes déjà sur la liste d\'attente pour cette activité');
+        }
+      } else {
+        // Create new entry
+        const { error } = await supabase
+          .from('waiting_list')
+          .insert({
+            activity_id: activityId,
+            kid_id: kidId,
+            user_id: user.id,
+            status: 'waiting'
+          });
 
-      if (error) throw error;
+        if (error) throw error;
+      }
+      
       await get().fetchWaitingList();
     } catch (error: any) {
       console.error('Error adding to waiting list:', error);
@@ -265,48 +291,68 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
       const kid = Array.isArray(waitingEntry.kid) ? waitingEntry.kid[0] : waitingEntry.kid;
       const session = Array.isArray(waitingEntry.session) ? waitingEntry.session[0] : waitingEntry.session;
 
-      // Determine price based on kid's postal code and school
-      let priceType = 'normal';
-      let price = session.prix_normal;
+      // Check if a registration already exists for this kid and activity
+      const { data: existingReg, error: regCheckError } = await supabase
+        .from('registrations')
+        .select('id')
+        .eq('kid_id', waitingEntry.kid_id)
+        .eq('activity_id', waitingEntry.activity_id)
+        .maybeSingle();
+        
+      if (regCheckError) throw regCheckError;
+      
+      // Only create a new registration if one doesn't already exist
+      if (!existingReg) {
+        // Determine price based on kid's postal code and school
+        let priceType = 'normal';
+        let price = session.prix_normal;
 
-      // Check if the session has a tarif condition
-      if (session.prix_local && session.tarif_condition_id) {
-        // Get tarif condition for this session
-        const { data: condition } = await supabase
-          .from('tarif_conditions')
-          .select('*')
-          .eq('id', session.tarif_condition_id)
-          .single();
+        // Check if the session has a tarif condition
+        if (session.prix_local && session.tarif_condition_id) {
+          // Get tarif condition for this session
+          const { data: condition } = await supabase
+            .from('tarif_conditions')
+            .select('*')
+            .eq('id', session.tarif_condition_id)
+            .single();
 
-        if (condition) {
-          // Check if kid's postal code or school matches the condition
-          const postalMatch = kid.cpostal && 
-            condition.code_postaux_autorises?.includes(kid.cpostal);
-          
-          const schoolMatch = kid.ecole && 
-            condition.school_ids?.includes(kid.ecole);
+          if (condition) {
+            // Check if kid's postal code or school matches the condition
+            const postalMatch = kid.cpostal && 
+              condition.code_postaux_autorises?.includes(kid.cpostal);
+            
+            const schoolMatch = kid.ecole && 
+              condition.school_ids?.includes(kid.ecole);
 
-          if (postalMatch || schoolMatch) {
-            priceType = 'local';
-            price = session.prix_local;
+            if (postalMatch || schoolMatch) {
+              priceType = 'local';
+              price = session.prix_local;
+            }
+          }
+        }
+
+        // Create registration
+        const { error: registrationError } = await supabase
+          .from('registrations')
+          .insert({
+            user_id: waitingEntry.user_id,
+            kid_id: waitingEntry.kid_id,
+            activity_id: waitingEntry.activity_id,
+            payment_status: 'pending',
+            amount_paid: price,
+            price_type: priceType,
+            reduced_declaration: false
+          });
+
+        if (registrationError) {
+          // If there's a unique constraint violation, it means the registration already exists
+          if (registrationError.code === '23505') {
+            console.log('Registration already exists, continuing with waiting list update');
+          } else {
+            throw registrationError;
           }
         }
       }
-
-      // Create registration
-      const { error: registrationError } = await supabase
-        .from('registrations')
-        .insert({
-          user_id: waitingEntry.user_id,
-          kid_id: waitingEntry.kid_id,
-          activity_id: waitingEntry.activity_id,
-          payment_status: 'pending',
-          amount_paid: price,
-          price_type: priceType,
-          reduced_declaration: false
-        });
-
-      if (registrationError) throw registrationError;
 
       // Update waiting list entry status
       const { error: updateError } = await supabase
