@@ -49,7 +49,7 @@ interface WaitingListState {
   addToWaitingList: (activityId: string, kidId: string) => Promise<void>;
   removeFromWaitingList: (id: string) => Promise<void>;
   offerSeat: (id: string) => Promise<void>;
-  convertToRegistration: (id: string) => Promise<void>;
+  markEntryConverted: (id: string) => Promise<void>;
   cancelWaitingListEntry: (id: string) => Promise<void>;
   isOnWaitingList: (activityId: string, kidId: string) => boolean;
 }
@@ -138,16 +138,42 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const { error } = await supabase
+      // First check if an entry already exists
+      const { data: existingEntry, error: checkError } = await supabase
         .from('waiting_list')
-        .insert({
-          activity_id: activityId,
-          kid_id: kidId,
-          user_id: user.id,
-          status: 'waiting'
-        });
+        .select('id, status')
+        .eq('activity_id', activityId)
+        .eq('kid_id', kidId)
+        .maybeSingle();
+        
+      if (checkError) throw checkError;
+      
+      // If entry exists but was cancelled, update it instead of creating a new one
+      if (existingEntry) {
+        if (existingEntry.status === 'cancelled') {
+          const { error: updateError } = await supabase
+            .from('waiting_list')
+            .update({ status: 'waiting' })
+            .eq('id', existingEntry.id);
+            
+          if (updateError) throw updateError;
+        } else {
+          throw new Error('Vous êtes déjà sur la liste d\'attente pour cette activité');
+        }
+      } else {
+        // Create new entry
+        const { error } = await supabase
+          .from('waiting_list')
+          .insert({
+            activity_id: activityId,
+            kid_id: kidId,
+            user_id: user.id,
+            status: 'waiting'
+          });
 
-      if (error) throw error;
+        if (error) throw error;
+      }
+      
       await get().fetchWaitingList();
     } catch (error: any) {
       console.error('Error adding to waiting list:', error);
@@ -235,80 +261,10 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
     }
   },
 
-  convertToRegistration: async (id) => {
+  markEntryConverted: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      // Get the waiting list entry
-      const { data: waitingEntry, error: fetchError } = await supabase
-        .from('waiting_list')
-        .select(`
-          *,
-          session:activity_id(
-            prix_normal,
-            prix_reduit,
-            prix_local,
-            prix_local_reduit,
-            tarif_condition_id
-          ),
-          kid:kid_id(
-            cpostal,
-            ecole
-          )
-        `)
-        .eq('id', id)
-        .single();
-
-      if (fetchError) throw fetchError;
-      if (!waitingEntry) throw new Error('Waiting list entry not found');
-
-      // Unwrap arrays if needed
-      const kid = Array.isArray(waitingEntry.kid) ? waitingEntry.kid[0] : waitingEntry.kid;
-      const session = Array.isArray(waitingEntry.session) ? waitingEntry.session[0] : waitingEntry.session;
-
-      // Determine price based on kid's postal code and school
-      let priceType = 'normal';
-      let price = session.prix_normal;
-
-      // Check if the session has a tarif condition
-      if (session.prix_local && session.tarif_condition_id) {
-        // Get tarif condition for this session
-        const { data: condition } = await supabase
-          .from('tarif_conditions')
-          .select('*')
-          .eq('id', session.tarif_condition_id)
-          .single();
-
-        if (condition) {
-          // Check if kid's postal code or school matches the condition
-          const postalMatch = kid.cpostal && 
-            condition.code_postaux_autorises?.includes(kid.cpostal);
-          
-          const schoolMatch = kid.ecole && 
-            condition.school_ids?.includes(kid.ecole);
-
-          if (postalMatch || schoolMatch) {
-            priceType = 'local';
-            price = session.prix_local;
-          }
-        }
-      }
-
-      // Create registration
-      const { error: registrationError } = await supabase
-        .from('registrations')
-        .insert({
-          user_id: waitingEntry.user_id,
-          kid_id: waitingEntry.kid_id,
-          activity_id: waitingEntry.activity_id,
-          payment_status: 'pending',
-          amount_paid: price,
-          price_type: priceType,
-          reduced_declaration: false
-        });
-
-      if (registrationError) throw registrationError;
-
-      // Update waiting list entry status
+      // Update waiting list entry status to 'converted'
       const { error: updateError } = await supabase
         .from('waiting_list')
         .update({ status: 'converted' })
@@ -318,7 +274,7 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
 
       await get().fetchWaitingList();
     } catch (error: any) {
-      console.error('Error converting to registration:', error);
+      console.error('Error marking waiting list entry as converted:', error);
       set({ error: error.message });
       throw error;
     } finally {

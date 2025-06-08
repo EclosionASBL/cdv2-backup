@@ -48,7 +48,7 @@ const RegistrationsPage = () => {
     fetchWaitingList, 
     isLoading: isWaitingListLoading,
     removeFromWaitingList,
-    convertToRegistration
+    markEntryConverted
   } = useWaitingListStore();
   
   const { addItem } = useCartStore();
@@ -142,8 +142,8 @@ const RegistrationsPage = () => {
         return;
       }
       
-      // Convert to registration
-      await convertToRegistration(entry.id);
+      // Mark the waiting list entry as converted
+      await markEntryConverted(entry.id);
       
       // Get session details for cart
       const { data: sessionData, error: sessionError } = await supabase
@@ -182,6 +182,10 @@ const RegistrationsPage = () => {
       });
       
       toast.success("Place validée ! Redirection vers le panier...");
+      
+      // Refresh data
+      await fetchWaitingList();
+      await fetchDetailedRegistrations();
       
       // Redirect to cart after a short delay
       setTimeout(() => {
