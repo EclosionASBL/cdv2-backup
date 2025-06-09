@@ -32,7 +32,7 @@ const InvoicesPage = () => {
     try {
       setIsLoadingBalance(true);
       const { data, error } = await supabase.rpc('calculate_user_balance', {
-        user_id: user.id
+        p_user_id: user.id
       });
       
       if (error) throw error;
