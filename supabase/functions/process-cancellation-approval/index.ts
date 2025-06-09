@@ -140,13 +140,33 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Generate credit note reference for tracking purposes
+    let creditNoteId = null;
+    if (refundType === 'full' || refundType === 'partial') {
+      try {
+        // Generate a simple credit note number using timestamp and random suffix
+        const currentYear = new Date().getFullYear();
+        const yearSuffix = currentYear.toString().slice(-2);
+        const timestamp = Date.now().toString().slice(-6); // Last 6 digits of timestamp
+        const randomSuffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+        
+        creditNoteId = `NC-${yearSuffix}${timestamp}${randomSuffix}`;
+        
+        console.log('Generated credit note ID:', creditNoteId);
+      } catch (creditNoteError: any) {
+        console.error('Error generating credit note reference:', creditNoteError);
+        // Continue without credit note
+      }
+    }
+
     // Update the cancellation request
     const { error: updateRequestError } = await supabase
       .from('cancellation_requests')
       .update({
         status: 'approved',
         admin_notes: adminNotes,
-        refund_type: refundType
+        refund_type: refundType,
+        credit_note_id: creditNoteId
       })
       .eq('id', cancellationRequestId);
 
@@ -179,43 +199,6 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'Failed to update registration' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
-    }
-
-    // Generate credit note reference for tracking purposes
-    let creditNoteId = null;
-    if (refundType === 'full' || refundType === 'partial') {
-      try {
-        // Generate a unique credit note number
-        const currentYear = new Date().getFullYear();
-        const yearSuffix = currentYear.toString().slice(-2);
-        
-        // Get the next sequence number
-        const { data: sequenceData, error: sequenceError } = await supabase.rpc(
-          'get_next_credit_note_sequence',
-          { p_year: currentYear }
-        );
-        
-        if (sequenceError) {
-          console.error('Error getting next credit note sequence:', sequenceError);
-          // Continue without credit note if sequence fails
-        } else {
-          // Format the sequence number with leading zeros
-          const sequenceNumber = sequenceData.toString().padStart(5, '0');
-          const creditNoteNumber = `NC-${yearSuffix}${sequenceNumber}`;
-          creditNoteId = creditNoteNumber;
-          
-          // Update the cancellation request with the credit note reference
-          await supabase
-            .from('cancellation_requests')
-            .update({
-              credit_note_id: creditNoteNumber
-            })
-            .eq('id', cancellationRequestId);
-        }
-      } catch (creditNoteError: any) {
-        console.error('Error processing credit note reference:', creditNoteError);
-        // Continue without credit note
-      }
     }
 
     // Update the session's current_registrations count
