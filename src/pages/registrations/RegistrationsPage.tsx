@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useWaitingListStore } from '../../stores/waitingListStore';
 import { useCartStore } from '../../stores/cartStore';
 import { useRegistrationStore } from '../../stores/registrationStore';
+import { useAuthStore } from '../../stores/authStore';
 import { Loader2, CheckCircle, Clock, ArrowLeft, Filter, Search, FileText, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import toast, { Toaster } from 'react-hot-toast';
@@ -53,12 +54,16 @@ const RegistrationsPage = () => {
   
   const { addItem } = useCartStore();
   const { fetchRegistrations } = useRegistrationStore();
+  const { clearRegistrationNotification } = useAuthStore();
   
   useEffect(() => {
     fetchDetailedRegistrations();
     fetchWaitingList();
     fetchRegistrations(); // Also fetch simplified registrations for the store
-  }, [fetchWaitingList, fetchRegistrations]);
+    
+    // Clear notification when this page is visited
+    clearRegistrationNotification();
+  }, [fetchWaitingList, fetchRegistrations, clearRegistrationNotification]);
   
   const fetchDetailedRegistrations = async () => {
     try {

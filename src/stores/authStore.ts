@@ -21,6 +21,7 @@ interface UserProfile {
   organisation_name: string | null;
   company_number: string | null;
   is_legal_guardian: boolean;
+  has_new_registration_notification: boolean;
 }
 
 interface AuthState {
@@ -38,6 +39,7 @@ interface AuthState {
   fetchProfile: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   isAdmin: () => boolean;
+  clearRegistrationNotification: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -220,5 +222,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAdmin: () => {
     const { profile } = get();
     return profile?.role === 'admin';
+  },
+
+  clearRegistrationNotification: async () => {
+    const { user, profile } = get();
+    if (!user || !profile) return;
+    
+    try {
+      // Update the database
+      const { error } = await supabase
+        .from('users')
+        .update({ has_new_registration_notification: false })
+        .eq('id', user.id);
+        
+      if (error) throw error;
+      
+      // Update the local state
+      set({ 
+        profile: { 
+          ...profile, 
+          has_new_registration_notification: false 
+        } 
+      });
+    } catch (error: any) {
+      console.error('Error clearing registration notification:', error);
+    }
   }
 }));

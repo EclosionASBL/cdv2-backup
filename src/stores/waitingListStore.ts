@@ -90,20 +90,16 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
             ecole
           ),
           parent:users!waiting_list_user_id_fkey(
+            email,
             prenom,
             nom,
-            email,
             telephone
           ),
           session:activity_id(
-            stage:stage_id(
-              title
-            ),
+            stage:stage_id(title),
             start_date,
             end_date,
-            center:center_id(
-              name
-            ),
+            center:center_id(name),
             prix_normal,
             prix_reduit,
             prix_local,
@@ -264,6 +260,15 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
   markEntryConverted: async (id) => {
     set({ isLoading: true, error: null });
     try {
+      // First get the waiting list entry to get the user_id
+      const { data: waitingListEntry, error: getError } = await supabase
+        .from('waiting_list')
+        .select('user_id')
+        .eq('id', id)
+        .single();
+
+      if (getError) throw getError;
+      
       // Update waiting list entry status to 'converted'
       const { error: updateError } = await supabase
         .from('waiting_list')
@@ -271,6 +276,19 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
         .eq('id', id);
 
       if (updateError) throw updateError;
+
+      // Set notification flag for the user
+      if (waitingListEntry?.user_id) {
+        const { error: notificationError } = await supabase
+          .from('users')
+          .update({ has_new_registration_notification: true })
+          .eq('id', waitingListEntry.user_id);
+
+        if (notificationError) {
+          console.error('Error setting notification flag:', notificationError);
+          // Continue even if notification update fails
+        }
+      }
 
       await get().fetchWaitingList();
     } catch (error: any) {

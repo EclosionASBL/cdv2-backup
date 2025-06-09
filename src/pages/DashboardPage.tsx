@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useKidStore } from '../stores/kidStore';
-import { CalendarDays, User, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText } from 'lucide-react';
+import { CalendarDays, User, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText, Bell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import clsx from 'clsx';
 import { getAgeFromDate } from '../utils/date';
@@ -272,7 +272,15 @@ const DashboardPage = () => {
             <div className="p-2 bg-primary-100 rounded-lg mr-4">
               <CalendarDays className="h-6 w-6 text-primary-600" />
             </div>
-            <h2 className="text-xl font-semibold">Mes inscriptions</h2>
+            <div className="flex items-center">
+              <h2 className="text-xl font-semibold">Mes inscriptions</h2>
+              {profile?.has_new_registration_notification && (
+                <span className="ml-2 flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+              )}
+            </div>
           </div>
           
           {isLoadingRegistrations ? (
