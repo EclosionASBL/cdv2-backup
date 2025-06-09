@@ -109,9 +109,11 @@ function parseAmount(amountStr: string): {
       };
     }
     
-    // Convert cents to euros
+    // Convert cents to euros with proper decimal handling
+    // Divide by 100 to convert cents to euros
     const amount = amountInCents / 100;
     
+    // Apply sign based on debit/credit indicator
     return {
       amount: isNegative ? -amount : amount,
       isValid: true
