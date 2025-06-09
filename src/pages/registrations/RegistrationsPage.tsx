@@ -9,7 +9,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useActivityStore } from '../../stores/activityStore';
 import { 
   Loader2, CheckCircle, Clock, ArrowLeft, Filter, Search, FileText, 
-  XCircle, RefreshCw, AlertTriangle, Ban
+  XCircle, RefreshCw, AlertTriangle, Ban, Download, ExternalLink
 } from 'lucide-react';
 import { CancellationRequestModal } from '../../components/modals/CancellationRequestModal';
 import clsx from 'clsx';
@@ -25,6 +25,8 @@ interface Registration {
   price_type: string;
   reduced_declaration: boolean;
   invoice_id: string | null;
+  invoice_url: string | null;
+  cancellation_status: 'none' | 'requested' | 'cancelled_full_refund' | 'cancelled_partial_refund' | 'cancelled_no_refund';
   kid: {
     prenom: string;
     nom: string;
@@ -38,6 +40,13 @@ interface Registration {
     center: {
       name: string;
     };
+  };
+  cancellation_request?: {
+    id: string;
+    status: string;
+    refund_type: string | null;
+    credit_note_id: string | null;
+    credit_note_url: string | null;
   };
 }
 
@@ -98,6 +107,8 @@ const RegistrationsPage = () => {
           price_type,
           reduced_declaration,
           invoice_id,
+          invoice_url,
+          cancellation_status,
           kid:kids(
             prenom,
             nom,
@@ -118,6 +129,13 @@ const RegistrationsPage = () => {
             prix_local,
             prix_local_reduit,
             tarif_condition_id
+          ),
+          cancellation_request:cancellation_requests(
+            id,
+            status,
+            refund_type,
+            credit_note_id,
+            credit_note_url
           )
         `)
         .order('created_at', { ascending: false });
@@ -286,6 +304,14 @@ const RegistrationsPage = () => {
         [selectedRegistrationForCancellation.id]: true
       }));
       
+      // Update the registration's cancellation_status
+      const updatedRegistrations = registrations.map(reg => 
+        reg.id === selectedRegistrationForCancellation.id 
+          ? { ...reg, cancellation_status: 'requested' as const } 
+          : reg
+      );
+      setRegistrations(updatedRegistrations);
+      
       toast.success("Votre demande d'annulation a été envoyée");
       setIsCancellationModalOpen(false);
     } catch (error: any) {
@@ -331,6 +357,41 @@ const RegistrationsPage = () => {
         return 'bg-blue-100 text-blue-800';
       default:
         return 'bg-yellow-100 text-yellow-800';
+    }
+  };
+
+  const getCancellationStatusBadge = (status: string) => {
+    switch (status) {
+      case 'requested':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+            <Ban className="h-3 w-3 mr-1" />
+            Annulation en cours
+          </span>
+        );
+      case 'cancelled_full_refund':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Annulé (remboursement complet)
+          </span>
+        );
+      case 'cancelled_partial_refund':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Annulé (remboursement partiel)
+          </span>
+        );
+      case 'cancelled_no_refund':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <XCircle className="h-3 w-3 mr-1" />
+            Annulé (sans remboursement)
+          </span>
+        );
+      default:
+        return null;
     }
   };
 
@@ -487,10 +548,15 @@ const RegistrationsPage = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredRegistrations.map((reg) => {
-                      const hasCancellationRequest = hasPendingCancellationRequests[reg.id];
+                      const hasCancellationRequest = reg.cancellation_status === 'requested';
+                      const isCancelled = reg.cancellation_status.startsWith('cancelled_');
                       const daysUntilStart = Math.ceil(
                         (new Date(reg.session.start_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
                       );
+                      
+                      // Get credit note info if available
+                      const creditNoteId = reg.cancellation_request?.credit_note_id;
+                      const creditNoteUrl = reg.cancellation_request?.credit_note_url;
                       
                       return (
                         <tr key={reg.id} className="hover:bg-gray-50">
@@ -539,29 +605,60 @@ const RegistrationsPage = () => {
                             {reg.amount_paid} €
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={clsx(
-                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                              getPaymentStatusColor(reg.payment_status)
-                            )}>
-                              {getPaymentStatusIcon(reg.payment_status, reg.invoice_id)}
-                              {getPaymentStatusText(reg.payment_status, reg.invoice_id)}
-                            </span>
+                            {isCancelled ? (
+                              getCancellationStatusBadge(reg.cancellation_status)
+                            ) : (
+                              <>
+                                <span className={clsx(
+                                  "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                                  getPaymentStatusColor(reg.payment_status)
+                                )}>
+                                  {getPaymentStatusIcon(reg.payment_status, reg.invoice_id)}
+                                  {getPaymentStatusText(reg.payment_status, reg.invoice_id)}
+                                </span>
+                                
+                                {hasCancellationRequest && (
+                                  <div className="mt-1">
+                                    {getCancellationStatusBadge(reg.cancellation_status)}
+                                  </div>
+                                )}
+                              </>
+                            )}
                             
-                            {hasCancellationRequest && (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 mt-1">
-                                <Ban className="h-3 w-3 mr-1" />
-                                Annulation en cours
-                              </span>
+                            {creditNoteId && creditNoteUrl && (
+                              <div className="mt-2">
+                                <a 
+                                  href={creditNoteUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary-600 hover:text-primary-700 text-xs flex items-center"
+                                >
+                                  <FileText className="h-3 w-3 mr-1" />
+                                  Note de crédit
+                                </a>
+                              </div>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {!hasCancellationRequest && reg.payment_status !== 'cancelled' && (
+                            {!hasCancellationRequest && !isCancelled && reg.payment_status !== 'cancelled' && (
                               <button
                                 onClick={() => handleRequestCancellation(reg)}
                                 className="text-red-600 hover:text-red-800 text-sm font-medium"
                               >
                                 Demander annulation
                               </button>
+                            )}
+                            
+                            {reg.invoice_url && (
+                              <a 
+                                href={reg.invoice_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary-600 hover:text-primary-700 text-xs flex items-center mt-2"
+                              >
+                                <FileText className="h-3 w-3 mr-1" />
+                                Voir la facture
+                              </a>
                             )}
                           </td>
                         </tr>

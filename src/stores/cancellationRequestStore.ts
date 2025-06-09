@@ -102,6 +102,7 @@ export const useCancellationRequestStore = create<CancellationRequestState>((set
         throw new Error('Une demande d\'annulation existe déjà pour cette inscription');
       }
 
+      // Create the cancellation request
       const { error } = await supabase
         .from('cancellation_requests')
         .insert({
@@ -113,6 +114,18 @@ export const useCancellationRequestStore = create<CancellationRequestState>((set
         });
 
       if (error) throw error;
+
+      // Update the registration's cancellation_status
+      const { error: updateError } = await supabase
+        .from('registrations')
+        .update({ cancellation_status: 'requested' })
+        .eq('id', registrationId);
+
+      if (updateError) {
+        console.error('Error updating registration status:', updateError);
+        // Continue despite this error
+      }
+
       await get().fetchRequests();
     } catch (error: any) {
       console.error('Error creating cancellation request:', error);

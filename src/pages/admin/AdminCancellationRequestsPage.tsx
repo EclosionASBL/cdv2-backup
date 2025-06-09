@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, AlertCircle, Filter, Search, CheckCircle, XCircle, RefreshCw, FileText, Clock } from 'lucide-react';
+import { Loader2, AlertCircle, Filter, Search, CheckCircle, XCircle, RefreshCw, FileText, Clock, ExternalLink, Download } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
 import clsx from 'clsx';
@@ -125,34 +125,49 @@ const AdminCancellationRequestsPage = () => {
     try {
       setProcessingRequestId(selectedRequest.id);
       
-      // Update the cancellation request status
-      const { error: updateError } = await supabase
-        .from('cancellation_requests')
-        .update({
-          status: 'approved',
-          admin_notes: adminNotes,
-          refund_type: refundType
-        })
-        .eq('id', selectedRequest.id);
+      // Get the current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (updateError) throw updateError;
+      if (sessionError) {
+        throw new Error('Erreur lors de la récupération de la session: ' + sessionError.message);
+      }
       
-      // Update the registration status to cancelled
-      const { error: regError } = await supabase
-        .from('registrations')
-        .update({
-          payment_status: 'cancelled'
-        })
-        .eq('id', selectedRequest.registration_id);
+      if (!session?.access_token) {
+        throw new Error('Session expirée. Veuillez vous reconnecter.');
+      }
       
-      if (regError) throw regError;
+      // Call our Edge Function to process the cancellation approval
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-cancellation-approval`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            cancellationRequestId: selectedRequest.id,
+            refundType: refundType,
+            adminNotes: adminNotes
+          }),
+        }
+      );
       
-      // TODO: Generate credit note if refundType is 'full' or 'partial'
-      // This would be implemented in a separate function or edge function
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Une erreur est survenue lors du traitement de la demande.');
+      }
       
-      toast.success('Demande approuvée et inscription annulée');
+      const responseData = await response.json();
+      
+      toast.success('Demande approuvée et traitement effectué');
       setIsApproveModalOpen(false);
       await fetchRequests();
+      
+      // If a credit note was created, show additional success message
+      if (responseData.creditNoteUrl) {
+        toast.success('Note de crédit générée et envoyée par email');
+      }
     } catch (error: any) {
       console.error('Error approving cancellation request:', error);
       toast.error('Une erreur est survenue: ' + error.message);
@@ -212,6 +227,17 @@ const AdminCancellationRequestsPage = () => {
     } finally {
       setProcessingRequestId(null);
     }
+  };
+  
+  const handleDownloadCreditNote = (url: string, creditNoteId: string) => {
+    // Create a temporary anchor element
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.download = `note_credit_${creditNoteId}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
   
   // Filter and search requests
@@ -435,7 +461,7 @@ const AdminCancellationRequestsPage = () => {
                         </div>
                         {within10Days && (
                           <span className="inline-block mt-1 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                            &lt; 10 jours
+                            < 10 jours
                           </span>
                         )}
                       </td>
@@ -452,6 +478,11 @@ const AdminCancellationRequestsPage = () => {
                         {request.refund_type && (
                           <div className="mt-1">
                             {getRefundTypeBadge(request.refund_type)}
+                          </div>
+                        )}
+                        {request.credit_note_id && (
+                          <div className="mt-1 text-xs text-gray-500">
+                            Note de crédit: {request.credit_note_id}
                           </div>
                         )}
                       </td>
@@ -492,6 +523,27 @@ const AdminCancellationRequestsPage = () => {
                                 <XCircle className="h-5 w-5" />
                               </button>
                             </>
+                          )}
+                          
+                          {request.credit_note_url && (
+                            <div className="flex space-x-2">
+                              <a
+                                href={request.credit_note_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-900"
+                                title="Voir la note de crédit"
+                              >
+                                <ExternalLink className="h-5 w-5" />
+                              </a>
+                              <button
+                                onClick={() => handleDownloadCreditNote(request.credit_note_url!, request.credit_note_id!)}
+                                className="text-blue-600 hover:text-blue-900"
+                                title="Télécharger la note de crédit"
+                              >
+                                <Download className="h-5 w-5" />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -576,6 +628,31 @@ const AdminCancellationRequestsPage = () => {
                         {getRefundTypeBadge(selectedRequest.refund_type)}
                       </div>
                     )}
+                    {selectedRequest.credit_note_id && (
+                      <div className="mt-2 text-sm">
+                        <p>Note de crédit: {selectedRequest.credit_note_id}</p>
+                        {selectedRequest.credit_note_url && (
+                          <div className="mt-1 flex space-x-2">
+                            <a
+                              href={selectedRequest.credit_note_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary-600 hover:text-primary-800 flex items-center text-xs"
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Voir
+                            </a>
+                            <button
+                              onClick={() => handleDownloadCreditNote(selectedRequest.credit_note_url!, selectedRequest.credit_note_id!)}
+                              className="text-primary-600 hover:text-primary-800 flex items-center text-xs"
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              Télécharger
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -657,14 +734,14 @@ const AdminCancellationRequestsPage = () => {
                 className="w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="none">Aucun remboursement</option>
-                <option value="partial">Remboursement partiel</option>
+                <option value="partial">Remboursement partiel (50%)</option>
                 <option value="full">Remboursement complet</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
                 {refundType === 'full' ? 
                   'Une note de crédit sera générée pour le montant total.' : 
                   refundType === 'partial' ? 
-                    'Une note de crédit sera générée pour une partie du montant.' : 
+                    'Une note de crédit sera générée pour 50% du montant.' : 
                     'Aucune note de crédit ne sera générée.'}
               </p>
             </div>
