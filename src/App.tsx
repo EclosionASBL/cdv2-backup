@@ -39,6 +39,7 @@ import AdminStagesPage from './pages/admin/AdminStagesPage';
 import AdminSessionsPage from './pages/admin/AdminSessionsPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminPaymentsPage from './pages/admin/AdminPaymentsPage';
+import AdminBankTransactionsPage from './pages/admin/AdminBankTransactionsPage';
 import AdminMessagingPage from './pages/admin/AdminMessagingPage';
 import AdminParascolaireActivitiesPage from './pages/admin/AdminParascolaireActivitiesPage';
 import AdminParascolaireSessionsPage from './pages/admin/AdminParascolaireSessionsPage';
@@ -140,6 +141,7 @@ function App() {
           <Route path="/admin/sessions" element={<AdminSessionsPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/admin/payments" element={<AdminPaymentsPage />} />
+          <Route path="/admin/bank-transactions" element={<AdminBankTransactionsPage />} />
           <Route path="/admin/messaging" element={<AdminMessagingPage />} />
           <Route path="/admin/parascolaire" element={<AdminParascolaireActivitiesPage />} />
           <Route path="/admin/parascolaire/sessions" element={<AdminParascolaireSessionsPage />} />
