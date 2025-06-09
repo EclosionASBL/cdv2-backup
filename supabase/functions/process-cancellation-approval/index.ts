@@ -58,8 +58,8 @@ Deno.serve(async (req) => {
     }
 
     // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseKey) {
       console.error('Missing Supabase environment variables');
@@ -180,17 +180,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    // If refund type is 'full' or 'partial', create a credit note
+    // Generate credit note reference for tracking purposes
     let creditNoteId = null;
-    let creditNoteUrl = null;
-
     if (refundType === 'full' || refundType === 'partial') {
       try {
         // Generate a unique credit note number
         const currentYear = new Date().getFullYear();
         const yearSuffix = currentYear.toString().slice(-2);
         
-        // Call the database function to get the next sequence number
+        // Get the next sequence number
         const { data: sequenceData, error: sequenceError } = await supabase.rpc(
           'get_next_credit_note_sequence',
           { p_year: currentYear }
@@ -198,105 +196,24 @@ Deno.serve(async (req) => {
         
         if (sequenceError) {
           console.error('Error getting next credit note sequence:', sequenceError);
-          throw new Error('Failed to generate credit note number');
-        }
-        
-        // Format the sequence number with leading zeros
-        const sequenceNumber = sequenceData.toString().padStart(5, '0');
-        const creditNoteNumber = `NC-${yearSuffix}${sequenceNumber}`;
-        
-        // Calculate refund amount
-        const refundAmount = refundType === 'full' 
-          ? cancellationRequest.registration.amount_paid 
-          : cancellationRequest.registration.amount_paid * 0.5; // 50% for partial refunds
-        
-        // Create the credit note
-        const { data: creditNote, error: creditNoteError } = await supabase
-          .from('credit_notes')
-          .insert({
-            user_id: cancellationRequest.registration.user_id,
-            registration_id: cancellationRequest.registration_id,
-            cancellation_request_id: cancellationRequestId,
-            credit_note_number: creditNoteNumber,
-            amount: refundAmount,
-            status: 'issued'
-          })
-          .select()
-          .single();
-        
-        if (creditNoteError) {
-          console.error('Error creating credit note:', creditNoteError);
-          throw new Error('Failed to create credit note');
-        }
-        
-        creditNoteId = creditNote.id;
-        
-        // Generate the PDF
-        const pdfResponse = await fetch(
-          `${supabaseUrl}/functions/v1/generate-credit-note-pdf`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': authHeader
-            },
-            body: JSON.stringify({
-              credit_note_id: creditNoteId
-            })
-          }
-        );
-        
-        if (!pdfResponse.ok) {
-          const errorText = await pdfResponse.text();
-          console.error('Error generating PDF:', errorText);
-          throw new Error('Failed to generate credit note PDF');
-        }
-        
-        const pdfData = await pdfResponse.json();
-        creditNoteUrl = pdfData.pdf_url;
-        
-        // Update the cancellation request with the credit note info
-        await supabase
-          .from('cancellation_requests')
-          .update({
-            credit_note_id: creditNoteNumber,
-            credit_note_url: creditNoteUrl
-          })
-          .eq('id', cancellationRequestId);
-        
-        // Send the email
-        const emailResponse = await fetch(
-          `${supabaseUrl}/functions/v1/send-credit-note-email`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': authHeader
-            },
-            body: JSON.stringify({
-              credit_note_id: creditNoteId
-            })
-          }
-        );
-        
-        if (!emailResponse.ok) {
-          const errorText = await emailResponse.text();
-          console.error('Error sending email:', errorText);
-          console.warn('Continuing despite email error');
-          // Don't throw here, we still want to return success for the overall process
+          // Continue without credit note if sequence fails
         } else {
-          console.log('Email sent successfully');
+          // Format the sequence number with leading zeros
+          const sequenceNumber = sequenceData.toString().padStart(5, '0');
+          const creditNoteNumber = `NC-${yearSuffix}${sequenceNumber}`;
+          creditNoteId = creditNoteNumber;
+          
+          // Update the cancellation request with the credit note reference
+          await supabase
+            .from('cancellation_requests')
+            .update({
+              credit_note_id: creditNoteNumber
+            })
+            .eq('id', cancellationRequestId);
         }
       } catch (creditNoteError: any) {
-        console.error('Error processing credit note:', creditNoteError);
-        return new Response(
-          JSON.stringify({ 
-            error: 'Error processing credit note: ' + creditNoteError.message,
-            cancellationUpdated: true,
-            registrationUpdated: true
-          }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
+        console.error('Error processing credit note reference:', creditNoteError);
+        // Continue without credit note
       }
     }
 
@@ -327,8 +244,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: 'Cancellation request approved successfully',
-        creditNoteId,
-        creditNoteUrl
+        creditNoteId
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
