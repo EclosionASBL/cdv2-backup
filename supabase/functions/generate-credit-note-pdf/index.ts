@@ -5,13 +5,13 @@ import { PDFDocument, rgb, StandardFonts } from 'npm:pdf-lib@1.17.1';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
   'Content-Type': 'application/json'
 };
 
 interface GenerateCreditNoteRequest {
   credit_note_id: string;
-  api_key: string;
+  api_key?: string;
 }
 
 Deno.serve(async (req) => {
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     }
 
     // Validate API key if provided and expected
-    if (expectedApiKey && api_key !== expectedApiKey) {
+    if (expectedApiKey && api_key && api_key !== expectedApiKey) {
       console.error('Invalid API key');
       return new Response(
         JSON.stringify({ error: 'Invalid API key' }),

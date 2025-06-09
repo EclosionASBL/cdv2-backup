@@ -144,22 +144,63 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Generate credit note reference for tracking purposes
+    // Calculate refund amount based on refund type
+    let refundAmount = 0;
+    if (refundType === 'full') {
+      refundAmount = cancellationRequest.registration.amount_paid;
+    } else if (refundType === 'partial') {
+      // For partial refunds, refund 50% of the amount
+      refundAmount = cancellationRequest.registration.amount_paid * 0.5;
+    }
+
+    // Generate credit note number using the database function
+    let creditNoteNumber = null;
     let creditNoteId = null;
+    
     if (refundType === 'full' || refundType === 'partial') {
       try {
-        // Generate a simple credit note number using timestamp and random suffix
+        // Get current year for the sequence
         const currentYear = new Date().getFullYear();
-        const yearSuffix = currentYear.toString().slice(-2);
-        const timestamp = Date.now().toString().slice(-6); // Last 6 digits of timestamp
-        const randomSuffix = Math.floor(Math.random() * 100).toString().padStart(2, '0');
         
-        creditNoteId = `NC-${yearSuffix}${timestamp}${randomSuffix}`;
+        // Call the database function to get the next credit note number
+        const { data: sequenceData, error: sequenceError } = await supabaseAdmin.rpc(
+          'get_next_credit_note_sequence',
+          { p_year: currentYear }
+        );
         
-        console.log('Generated credit note ID:', creditNoteId);
+        if (sequenceError) {
+          console.error('Error generating credit note number:', sequenceError);
+          throw new Error('Failed to generate credit note number');
+        }
+        
+        creditNoteNumber = sequenceData;
+        console.log('Generated credit note number:', creditNoteNumber);
+        
+        // Create credit note record
+        const { data: creditNote, error: creditNoteError } = await supabaseAdmin
+          .from('credit_notes')
+          .insert({
+            user_id: cancellationRequest.registration.user_id,
+            registration_id: cancellationRequest.registration_id,
+            cancellation_request_id: cancellationRequest.id,
+            credit_note_number: creditNoteNumber,
+            amount: refundAmount,
+            status: 'issued'
+          })
+          .select('id')
+          .single();
+          
+        if (creditNoteError) {
+          console.error('Error creating credit note record:', creditNoteError);
+          throw new Error('Failed to create credit note record');
+        }
+        
+        creditNoteId = creditNote.id;
+        console.log('Created credit note with ID:', creditNoteId);
+        
       } catch (creditNoteError: any) {
-        console.error('Error generating credit note reference:', creditNoteError);
-        // Continue without credit note
+        console.error('Error handling credit note creation:', creditNoteError);
+        // Continue with the process even if credit note creation fails
       }
     }
 
@@ -170,7 +211,7 @@ Deno.serve(async (req) => {
         status: 'approved',
         admin_notes: adminNotes,
         refund_type: refundType,
-        credit_note_id: creditNoteId
+        credit_note_id: creditNoteNumber // Store the credit note number (not the UUID)
       })
       .eq('id', requestId);
 
@@ -232,13 +273,68 @@ Deno.serve(async (req) => {
       // Continue despite this error
     }
 
+    // Generate PDF for the credit note if it was created
+    if (creditNoteId && (refundType === 'full' || refundType === 'partial')) {
+      try {
+        console.log('Generating PDF for credit note:', creditNoteId);
+        
+        const pdfResponse = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            credit_note_id: creditNoteId,
+            api_key: Deno.env.get('UPDATE_INVOICE_API_KEY') || ''
+          }),
+        });
+        
+        if (!pdfResponse.ok) {
+          const errorText = await pdfResponse.text();
+          console.error('Error generating credit note PDF:', errorText);
+          throw new Error(`Failed to generate credit note PDF: ${errorText}`);
+        }
+        
+        const pdfData = await pdfResponse.json();
+        console.log('Credit note PDF generated:', pdfData);
+        
+        // Send email with credit note
+        console.log('Sending credit note email for:', creditNoteId);
+        
+        const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-credit-note-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            credit_note_id: creditNoteId
+          }),
+        });
+        
+        if (!emailResponse.ok) {
+          const errorText = await emailResponse.text();
+          console.error('Error sending credit note email:', errorText);
+          // Continue despite email error
+        } else {
+          console.log('Credit note email sent successfully');
+        }
+        
+      } catch (pdfError) {
+        console.error('Error in PDF generation or email sending:', pdfError);
+        // Continue despite PDF/email errors
+      }
+    }
+
     console.log('Cancellation request processed successfully:', requestId);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         message: 'Cancellation request approved successfully',
-        creditNoteId
+        creditNoteNumber: creditNoteNumber,
+        creditNoteId: creditNoteId
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
