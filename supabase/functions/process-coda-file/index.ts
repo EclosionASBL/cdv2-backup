@@ -110,8 +110,8 @@ function parseAmount(amountStr: string): {
     }
     
     // Convert cents to euros with proper decimal handling
-    // Divide by 100 to convert cents to euros
-    const amount = amountInCents / 100;
+    // Divide by 1000 instead of 100 to fix the extra zero issue
+    const amount = amountInCents / 1000;
     
     // Apply sign based on debit/credit indicator
     return {
