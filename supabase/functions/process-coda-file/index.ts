@@ -17,6 +17,7 @@ interface Transaction {
   currency: string;
   bank_reference: string;
   communication: string;
+  extracted_invoice_number: string | null; // New field for extracted invoice number
   account_number: string;
   account_name: string;
   notes?: string;
@@ -126,6 +127,34 @@ function parseAmount(amountStr: string): {
 }
 
 /**
+ * Extract invoice number from communication string
+ * @param communication - Communication string from transaction
+ * @returns Extracted invoice number or null if not found
+ */
+function extractInvoiceNumber(communication: string): string | null {
+  if (!communication) return null;
+  
+  // Match patterns like CDV-YYMMDD-XXXXX or CDV-YYMMDD-XXXXX
+  // Also match variations with spaces or dashes
+  const regex = /CDV[-\s]?(\d{6})[-\s]?(\d{5})/i;
+  const match = communication.match(regex);
+  
+  if (match) {
+    return `CDV-${match[1]}-${match[2]}`;
+  }
+  
+  // Try alternative format with just the numbers
+  const altRegex = /CDV[-\s]?(\d{5,6})/i;
+  const altMatch = communication.match(altRegex);
+  
+  if (altMatch) {
+    return `CDV-${altMatch[1]}`;
+  }
+  
+  return null;
+}
+
+/**
  * Parse a CODA file according to the Belgian CODA BC2 format specification
  * @param fileContent - Binary content of the CODA file
  */
@@ -171,13 +200,20 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<Transaction[]> {
         const amountStr = line.substring(31, 47);
         const { amount, isValid: isAmountValid, notes: amountNotes } = parseAmount(amountStr);
         
+        // Extract communication (positions 64-115)
+        const communication = line.substring(63, 115).trim();
+        
+        // Extract invoice number from communication
+        const extractedInvoiceNumber = extractInvoiceNumber(communication);
+        
         // Create new transaction
         currentTransaction = {
           transaction_date: date,
           amount: amount,
           currency: 'EUR', // Default currency
           bank_reference: line.substring(10, 31).trim(),
-          communication: line.substring(63, 115).trim(), // Communication starts at position 64
+          communication: communication,
+          extracted_invoice_number: extractedInvoiceNumber,
           account_number: '',
           account_name: '',
           notes: [dateNotes, amountNotes].filter(Boolean).join('. ')
@@ -205,6 +241,11 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<Transaction[]> {
           const additionalInfo = line.substring(10).trim();
           if (additionalInfo) {
             currentTransaction.communication += ' ' + additionalInfo;
+            
+            // Try to extract invoice number again if not already found
+            if (!currentTransaction.extracted_invoice_number) {
+              currentTransaction.extracted_invoice_number = extractInvoiceNumber(additionalInfo);
+            }
           }
         }
         break;
@@ -215,6 +256,11 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<Transaction[]> {
           const additionalInfo = line.substring(10).trim();
           if (additionalInfo) {
             currentTransaction.communication += ' ' + additionalInfo;
+            
+            // Try to extract invoice number again if not already found
+            if (!currentTransaction.extracted_invoice_number) {
+              currentTransaction.extracted_invoice_number = extractInvoiceNumber(additionalInfo);
+            }
           }
         }
         break;
@@ -338,6 +384,7 @@ Deno.serve(async (req) => {
             amount: transaction.amount,
             currency: transaction.currency,
             communication: transaction.communication,
+            extracted_invoice_number: transaction.extracted_invoice_number,
             account_number: transaction.account_number,
             account_name: transaction.account_name,
             bank_reference: transaction.bank_reference,

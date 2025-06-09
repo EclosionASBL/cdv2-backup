@@ -16,6 +16,7 @@ interface BankTransaction {
   amount: number;
   currency: string;
   communication: string;
+  extracted_invoice_number: string | null;
   account_number: string;
   account_name: string;
   bank_reference: string;
@@ -339,6 +340,7 @@ const AdminBankTransactionsPage = () => {
         'Montant',
         'Devise',
         'Communication',
+        'Numéro de facture',
         'Compte',
         'Nom du compte',
         'Référence',
@@ -352,6 +354,7 @@ const AdminBankTransactionsPage = () => {
         tx.amount,
         tx.currency,
         `"${tx.communication?.replace(/"/g, '""') || ''}"`,
+        `"${tx.extracted_invoice_number?.replace(/"/g, '""') || ''}"`,
         `"${tx.account_number?.replace(/"/g, '""') || ''}"`,
         `"${tx.account_name?.replace(/"/g, '""') || ''}"`,
         `"${tx.bank_reference?.replace(/"/g, '""') || ''}"`,
@@ -424,6 +427,7 @@ const AdminBankTransactionsPage = () => {
       const searchLower = searchTerm.toLowerCase();
       return (
         tx.communication?.toLowerCase().includes(searchLower) ||
+        tx.extracted_invoice_number?.toLowerCase().includes(searchLower) ||
         tx.account_name?.toLowerCase().includes(searchLower) ||
         tx.account_number?.toLowerCase().includes(searchLower) ||
         tx.bank_reference?.toLowerCase().includes(searchLower) ||
@@ -568,6 +572,9 @@ const AdminBankTransactionsPage = () => {
                     Montant
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Numéro de facture
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Communication
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -601,6 +608,12 @@ const AdminBankTransactionsPage = () => {
                         transaction.amount >= 0 ? "text-green-600" : "text-red-600"
                       )}>
                         {transaction.amount} {transaction.currency}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {transaction.extracted_invoice_number || 
+                          <span className="text-gray-400 italic">Non extrait</span>}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -777,6 +790,13 @@ const AdminBankTransactionsPage = () => {
                       selectedTransaction.amount >= 0 ? "text-green-600" : "text-red-600"
                     )}>
                       {selectedTransaction.amount} {selectedTransaction.currency}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Numéro de facture extrait</h3>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {selectedTransaction.extracted_invoice_number || 
+                        <span className="italic text-gray-400">Non extrait</span>}
                     </p>
                   </div>
                   <div>
