@@ -137,8 +137,8 @@ Deno.serve(async (req) => {
     const stage = Array.isArray(session.stage) ? session.stage[0] : session.stage;
 
     // Format dates
-    const startDate = new Date(session.start_date).toLocaleDateString('fr-BE');
-    const endDate = new Date(session.end_date).toLocaleDateString('fr-BE');
+    const startDate = new Date(session.start_date).toLocaleDateString('fr-FR');
+    const endDate = new Date(session.end_date).toLocaleDateString('fr-FR');
 
     // Use provided email or fallback to user's email
     const recipientEmail = parent_email || user.email;
@@ -153,6 +153,30 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Fetch the PDF content to attach it to the email
+    console.log('Fetching PDF content from URL:', creditNote.pdf_url);
+    let pdfContent;
+    try {
+      const pdfResponse = await fetch(creditNote.pdf_url);
+      if (!pdfResponse.ok) {
+        throw new Error(`Failed to fetch PDF: ${pdfResponse.status} ${pdfResponse.statusText}`);
+      }
+      
+      // Get the PDF as an ArrayBuffer
+      const pdfBuffer = await pdfResponse.arrayBuffer();
+      
+      // Convert to Base64
+      pdfContent = btoa(
+        new Uint8Array(pdfBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+      
+      console.log('PDF content fetched and encoded successfully');
+    } catch (fetchError) {
+      console.error('Error fetching PDF content:', fetchError);
+      // Continue without attachment if we can't fetch the PDF
+      console.log('Will send email without PDF attachment');
+    }
+
     // Send email with SMTP
     try {
       console.log('Preparing to send email with SMTP to:', recipientEmail);
@@ -165,50 +189,55 @@ Deno.serve(async (req) => {
         ssl: true,
       });
 
+      const emailAttachments = [
+        { data: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #4f46e5;">Note de crédit</h1>
+            
+            <p>Bonjour ${user.prenom},</p>
+            
+            <p>Suite à l'annulation de l'inscription de ${kid.prenom} au stage "${stage.title}" 
+            (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.</p>
+            
+            <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
+              <h2 style="margin-top: 0; color: #4f46e5;">Détails de la note de crédit</h2>
+              
+              <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                <p style="margin: 5px 0;"><strong>Numéro :</strong> ${creditNote.credit_note_number}</p>
+                <p style="margin: 5px 0;"><strong>Montant :</strong> ${creditNote.amount} €</p>
+                <p style="margin: 5px 0;"><strong>Date :</strong> ${new Date(creditNote.created_at).toLocaleDateString('fr-BE')}</p>
+              </div>
+            </div>
+            
+            <p>Le montant sera remboursé par virement bancaire dans les 30 jours.</p>
+            
+            <p>Pour toute question, n'hésitez pas à nous contacter :</p>
+            <ul>
+              <li>Par téléphone : <strong>0470 470 503</strong></li>
+              <li>Par email : <strong>info@eclosion.be</strong></li>
+            </ul>
+            
+            <p style="margin-top: 30px;">Cordialement,</p>
+            
+            <p>L'équipe Éclosion ASBL</p>
+          </div>
+        `, alternative: true }
+      ];
+
+      // Add PDF attachment if we have the content
+      if (pdfContent) {
+        emailAttachments.push({
+          path: "data:application/pdf;base64," + pdfContent,
+          type: "application/pdf",
+          name: `note_credit_${creditNote.credit_note_number}.pdf`
+        });
+      }
+
       const message = {
         from: smtpSender,
         to: recipientEmail,
         subject: `Note de crédit ${creditNote.credit_note_number} - Éclosion ASBL`,
-        attachment: [
-          { data: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h1 style="color: #4f46e5;">Note de crédit</h1>
-              
-              <p>Bonjour ${user.prenom},</p>
-              
-              <p>Suite à l'annulation de l'inscription de ${kid.prenom} au stage "${stage.title}" 
-              (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.</p>
-              
-              <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
-                <h2 style="margin-top: 0; color: #4f46e5;">Détails de la note de crédit</h2>
-                
-                <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; margin-top: 15px;">
-                  <p style="margin: 5px 0;"><strong>Numéro :</strong> ${creditNote.credit_note_number}</p>
-                  <p style="margin: 5px 0;"><strong>Montant :</strong> ${creditNote.amount} €</p>
-                  <p style="margin: 5px 0;"><strong>Date :</strong> ${new Date(creditNote.created_at).toLocaleDateString('fr-BE')}</p>
-                </div>
-                
-                <p style="margin-top: 15px;">
-                  <a href="${creditNote.pdf_url}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;">
-                    Télécharger la note de crédit
-                  </a>
-                </p>
-              </div>
-              
-              <p>Le montant sera remboursé par virement bancaire dans les 30 jours.</p>
-              
-              <p>Pour toute question, n'hésitez pas à nous contacter :</p>
-              <ul>
-                <li>Par téléphone : <strong>0470 470 503</strong></li>
-                <li>Par email : <strong>info@eclosion.be</strong></li>
-              </ul>
-              
-              <p style="margin-top: 30px;">Cordialement,</p>
-              
-              <p>L'équipe Éclosion ASBL</p>
-            </div>
-          `, alternative: true }
-        ]
+        attachment: emailAttachments
       };
 
       // Use callback-based send method instead of sendAsync
