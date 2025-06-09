@@ -99,6 +99,8 @@ function parseAmount(amountStr: string): {
     const isNegative = amountStr.charAt(0) === '1';
     
     // Rest of string is the amount in cents
+    // IMPORTANT: In CODA format, amounts are stored in cents without decimal point
+    // We need to divide by 100 to convert to euros
     const amountInCents = parseInt(amountStr.substring(1));
     
     if (isNaN(amountInCents)) {

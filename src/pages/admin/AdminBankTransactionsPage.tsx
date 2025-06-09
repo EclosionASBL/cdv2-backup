@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Loader2, Search, Filter, CheckCircle, Clock, FileText, 
-  Download, AlertTriangle, RefreshCw, Upload, Database, 
-  DollarSign, FileUp, ArrowUpDown, Eye, Link2, X
+  Loader2, AlertCircle, Filter, Search, CheckCircle, Clock, FileText, Download, 
+  AlertTriangle, XCircle, RefreshCw, Upload, Database, DollarSign, FileUp, 
+  ArrowUpDown, Eye, Link2, X, Check
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -76,6 +76,9 @@ const AdminBankTransactionsPage = () => {
   const [transactionNotes, setTransactionNotes] = useState('');
   const [batches, setBatches] = useState<string[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
+  const [isConfirmPaymentModalOpen, setIsConfirmPaymentModalOpen] = useState(false);
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
@@ -252,28 +255,84 @@ const AdminBankTransactionsPage = () => {
       if (error) throw error;
       
       setSuggestedInvoices(data || []);
-    } catch (err) {
-      console.error('Error fetching suggested invoices:', err);
+    } catch (error) {
+      console.error('Error fetching suggested invoices:', error);
     } finally {
       setIsLoadingSuggestions(false);
     }
   };
 
-  const handleLinkToInvoice = async (transactionId: string, invoiceId: string) => {
+  const handleConfirmPayment = (invoice: Invoice) => {
+    setSelectedInvoiceForPayment(invoice);
+    setIsConfirmPaymentModalOpen(true);
+  };
+
+  const handleProcessPayment = async () => {
+    if (!selectedTransaction || !selectedInvoiceForPayment) return;
+    
     try {
-      // Call the match function
-      const { data, error } = await supabase.rpc(
-        'match_transaction_to_invoice',
-        { transaction_id: transactionId }
-      );
+      setIsProcessingPayment(true);
       
-      if (error) throw error;
+      // Update transaction with invoice link
+      const { error: updateTxError } = await supabase
+        .from('bank_transactions')
+        .update({ 
+          invoice_id: selectedInvoiceForPayment.id,
+          status: 'matched'
+        })
+        .eq('id', selectedTransaction.id);
+        
+      if (updateTxError) throw updateTxError;
       
-      // Refresh transactions
+      // Update invoice status
+      const { error: updateInvoiceError } = await supabase
+        .from('invoices')
+        .update({ 
+          status: 'paid',
+          paid_at: new Date().toISOString()
+        })
+        .eq('id', selectedInvoiceForPayment.id);
+        
+      if (updateInvoiceError) throw updateInvoiceError;
+      
+      // Update registrations
+      const { error: updateRegError } = await supabase
+        .from('registrations')
+        .update({ payment_status: 'paid' })
+        .eq('invoice_id', selectedInvoiceForPayment.invoice_number);
+        
+      if (updateRegError) throw updateRegError;
+      
+      toast.success('Paiement traité avec succès');
+      
+      // Close modals and refresh data
+      setIsConfirmPaymentModalOpen(false);
+      setIsTransactionDetailModalOpen(false);
       fetchTransactions();
       
-      toast.success('Transaction liée à la facture avec succès');
-      setIsTransactionDetailModalOpen(false);
+    } catch (error: any) {
+      console.error('Error processing payment:', error);
+      toast.error(`Erreur: ${error.message}`);
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const handleLinkToInvoice = async (transactionId: string, invoiceId: string) => {
+    try {
+      // Get the invoice details first
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('id', invoiceId)
+        .single();
+        
+      if (invoiceError) throw invoiceError;
+      
+      // Show confirmation modal
+      setSelectedInvoiceForPayment(invoice);
+      setIsConfirmPaymentModalOpen(true);
+      
     } catch (err: any) {
       console.error('Error linking transaction to invoice:', err);
       toast.error(`Erreur: ${err.message}`);
@@ -839,10 +898,10 @@ const AdminBankTransactionsPage = () => {
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="text-sm font-medium">{selectedTransaction.invoice.invoice_number}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-600">
                           {selectedTransaction.invoice.user?.prenom} {selectedTransaction.invoice.user?.nom}
                         </p>
-                        <p className="text-xs text-gray-500">{selectedTransaction.invoice.user?.email}</p>
+                        <p className="text-xs text-gray-600">{selectedTransaction.invoice.user?.email}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium">{selectedTransaction.invoice.amount} €</p>
@@ -963,6 +1022,82 @@ const AdminBankTransactionsPage = () => {
                     className="btn-primary"
                   >
                     Enregistrer
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Confirm Payment Modal */}
+      <Dialog
+        open={isConfirmPaymentModalOpen}
+        onClose={() => setIsConfirmPaymentModalOpen(false)}
+        className="fixed inset-0 z-50 overflow-y-auto"
+      >
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
+
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
+            <Dialog.Title className="text-lg font-semibold mb-4 flex items-center">
+              <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+              Confirmer le paiement
+            </Dialog.Title>
+
+            {selectedInvoiceForPayment && (
+              <div className="space-y-4">
+                <p className="text-gray-600">
+                  Êtes-vous sûr de vouloir marquer cette facture comme payée ?
+                </p>
+
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{selectedInvoiceForPayment.invoice_number}</p>
+                      <p className="text-sm text-gray-600">
+                        {selectedInvoiceForPayment.user?.prenom} {selectedInvoiceForPayment.user?.nom}
+                      </p>
+                    </div>
+                    <p className="font-medium">{selectedInvoiceForPayment.amount} €</p>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-yellow-700">
+                      Cette action mettra à jour le statut de la facture et des inscriptions associées. Elle ne peut pas être annulée.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmPaymentModalOpen(false)}
+                    className="btn-outline"
+                    disabled={isProcessingPayment}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleProcessPayment}
+                    disabled={isProcessingPayment}
+                    className="btn-primary"
+                  >
+                    {isProcessingPayment ? (
+                      <span className="flex items-center">
+                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                        Traitement...
+                      </span>
+                    ) : (
+                      <span className="flex items-center">
+                        <Check className="h-4 w-4 mr-2" />
+                        Confirmer le paiement
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>
