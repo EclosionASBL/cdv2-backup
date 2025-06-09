@@ -29,6 +29,9 @@ Deno.serve(async (req) => {
     const smtpHost = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
     const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '465');
     const smtpSender = Deno.env.get('SMTP_SENDER') || 'stage-notif@eclosion.be';
+    
+    // Get the frontend URL from environment variable, with fallback
+    const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://app.eclosion.be';
 
     if (!smtpUser || !smtpPassword) {
       console.error("SMTP configuration is not set");
@@ -136,7 +139,7 @@ Deno.serve(async (req) => {
               
               <p>Pour confirmer l'inscription, veuillez vous connecter à votre compte et procéder au paiement.</p>
               
-              <a href="${supabaseUrl.replace('.supabase.co', '.netlify.app')}/registrations" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">
+              <a href="${frontendUrl}/registrations" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">
                 Confirmer l'inscription
               </a>
               

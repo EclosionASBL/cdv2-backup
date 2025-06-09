@@ -81,17 +81,17 @@ const RegistrationsPage = () => {
           price_type,
           reduced_declaration,
           invoice_id,
-          kid:kids!kid_id(
+          kid:kids(
             prenom,
             nom
           ),
-          session:sessions!activity_id(
-            stage:stages!stage_id(
+          session:activity_id(
+            stage:stage_id(
               title
             ),
             start_date,
             end_date,
-            center:centers!center_id(
+            center:center_id(
               name
             )
           )

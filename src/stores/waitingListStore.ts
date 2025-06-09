@@ -287,6 +287,14 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
         if (notificationError) {
           console.error('Error setting notification flag:', notificationError);
           // Continue even if notification update fails
+        } else {
+          console.log('Notification flag set successfully for user:', waitingListEntry.user_id);
+          
+          // Update the auth store if this is the current user
+          const { user, fetchProfile } = useAuthStore.getState();
+          if (user && user.id === waitingListEntry.user_id) {
+            await fetchProfile();
+          }
         }
       }
 
