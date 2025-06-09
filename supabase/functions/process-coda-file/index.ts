@@ -141,18 +141,53 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<any[]> {
         // Parse amount (positions 32-47)
         const amountStr = line.substring(31, 47);
         const isNegative = amountStr.charAt(0) === '1';
-        const amount = parseInt(amountStr.substring(1)) / 100; // Convert cents to euros
         
-        currentTransaction = {
-          transaction_date: date,
-          amount: isNegative ? -amount : amount,
-          currency: 'EUR',
-          bank_reference: line.substring(10, 31).trim(),
-          communication: '',
-          account_number: '',
-          account_name: '',
-          notes: notes || null
-        };
+        // Parse the amount and handle NaN values
+        let amount;
+        try {
+          amount = parseInt(amountStr.substring(1)) / 100; // Convert cents to euros
+          
+          // Check if amount is NaN and set a default value
+          if (isNaN(amount)) {
+            amount = 0;
+            const amountNote = `Could not parse amount string: ${amountStr}. Using 0 as fallback.`;
+            currentTransaction = {
+              transaction_date: date,
+              amount: 0,
+              currency: 'EUR',
+              bank_reference: line.substring(10, 31).trim(),
+              communication: '',
+              account_number: '',
+              account_name: '',
+              notes: notes ? `${notes}. ${amountNote}` : amountNote
+            };
+          } else {
+            currentTransaction = {
+              transaction_date: date,
+              amount: isNegative ? -amount : amount,
+              currency: 'EUR',
+              bank_reference: line.substring(10, 31).trim(),
+              communication: '',
+              account_number: '',
+              account_name: '',
+              notes: notes || null
+            };
+          }
+        } catch (error) {
+          // Handle any parsing errors
+          amount = 0;
+          const amountNote = `Error parsing amount: ${error instanceof Error ? error.message : 'Unknown error'}. Using 0 as fallback.`;
+          currentTransaction = {
+            transaction_date: date,
+            amount: 0,
+            currency: 'EUR',
+            bank_reference: line.substring(10, 31).trim(),
+            communication: '',
+            account_number: '',
+            account_name: '',
+            notes: notes ? `${notes}. ${amountNote}` : amountNote
+          };
+        }
         break;
         
       case '2': // Communication line
