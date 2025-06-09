@@ -29,6 +29,9 @@ Deno.serve(async (req) => {
     const smtpHost = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
     const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '465');
     const smtpSender = Deno.env.get('SMTP_SENDER') || 'stage-notif@eclosion.be';
+    
+    // Get the frontend URL from environment variable, with fallback
+    const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://app.eclosion.be';
 
     if (!smtpUser || !smtpPassword) {
       console.error("SMTP configuration is not set");
@@ -87,6 +90,21 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Set notification flag for the user
+    if (waitingListEntry.user_id) {
+      const { error: notificationError } = await supabase
+        .from('users')
+        .update({ has_new_registration_notification: true })
+        .eq('id', waitingListEntry.user_id);
+
+      if (notificationError) {
+        console.error('Error setting notification flag:', notificationError);
+        // Continue even if notification update fails
+      } else {
+        console.log('Notification flag set successfully for user:', waitingListEntry.user_id);
+      }
+    }
+
     // Unwrap arrays if needed
     const kid = Array.isArray(waitingListEntry.kid) ? waitingListEntry.kid[0] : waitingListEntry.kid;
     const parent = Array.isArray(waitingListEntry.parent) ? waitingListEntry.parent[0] : waitingListEntry.parent;
@@ -136,7 +154,7 @@ Deno.serve(async (req) => {
               
               <p>Pour confirmer l'inscription, veuillez vous connecter à votre compte et procéder au paiement.</p>
               
-              <a href="${supabaseUrl.replace('.supabase.co', '.netlify.app')}/registrations" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">
+              <a href="${frontendUrl}/registrations" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">
                 Confirmer l'inscription
               </a>
               

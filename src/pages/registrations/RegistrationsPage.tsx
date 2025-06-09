@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { useWaitingListStore } from '../../stores/waitingListStore';
 import { useCartStore } from '../../stores/cartStore';
 import { useRegistrationStore } from '../../stores/registrationStore';
+import { useAuthStore } from '../../stores/authStore';
+import { useActivityStore } from '../../stores/activityStore'; // Import useActivityStore
 import { Loader2, CheckCircle, Clock, ArrowLeft, Filter, Search, FileText, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import toast, { Toaster } from 'react-hot-toast';
@@ -53,12 +55,17 @@ const RegistrationsPage = () => {
   
   const { addItem } = useCartStore();
   const { fetchRegistrations } = useRegistrationStore();
+  const { clearRegistrationNotification } = useAuthStore();
+  const { getPrice } = useActivityStore(); // Get the getPrice function
   
   useEffect(() => {
     fetchDetailedRegistrations();
     fetchWaitingList();
     fetchRegistrations(); // Also fetch simplified registrations for the store
-  }, [fetchWaitingList, fetchRegistrations]);
+    
+    // Clear notification when this page is visited
+    clearRegistrationNotification();
+  }, [fetchWaitingList, fetchRegistrations, clearRegistrationNotification]);
   
   const fetchDetailedRegistrations = async () => {
     try {
@@ -76,19 +83,26 @@ const RegistrationsPage = () => {
           price_type,
           reduced_declaration,
           invoice_id,
-          kid:kids!kid_id(
+          kid:kids(
             prenom,
-            nom
+            nom,
+            cpostal,
+            ecole
           ),
-          session:sessions!activity_id(
-            stage:stages!stage_id(
+          session:activity_id(
+            stage:stage_id(
               title
             ),
             start_date,
             end_date,
-            center:centers!center_id(
+            center:center_id(
               name
-            )
+            ),
+            prix_normal,
+            prix_reduit,
+            prix_local,
+            prix_local_reduit,
+            tarif_condition_id
           )
         `)
         .order('created_at', { ascending: false });
@@ -156,7 +170,8 @@ const RegistrationsPage = () => {
           prix_normal,
           prix_reduit,
           prix_local,
-          prix_local_reduit
+          prix_local_reduit,
+          tarif_condition_id
         `)
         .eq('id', entry.activity_id)
         .single();
@@ -165,18 +180,42 @@ const RegistrationsPage = () => {
         toast.error("Erreur lors de la récupération des informations de l'activité");
         return;
       }
+
+      // Unwrap kid data to access cpostal and ecole
+      const kid = Array.isArray(entry.kid) ? entry.kid[0] : entry.kid;
       
-      // Add to cart
+      // Calculate the correct price based on the kid's postal code and school
+      const { mainPrice, reducedPrice } = await getPrice(
+        sessionData,
+        kid.cpostal,
+        kid.ecole
+      );
+
+      // Determine the price type based on the calculated prices
+      let priceType = 'normal';
+      if (mainPrice !== sessionData.prix_normal) {
+        priceType = 'local';
+      }
+      
+      // Store activity data in session storage for price calculations later
+      window.sessionStorage.setItem(`activity_${entry.activity_id}`, JSON.stringify({
+        calculated_main_price: mainPrice,
+        calculated_reduced_price: reducedPrice,
+        prix_normal: sessionData.prix_normal,
+        prix_reduit: sessionData.prix_reduit
+      }));
+      
+      // Add to cart with the correct price and price type
       addItem({
         id: `${entry.activity_id}-${entry.kid_id}`,
         activity_id: entry.activity_id,
         kid_id: entry.kid_id,
-        kidName: `${entry.kid.prenom} ${entry.kid.nom}`,
+        kidName: `${kid.prenom} ${kid.nom}`,
         activityName: sessionData.stage.title,
         activityCategory: 'Stage',
         dateRange: `${new Date(sessionData.start_date).toLocaleDateString('fr-FR')} - ${new Date(sessionData.end_date).toLocaleDateString('fr-FR')}`,
-        price: sessionData.prix_normal,
-        price_type: 'normal',
+        price: mainPrice,
+        price_type: priceType,
         reduced_declaration: false,
         imageUrl: sessionData.stage.image_url
       });

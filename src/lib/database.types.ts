@@ -30,6 +30,7 @@ export interface Database {
           organisation_name: string | null
           company_number: string | null
           is_legal_guardian: boolean
+          has_new_registration_notification: boolean
         }
         Insert: {
           id: string
@@ -51,6 +52,7 @@ export interface Database {
           organisation_name?: string | null
           company_number?: string | null
           is_legal_guardian?: boolean
+          has_new_registration_notification?: boolean
         }
         Update: {
           id?: string
@@ -72,6 +74,7 @@ export interface Database {
           organisation_name?: string | null
           company_number?: string | null
           is_legal_guardian?: boolean
+          has_new_registration_notification?: boolean
         }
       }
       kids: {

@@ -4,14 +4,14 @@ import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { 
   Menu, X, ShoppingCart, ChevronDown, 
-  User, LogOut, Home, CalendarDays, Users, UserPlus, FileText 
+  User, LogOut, Home, CalendarDays, Users, UserPlus, FileText, Bell 
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const { user, signOut } = useAuthStore();
+  const { user, signOut, profile } = useAuthStore();
   const { itemCount } = useCartStore();
   const navigate = useNavigate();
   
@@ -138,10 +138,16 @@ const Navbar = () => {
                         </Link>
                         <Link
                           to="/registrations"
-                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          className="flex items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                           onClick={() => setIsDropdownOpen(false)}
                         >
-                          Mes inscriptions
+                          <span>Mes inscriptions</span>
+                          {profile?.has_new_registration_notification && (
+                            <span className="flex h-2 w-2 relative">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                            </span>
+                          )}
                         </Link>
                         <Link
                           to="/profile/invoices"
@@ -263,13 +269,19 @@ const Navbar = () => {
                 </Link>
                 <Link 
                   to="/registrations"
-                  className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
+                  className="flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
                   onClick={toggleMenu}
                 >
                   <div className="flex items-center">
                     <CalendarDays size={18} className="mr-2" />
                     Mes inscriptions
                   </div>
+                  {profile?.has_new_registration_notification && (
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                  )}
                 </Link>
                 <Link 
                   to="/profile/invoices"

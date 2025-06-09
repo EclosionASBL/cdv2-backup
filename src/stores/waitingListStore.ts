@@ -90,20 +90,16 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
             ecole
           ),
           parent:users!waiting_list_user_id_fkey(
+            email,
             prenom,
             nom,
-            email,
             telephone
           ),
           session:activity_id(
-            stage:stage_id(
-              title
-            ),
+            stage:stage_id(title),
             start_date,
             end_date,
-            center:center_id(
-              name
-            ),
+            center:center_id(name),
             prix_normal,
             prix_reduit,
             prix_local,
@@ -212,6 +208,16 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 48);
 
+      // First get the waiting list entry to get the user_id
+      const { data: waitingListEntry, error: getError } = await supabase
+        .from('waiting_list')
+        .select('user_id')
+        .eq('id', id)
+        .single();
+
+      if (getError) throw getError;
+      
+      // Update waiting list entry status to 'invited'
       const { error } = await supabase
         .from('waiting_list')
         .update({
