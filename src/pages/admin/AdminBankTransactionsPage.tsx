@@ -30,7 +30,7 @@ interface BankTransaction {
     amount: number;
     status: string;
     user_id: string;
-    user: {
+    user?: {
       prenom: string;
       nom: string;
       email: string;
@@ -95,7 +95,7 @@ const AdminBankTransactionsPage = () => {
             amount,
             status,
             user_id,
-            user:user_id(
+            user:users(
               prenom,
               nom,
               email
@@ -223,7 +223,7 @@ const AdminBankTransactionsPage = () => {
       // Look for invoices with similar communication or amount
       const { data, error } = await supabase
         .from('invoices')
-        .select('*, user:user_id(prenom, nom, email)')
+        .select('*, user:users(prenom, nom, email)')
         .or(`status.eq.pending,amount.eq.${transaction.amount}`)
         .limit(5);
         
