@@ -11,9 +11,20 @@ interface ProcessCodaRequest {
   batchId?: string;
 }
 
+interface Transaction {
+  transaction_date: string;
+  amount: number;
+  currency: string;
+  bank_reference: string;
+  communication: string;
+  account_number: string;
+  account_name: string;
+  notes?: string;
+}
+
 /**
- * Parse and validate a date string from CODA file
- * Handles various date formats and edge cases
+ * Parse and validate a date string from CODA file in DDMMYY format
+ * @param dateStr - Date string in DDMMYY format
  */
 function parseAndValidateDate(dateStr: string): { 
   date: string; 
@@ -29,10 +40,10 @@ function parseAndValidateDate(dateStr: string): {
       };
     }
 
-    // Try DDMMYY format first (standard for Belgian CODA)
-    let day = parseInt(dateStr.substring(0, 2));
-    let month = parseInt(dateStr.substring(2, 4));
-    let year = 2000 + parseInt(dateStr.substring(4, 6)); // Assuming 21st century
+    // Parse in DDMMYY format (standard for Belgian CODA)
+    const day = parseInt(dateStr.substring(0, 2));
+    const month = parseInt(dateStr.substring(2, 4));
+    const year = 2000 + parseInt(dateStr.substring(4, 6)); // Assuming 21st century
     
     // Check if date is valid
     const date = new Date(year, month - 1, day);
@@ -47,52 +58,11 @@ function parseAndValidateDate(dateStr: string): {
       };
     }
     
-    // If DDMMYY fails, try MMDDYY format
-    day = parseInt(dateStr.substring(2, 4));
-    month = parseInt(dateStr.substring(0, 2));
-    
-    // Check if swapped date is valid
-    const swappedDate = new Date(year, month - 1, day);
-    const isValidSwappedDate = swappedDate instanceof Date && !isNaN(swappedDate.getTime()) &&
-                              swappedDate.getDate() === day &&
-                              swappedDate.getMonth() === month - 1;
-    
-    if (isValidSwappedDate) {
-      return { 
-        date: `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
-        isValid: true,
-        notes: `Date format was MMDDYY instead of DDMMYY: ${dateStr}`
-      };
-    }
-    
-    // If both formats fail, try to extract a valid date by checking various combinations
-    // For example, if month is out of range (e.g., 14), try to interpret it differently
-    
-    // Try to handle the specific case in the error: "2013-14-00"
-    if (month > 12) {
-      // This could be a special code or a formatting error
-      // Default to first day of the month as a fallback
-      return { 
-        date: `${year}-01-01`,
-        isValid: false,
-        notes: `Invalid month (${month}) in date string: ${dateStr}. Using fallback date.`
-      };
-    }
-    
-    // If day is 0, default to 1st day of the month
-    if (day === 0) {
-      return { 
-        date: `${year}-${month.toString().padStart(2, '0')}-01`,
-        isValid: false,
-        notes: `Invalid day (0) in date string: ${dateStr}. Using 1st day of month.`
-      };
-    }
-    
-    // Last resort fallback
+    // If date is invalid, return a fallback with notes
     return { 
       date: '1970-01-01',
       isValid: false,
-      notes: `Could not parse date string: ${dateStr}. Using epoch date as fallback.`
+      notes: `Invalid date components: day=${day}, month=${month}, year=${year} from string: ${dateStr}`
     };
   } catch (error) {
     console.error('Error parsing date:', error, 'dateStr:', dateStr);
@@ -104,112 +74,157 @@ function parseAndValidateDate(dateStr: string): {
   }
 }
 
-// Simple parser for CODA files (BC2 format)
-// This is a basic implementation and may need to be enhanced for specific CODA formats
-async function parseCodaFile(fileContent: Uint8Array): Promise<any[]> {
-  // Convert the binary data to text
-  const decoder = new TextDecoder('utf-8');
+/**
+ * Parse amount from CODA file
+ * @param amountStr - Amount string from CODA file (positions 32-47)
+ * First character is 0 for credit, 1 for debit
+ * The rest is the amount in cents (2 decimal places)
+ */
+function parseAmount(amountStr: string): {
+  amount: number;
+  isValid: boolean;
+  notes?: string;
+} {
+  try {
+    if (!amountStr || amountStr.length < 2) {
+      return {
+        amount: 0,
+        isValid: false,
+        notes: `Invalid amount string: ${amountStr}`
+      };
+    }
+
+    // First character indicates sign (0=credit, 1=debit)
+    const isNegative = amountStr.charAt(0) === '1';
+    
+    // Rest of string is the amount in cents
+    const amountInCents = parseInt(amountStr.substring(1));
+    
+    if (isNaN(amountInCents)) {
+      return {
+        amount: 0,
+        isValid: false,
+        notes: `Could not parse amount string: ${amountStr}`
+      };
+    }
+    
+    // Convert cents to euros
+    const amount = amountInCents / 100;
+    
+    return {
+      amount: isNegative ? -amount : amount,
+      isValid: true
+    };
+  } catch (error) {
+    console.error('Error parsing amount:', error, 'amountStr:', amountStr);
+    return {
+      amount: 0,
+      isValid: false,
+      notes: `Exception parsing amount: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
+  }
+}
+
+/**
+ * Parse a CODA file according to the Belgian CODA BC2 format specification
+ * @param fileContent - Binary content of the CODA file
+ */
+async function parseCodaFile(fileContent: Uint8Array): Promise<Transaction[]> {
+  // Convert the binary data to text using ISO-8859-1 encoding (Latin-1)
+  const decoder = new TextDecoder('iso-8859-1');
   const text = decoder.decode(fileContent);
   
   // Split the file into lines
   const lines = text.split('\n');
   
-  const transactions = [];
-  let currentTransaction = null;
+  const transactions: Transaction[] = [];
+  let currentTransaction: Transaction | null = null;
   
   // Process each line
   for (const line of lines) {
     if (!line.trim()) continue;
     
-    // Identify line type based on first character
+    // Identify record type based on first character
     const recordType = line.charAt(0);
+    const recordSubtype = line.length > 1 ? line.charAt(1) : '';
     
-    switch (recordType) {
+    // Full record identification (e.g., "21" for movement record)
+    const recordId = recordType + recordSubtype;
+    
+    switch (recordId) {
       case '0': // Header record
         // Process header information if needed
+        console.log('Header record found');
         break;
         
-      case '1': // Transaction start
+      case '21': // Movement record (2.1) - Start of a new transaction
+        // If we have a current transaction, save it before starting a new one
         if (currentTransaction) {
           transactions.push(currentTransaction);
         }
         
         // Parse transaction date (positions 48-53, format DDMMYY)
         const dateStr = line.substring(47, 53);
-        const { date, isValid, notes } = parseAndValidateDate(dateStr);
+        const { date, isValid: isDateValid, notes: dateNotes } = parseAndValidateDate(dateStr);
         
         // Parse amount (positions 32-47)
         const amountStr = line.substring(31, 47);
-        const isNegative = amountStr.charAt(0) === '1';
+        const { amount, isValid: isAmountValid, notes: amountNotes } = parseAmount(amountStr);
         
-        // Parse the amount and handle NaN values
-        let amount;
-        try {
-          amount = parseInt(amountStr.substring(1)) / 100; // Convert cents to euros
-          
-          // Check if amount is NaN and set a default value
-          if (isNaN(amount)) {
-            amount = 0;
-            const amountNote = `Could not parse amount string: ${amountStr}. Using 0 as fallback.`;
-            currentTransaction = {
-              transaction_date: date,
-              amount: 0,
-              currency: 'EUR',
-              bank_reference: line.substring(10, 31).trim(),
-              communication: '',
-              account_number: '',
-              account_name: '',
-              notes: notes ? `${notes}. ${amountNote}` : amountNote
-            };
-          } else {
-            currentTransaction = {
-              transaction_date: date,
-              amount: isNegative ? -amount : amount,
-              currency: 'EUR',
-              bank_reference: line.substring(10, 31).trim(),
-              communication: '',
-              account_number: '',
-              account_name: '',
-              notes: notes || null
-            };
-          }
-        } catch (error) {
-          // Handle any parsing errors
-          amount = 0;
-          const amountNote = `Error parsing amount: ${error instanceof Error ? error.message : 'Unknown error'}. Using 0 as fallback.`;
-          currentTransaction = {
-            transaction_date: date,
-            amount: 0,
-            currency: 'EUR',
-            bank_reference: line.substring(10, 31).trim(),
-            communication: '',
-            account_number: '',
-            account_name: '',
-            notes: notes ? `${notes}. ${amountNote}` : amountNote
-          };
+        // Create new transaction
+        currentTransaction = {
+          transaction_date: date,
+          amount: amount,
+          currency: 'EUR', // Default currency
+          bank_reference: line.substring(10, 31).trim(),
+          communication: line.substring(63, 115).trim(), // Communication starts at position 64
+          account_number: '',
+          account_name: '',
+          notes: [dateNotes, amountNotes].filter(Boolean).join('. ')
+        };
+        break;
+        
+      case '22': // Movement record (2.2) - Additional details
+        if (currentTransaction) {
+          // Extract additional information if needed
+          // This might include BIC codes, etc.
         }
         break;
         
-      case '2': // Communication line
+      case '23': // Movement record (2.3) - Counterparty details
         if (currentTransaction) {
-          // Append to communication
-          currentTransaction.communication += line.substring(10).trim() + ' ';
-        }
-        break;
-        
-      case '3': // Counterparty details
-        if (currentTransaction) {
-          // Extract account number and name
+          // Extract counterparty account and name
           currentTransaction.account_number = line.substring(10, 47).trim();
           currentTransaction.account_name = line.substring(47).trim();
         }
         break;
         
-      case '8': // End of transaction
-        // Process any end-of-transaction data if needed
+      case '31': // Information record (3.1) - Additional communication
+        if (currentTransaction) {
+          // Append to communication
+          const additionalInfo = line.substring(10).trim();
+          if (additionalInfo) {
+            currentTransaction.communication += ' ' + additionalInfo;
+          }
+        }
         break;
         
-      case '9': // End of file
+      case '32': // Information record (3.2) - More communication
+        if (currentTransaction) {
+          // Append to communication
+          const additionalInfo = line.substring(10).trim();
+          if (additionalInfo) {
+            currentTransaction.communication += ' ' + additionalInfo;
+          }
+        }
+        break;
+        
+      case '8': // New balance record
+        // Process new balance if needed
+        break;
+        
+      case '9': // Trailer record
+        // End of file - add the last transaction if it exists
         if (currentTransaction) {
           transactions.push(currentTransaction);
           currentTransaction = null;
@@ -217,7 +232,8 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<any[]> {
         break;
         
       default:
-        // Ignore other record types
+        // Log unhandled record types for debugging
+        console.log(`Unhandled record type: ${recordId}`);
         break;
     }
   }
@@ -227,7 +243,12 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<any[]> {
     transactions.push(currentTransaction);
   }
   
-  return transactions;
+  // Clean up transactions - trim communication and remove empty notes
+  return transactions.map(tx => ({
+    ...tx,
+    communication: tx.communication.trim(),
+    notes: tx.notes && tx.notes.trim() ? tx.notes.trim() : undefined
+  }));
 }
 
 Deno.serve(async (req) => {
@@ -302,6 +323,13 @@ Deno.serve(async (req) => {
 
     for (const transaction of transactions) {
       try {
+        // Skip transactions with zero amount
+        if (transaction.amount === 0) {
+          console.log('Skipping transaction with zero amount');
+          errorCount++;
+          continue;
+        }
+
         // Insert the transaction
         const { data: insertedTx, error: insertError } = await supabase
           .from('bank_transactions')
