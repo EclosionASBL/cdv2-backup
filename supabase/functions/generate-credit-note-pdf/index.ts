@@ -119,6 +119,7 @@ Deno.serve(async (req) => {
         ),
         registration:registration_id(
           amount_paid,
+          invoice_id,
           kid:kid_id(
             prenom,
             nom
@@ -161,6 +162,32 @@ Deno.serve(async (req) => {
           headers: corsHeaders 
         }
       );
+    }
+
+    // Get invoice details if available
+    let invoiceDetails = null;
+    if (creditNote.invoice_id || creditNote.invoice_number || 
+        (creditNote.registration && creditNote.registration.invoice_id)) {
+      
+      const invoiceId = creditNote.invoice_number || 
+                        creditNote.registration.invoice_id || 
+                        creditNote.invoice_id;
+      
+      try {
+        const { data: invoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .select('invoice_number, amount, created_at')
+          .eq('invoice_number', invoiceId)
+          .maybeSingle();
+          
+        if (!invoiceError && invoice) {
+          invoiceDetails = invoice;
+          console.log('Found related invoice:', invoiceDetails);
+        }
+      } catch (invoiceError) {
+        console.error('Error fetching invoice details:', invoiceError);
+        // Continue without invoice details
+      }
     }
 
     console.log('Creating PDF document');
@@ -212,6 +239,27 @@ Deno.serve(async (req) => {
       size: 10,
       font: helveticaFont,
     });
+    
+    // Add invoice reference if available
+    if (invoiceDetails || creditNote.invoice_number) {
+      currentY -= lineHeight;
+      page.drawText(`Référence facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration.invoice_id}`, {
+        x: margin,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      if (invoiceDetails) {
+        currentY -= lineHeight;
+        page.drawText(`Date facture: ${new Date(invoiceDetails.created_at).toLocaleDateString('fr-BE')}`, {
+          x: margin,
+          y: currentY,
+          size: 10,
+          font: helveticaFont,
+        });
+      }
+    }
     
     // Add company info
     currentY -= 40;
@@ -424,6 +472,43 @@ Deno.serve(async (req) => {
       size: 12,
       font: helveticaBold,
     });
+    
+    // Add invoice reference section
+    if (invoiceDetails || creditNote.invoice_number) {
+      currentY -= 40;
+      page.drawText('Référence facture:', {
+        x: margin,
+        y: currentY,
+        size: 12,
+        font: helveticaBold,
+      });
+      
+      currentY -= lineHeight;
+      page.drawText(`Numéro de facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration.invoice_id}`, {
+        x: margin,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      if (invoiceDetails) {
+        currentY -= lineHeight;
+        page.drawText(`Montant initial: ${invoiceDetails.amount} €`, {
+          x: margin,
+          y: currentY,
+          size: 10,
+          font: helveticaFont,
+        });
+        
+        currentY -= lineHeight;
+        page.drawText(`Montant après note de crédit: ${Math.max(0, invoiceDetails.amount - creditNote.amount)} €`, {
+          x: margin,
+          y: currentY,
+          size: 10,
+          font: helveticaFont,
+        });
+      }
+    }
     
     // Add note
     currentY -= 40;

@@ -118,11 +118,13 @@ Deno.serve(async (req) => {
       .select(`
         *,
         registration:registrations!cancellation_requests_registration_id_fkey(
+          id,
           user_id,
           kid_id,
           activity_id,
           amount_paid,
-          payment_status
+          payment_status,
+          invoice_id
         )
       `)
       .eq('id', requestId)
@@ -142,6 +144,30 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'Associated registration not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // Get invoice details if available
+    let invoiceId = null;
+    let invoiceNumber = null;
+    
+    if (cancellationRequest.registration.invoice_id) {
+      try {
+        const { data: invoice, error: invoiceError } = await supabaseAdmin
+          .from('invoices')
+          .select('id, invoice_number')
+          .eq('invoice_number', cancellationRequest.registration.invoice_id)
+          .single();
+          
+        if (!invoiceError && invoice) {
+          invoiceId = invoice.id;
+          invoiceNumber = invoice.invoice_number;
+          console.log('Found invoice:', invoiceId, invoiceNumber);
+        } else {
+          console.error('Error fetching invoice:', invoiceError);
+        }
+      } catch (invoiceError) {
+        console.error('Error fetching invoice details:', invoiceError);
+      }
     }
 
     // Calculate refund amount based on refund type
@@ -173,7 +199,7 @@ Deno.serve(async (req) => {
           throw new Error('Failed to generate credit note number');
         }
         
-        creditNoteNumber = sequenceData;
+        creditNoteNumber = `NC-${sequenceData}`;
         console.log('Generated credit note number:', creditNoteNumber);
         
         // Create credit note record
@@ -185,7 +211,9 @@ Deno.serve(async (req) => {
             cancellation_request_id: cancellationRequest.id,
             credit_note_number: creditNoteNumber,
             amount: refundAmount,
-            status: 'issued'
+            status: 'issued',
+            invoice_id: invoiceId,
+            invoice_number: invoiceNumber
           })
           .select('id')
           .single();
@@ -328,6 +356,8 @@ Deno.serve(async (req) => {
     }
 
     console.log('Cancellation request processed successfully:', requestId);
+    console.log('Generated credit note ID:', creditNoteId);
+    console.log('Generated credit note number:', creditNoteNumber);
 
     return new Response(
       JSON.stringify({ 

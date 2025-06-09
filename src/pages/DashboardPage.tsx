@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useKidStore } from '../stores/kidStore';
-import { CalendarDays, User, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText, Bell } from 'lucide-react';
+import { CalendarDays, User, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText, Bell, CreditCard } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import clsx from 'clsx';
 import { getAgeFromDate } from '../utils/date';
@@ -33,6 +33,15 @@ interface Registration {
   };
 }
 
+interface UserBalance {
+  gross_balance: number;
+  net_balance: number;
+  total_invoiced: number;
+  total_paid: number;
+  total_pending: number;
+  total_credits: number;
+}
+
 const DashboardPage = () => {
   const { user, profile, fetchProfile } = useAuthStore();
   const { kids, fetchKids } = useKidStore();
@@ -42,6 +51,8 @@ const DashboardPage = () => {
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [userBalance, setUserBalance] = useState<UserBalance | null>(null);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
 
   useEffect(() => {
     if (user && !profile) {
@@ -51,6 +62,7 @@ const DashboardPage = () => {
       fetchKids();
       fetchRegistrations();
       fetchInvoices();
+      fetchUserBalance();
     }
   }, [user, profile, fetchProfile, fetchKids]);
 
@@ -116,6 +128,28 @@ const DashboardPage = () => {
     } finally {
       setIsLoadingInvoices(false);
     }
+  };
+
+  const fetchUserBalance = async () => {
+    if (!user) return;
+    
+    try {
+      setIsLoadingBalance(true);
+      
+      const { data, error } = await supabase.rpc('calculate_user_balance');
+      
+      if (error) throw error;
+      setUserBalance(data[0]);
+    } catch (err) {
+      console.error('Error fetching user balance:', err);
+    } finally {
+      setIsLoadingBalance(false);
+    }
+  };
+
+  const formatCurrency = (amount: number | null) => {
+    if (amount === null || amount === undefined) return '0,00 €';
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(amount);
   };
 
   const hasValidNN =
@@ -266,86 +300,170 @@ const DashboardPage = () => {
           )}
         </div>
         
-        {/* Registrations Card */}
+        {/* Financial Summary Card */}
         <div className="bg-white rounded-xl shadow-md p-6">
           <div className="flex items-center mb-4">
             <div className="p-2 bg-primary-100 rounded-lg mr-4">
-              <CalendarDays className="h-6 w-6 text-primary-600" />
+              <CreditCard className="h-6 w-6 text-primary-600" />
             </div>
-            <div className="flex items-center">
-              <h2 className="text-xl font-semibold">Mes inscriptions</h2>
-              {profile?.has_new_registration_notification && (
-                <span className="ml-2 flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                </span>
-              )}
-            </div>
+            <h2 className="text-xl font-semibold">Situation financière</h2>
           </div>
           
-          {isLoadingRegistrations ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+          {isLoadingBalance ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
             </div>
-          ) : registrationError ? (
-            <div className="text-center py-6">
-              <p className="text-red-600 mb-4">{registrationError}</p>
-              <button 
-                onClick={fetchRegistrations}
-                className="text-primary-600 hover:text-primary-700 font-medium"
-              >
-                Réessayer
-              </button>
-            </div>
-          ) : registrations.length === 0 ? (
-            <div className="text-center py-6">
-              <p className="text-gray-600 mb-4">Aucune inscription en cours.</p>
-              <Link to="/activities" className="text-primary-600 hover:text-primary-700 font-medium">
-                Découvrir les stages
-              </Link>
-            </div>
-          ) : (
+          ) : userBalance ? (
             <div className="space-y-4">
-              {registrations.map((reg) => (
-                <div key={reg.id} className="border border-gray-100 rounded-lg p-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-medium">{reg.session.stage.title}</h3>
-                      <p className="text-sm text-gray-600">
-                        {new Date(reg.session.start_date).toLocaleDateString('fr-FR')} - {new Date(reg.session.end_date).toLocaleDateString('fr-FR')}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        Pour: {reg.kid.prenom} {reg.kid.nom}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        reg.payment_status === 'paid' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {reg.payment_status === 'paid' ? (
-                          <><CheckCircle className="h-3 w-3 mr-1" /> Payé</>
-                        ) : (
-                          <><Clock className="h-3 w-3 mr-1" /> En attente</>
-                        )}
-                      </span>
-                      <span className="text-sm font-medium mt-1">{reg.amount_paid} €</span>
-                    </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Total facturé:</span>
+                <span className="font-medium">{formatCurrency(userBalance.total_invoiced)}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Total payé:</span>
+                <span className="font-medium text-green-600">{formatCurrency(userBalance.total_paid)}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Notes de crédit:</span>
+                <span className="font-medium text-blue-600">{formatCurrency(userBalance.total_credits)}</span>
+              </div>
+              
+              <div className="border-t pt-3">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Solde à payer:</span>
+                  <span className={clsx(
+                    "font-bold text-lg",
+                    userBalance.net_balance > 0 ? "text-yellow-600" : "text-green-600"
+                  )}>
+                    {formatCurrency(userBalance.net_balance)}
+                  </span>
+                </div>
+              </div>
+              
+              {userBalance.net_balance > 0 && (
+                <div className="bg-yellow-50 p-3 rounded-lg text-sm text-yellow-700">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-4 w-4 mr-2 flex-shrink-0 mt-0.5" />
+                    <p>Veuillez régler ce montant selon les instructions sur vos factures</p>
                   </div>
                 </div>
-              ))}
+              )}
               
-              {registrations.length > 0 && (
-                <div className="text-center pt-2">
-                  <Link to="/registrations" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
-                    Voir toutes mes inscriptions
-                  </Link>
+              {userBalance.net_balance <= 0 && (
+                <div className="bg-green-50 p-3 rounded-lg text-sm text-green-700">
+                  <div className="flex items-start">
+                    <CheckCircle className="h-4 w-4 mr-2 flex-shrink-0 mt-0.5" />
+                    <p>
+                      {userBalance.net_balance === 0 
+                        ? "Toutes vos factures sont payées" 
+                        : `Un remboursement de ${formatCurrency(Math.abs(userBalance.net_balance))} vous sera versé`}
+                    </p>
+                  </div>
                 </div>
               )}
+              
+              <div className="text-center pt-2">
+                <Link to="/profile/invoices" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+                  Voir toutes mes factures
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <p className="text-gray-600 mb-4">Aucune information financière disponible</p>
+              <button
+                onClick={fetchUserBalance}
+                className="text-primary-600 hover:text-primary-700 font-medium flex items-center mx-auto"
+              >
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Actualiser
+              </button>
             </div>
           )}
         </div>
+      </div>
+
+      {/* Registrations Card */}
+      <div className="mt-8 bg-white rounded-xl shadow-md p-6">
+        <div className="flex items-center mb-4">
+          <div className="p-2 bg-primary-100 rounded-lg mr-4">
+            <CalendarDays className="h-6 w-6 text-primary-600" />
+          </div>
+          <div className="flex items-center">
+            <h2 className="text-xl font-semibold">Mes inscriptions</h2>
+            {profile?.has_new_registration_notification && (
+              <span className="ml-2 flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+            )}
+          </div>
+        </div>
+        
+        {isLoadingRegistrations ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+          </div>
+        ) : registrationError ? (
+          <div className="text-center py-6">
+            <p className="text-red-600 mb-4">{registrationError}</p>
+            <button 
+              onClick={fetchRegistrations}
+              className="text-primary-600 hover:text-primary-700 font-medium"
+            >
+              Réessayer
+            </button>
+          </div>
+        ) : registrations.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-gray-600 mb-4">Aucune inscription en cours.</p>
+            <Link to="/activities" className="text-primary-600 hover:text-primary-700 font-medium">
+              Découvrir les stages
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {registrations.map((reg) => (
+              <div key={reg.id} className="border border-gray-100 rounded-lg p-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium">{reg.session.stage.title}</h3>
+                    <p className="text-sm text-gray-600">
+                      {new Date(reg.session.start_date).toLocaleDateString('fr-FR')} - {new Date(reg.session.end_date).toLocaleDateString('fr-FR')}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Pour: {reg.kid.prenom} {reg.kid.nom}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      reg.payment_status === 'paid' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {reg.payment_status === 'paid' ? (
+                        <><CheckCircle className="h-3 w-3 mr-1" /> Payé</>
+                      ) : (
+                        <><Clock className="h-3 w-3 mr-1" /> En attente</>
+                      )}
+                    </span>
+                    <span className="text-sm font-medium mt-1">{reg.amount_paid} €</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {registrations.length > 0 && (
+              <div className="text-center pt-2">
+                <Link to="/registrations" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+                  Voir toutes mes inscriptions
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Invoices Section */}
