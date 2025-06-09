@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
 
     // Fetch the PDF content to attach it to the email
     console.log('Fetching PDF content from URL:', creditNote.pdf_url);
-    let pdfContent;
+    let pdfBuffer;
     try {
       const pdfResponse = await fetch(creditNote.pdf_url);
       if (!pdfResponse.ok) {
@@ -163,14 +163,8 @@ Deno.serve(async (req) => {
       }
       
       // Get the PDF as an ArrayBuffer
-      const pdfBuffer = await pdfResponse.arrayBuffer();
-      
-      // Convert to Base64
-      pdfContent = btoa(
-        new Uint8Array(pdfBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      );
-      
-      console.log('PDF content fetched and encoded successfully');
+      pdfBuffer = await pdfResponse.arrayBuffer();
+      console.log('PDF content fetched successfully');
     } catch (fetchError) {
       console.error('Error fetching PDF content:', fetchError);
       // Continue without attachment if we can't fetch the PDF
@@ -225,9 +219,9 @@ Deno.serve(async (req) => {
       ];
 
       // Add PDF attachment if we have the content
-      if (pdfContent) {
+      if (pdfBuffer) {
         emailAttachments.push({
-          data: pdfContent,
+          data: pdfBuffer,
           type: "application/pdf",
           name: `note_credit_${creditNote.credit_note_number}.pdf`
         });
