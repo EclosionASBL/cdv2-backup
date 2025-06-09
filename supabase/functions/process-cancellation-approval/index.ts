@@ -199,7 +199,8 @@ Deno.serve(async (req) => {
           throw new Error('Failed to generate credit note number');
         }
         
-        creditNoteNumber = `NC-${sequenceData}`;
+        // The function now returns the complete formatted number, no need to add "NC-" prefix
+        creditNoteNumber = sequenceData;
         console.log('Generated credit note number:', creditNoteNumber);
         
         // Create credit note record
