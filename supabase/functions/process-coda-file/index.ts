@@ -11,6 +11,99 @@ interface ProcessCodaRequest {
   batchId?: string;
 }
 
+/**
+ * Parse and validate a date string from CODA file
+ * Handles various date formats and edge cases
+ */
+function parseAndValidateDate(dateStr: string): { 
+  date: string; 
+  isValid: boolean;
+  notes?: string;
+} {
+  try {
+    if (!dateStr || dateStr.length !== 6) {
+      return { 
+        date: '1970-01-01', 
+        isValid: false,
+        notes: `Invalid date string: ${dateStr}` 
+      };
+    }
+
+    // Try DDMMYY format first (standard for Belgian CODA)
+    let day = parseInt(dateStr.substring(0, 2));
+    let month = parseInt(dateStr.substring(2, 4));
+    let year = 2000 + parseInt(dateStr.substring(4, 6)); // Assuming 21st century
+    
+    // Check if date is valid
+    const date = new Date(year, month - 1, day);
+    const isValidDate = date instanceof Date && !isNaN(date.getTime()) &&
+                        date.getDate() === day &&
+                        date.getMonth() === month - 1;
+    
+    if (isValidDate) {
+      return { 
+        date: `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+        isValid: true
+      };
+    }
+    
+    // If DDMMYY fails, try MMDDYY format
+    day = parseInt(dateStr.substring(2, 4));
+    month = parseInt(dateStr.substring(0, 2));
+    
+    // Check if swapped date is valid
+    const swappedDate = new Date(year, month - 1, day);
+    const isValidSwappedDate = swappedDate instanceof Date && !isNaN(swappedDate.getTime()) &&
+                              swappedDate.getDate() === day &&
+                              swappedDate.getMonth() === month - 1;
+    
+    if (isValidSwappedDate) {
+      return { 
+        date: `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+        isValid: true,
+        notes: `Date format was MMDDYY instead of DDMMYY: ${dateStr}`
+      };
+    }
+    
+    // If both formats fail, try to extract a valid date by checking various combinations
+    // For example, if month is out of range (e.g., 14), try to interpret it differently
+    
+    // Try to handle the specific case in the error: "2013-14-00"
+    if (month > 12) {
+      // This could be a special code or a formatting error
+      // Default to first day of the month as a fallback
+      return { 
+        date: `${year}-01-01`,
+        isValid: false,
+        notes: `Invalid month (${month}) in date string: ${dateStr}. Using fallback date.`
+      };
+    }
+    
+    // If day is 0, default to 1st day of the month
+    if (day === 0) {
+      return { 
+        date: `${year}-${month.toString().padStart(2, '0')}-01`,
+        isValid: false,
+        notes: `Invalid day (0) in date string: ${dateStr}. Using 1st day of month.`
+      };
+    }
+    
+    // Last resort fallback
+    return { 
+      date: '1970-01-01',
+      isValid: false,
+      notes: `Could not parse date string: ${dateStr}. Using epoch date as fallback.`
+    };
+  } catch (error) {
+    console.error('Error parsing date:', error, 'dateStr:', dateStr);
+    return { 
+      date: '1970-01-01', 
+      isValid: false,
+      notes: `Exception parsing date: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
+  }
+}
+
 // Simple parser for CODA files (BC2 format)
 // This is a basic implementation and may need to be enhanced for specific CODA formats
 async function parseCodaFile(fileContent: Uint8Array): Promise<any[]> {
@@ -43,9 +136,7 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<any[]> {
         
         // Parse transaction date (positions 48-53, format DDMMYY)
         const dateStr = line.substring(47, 53);
-        const day = parseInt(dateStr.substring(0, 2));
-        const month = parseInt(dateStr.substring(2, 4));
-        const year = 2000 + parseInt(dateStr.substring(4, 6)); // Assuming 21st century
+        const { date, isValid, notes } = parseAndValidateDate(dateStr);
         
         // Parse amount (positions 32-47)
         const amountStr = line.substring(31, 47);
@@ -53,13 +144,14 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<any[]> {
         const amount = parseInt(amountStr.substring(1)) / 100; // Convert cents to euros
         
         currentTransaction = {
-          transaction_date: `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`,
+          transaction_date: date,
           amount: isNegative ? -amount : amount,
           currency: 'EUR',
           bank_reference: line.substring(10, 31).trim(),
           communication: '',
           account_number: '',
           account_name: '',
+          notes: notes || null
         };
         break;
         
@@ -171,50 +263,58 @@ Deno.serve(async (req) => {
     // Insert transactions into the database
     const insertedTransactions = [];
     let matchedCount = 0;
+    let errorCount = 0;
 
     for (const transaction of transactions) {
-      // Insert the transaction
-      const { data: insertedTx, error: insertError } = await supabase
-        .from('bank_transactions')
-        .insert({
-          transaction_date: transaction.transaction_date,
-          amount: transaction.amount,
-          currency: transaction.currency,
-          communication: transaction.communication,
-          account_number: transaction.account_number,
-          account_name: transaction.account_name,
-          bank_reference: transaction.bank_reference,
-          status: 'unmatched',
-          raw_coda_file_path: filePath,
-          import_batch_id: importBatchId
-        })
-        .select()
-        .single();
+      try {
+        // Insert the transaction
+        const { data: insertedTx, error: insertError } = await supabase
+          .from('bank_transactions')
+          .insert({
+            transaction_date: transaction.transaction_date,
+            amount: transaction.amount,
+            currency: transaction.currency,
+            communication: transaction.communication,
+            account_number: transaction.account_number,
+            account_name: transaction.account_name,
+            bank_reference: transaction.bank_reference,
+            status: 'unmatched',
+            raw_coda_file_path: filePath,
+            import_batch_id: importBatchId,
+            notes: transaction.notes
+          })
+          .select()
+          .single();
 
-      if (insertError) {
-        console.error('Error inserting transaction:', insertError);
-        continue;
-      }
+        if (insertError) {
+          console.error('Error inserting transaction:', insertError);
+          errorCount++;
+          continue;
+        }
 
-      insertedTransactions.push(insertedTx);
+        insertedTransactions.push(insertedTx);
 
-      // Try to match the transaction to an invoice
-      const { data: matchResult, error: matchError } = await supabase.rpc(
-        'match_transaction_to_invoice',
-        { transaction_id: insertedTx.id }
-      );
+        // Try to match the transaction to an invoice
+        const { data: matchResult, error: matchError } = await supabase.rpc(
+          'match_transaction_to_invoice',
+          { transaction_id: insertedTx.id }
+        );
 
-      if (matchError) {
-        console.error('Error matching transaction:', matchError);
-      } else if (matchResult) {
-        matchedCount++;
+        if (matchError) {
+          console.error('Error matching transaction:', matchError);
+        } else if (matchResult) {
+          matchedCount++;
+        }
+      } catch (err) {
+        console.error('Error processing transaction:', err);
+        errorCount++;
       }
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Processed ${transactions.length} transactions, matched ${matchedCount}`,
+        message: `Processed ${transactions.length} transactions, matched ${matchedCount}, errors: ${errorCount}`,
         batch_id: importBatchId,
         transactions: insertedTransactions.length
       }),
