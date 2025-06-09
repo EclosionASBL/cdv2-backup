@@ -102,15 +102,18 @@ const AdminCancellationRequestsPage = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to process cancellation approval');
+      }
 
       toast.success('Cancellation request approved successfully');
       await fetchRequests();
       setIsModalOpen(false);
       setSelectedRequest(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error approving cancellation:', err);
-      toast.error('Failed to approve cancellation request');
+      toast.error(err.message || 'Failed to approve cancellation request');
     } finally {
       setProcessing(false);
     }

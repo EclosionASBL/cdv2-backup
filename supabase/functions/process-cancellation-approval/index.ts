@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 interface ProcessCancellationRequest {
-  cancellationRequestId: string;
+  requestId: string;
   refundType: 'full' | 'partial' | 'none';
   adminNotes?: string;
 }
@@ -48,10 +48,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { cancellationRequestId, refundType, adminNotes } = requestData;
+    const { requestId, refundType, adminNotes } = requestData;
 
-    if (!cancellationRequestId || !refundType) {
-      console.error('Missing required parameters:', { cancellationRequestId, refundType });
+    if (!requestId || !refundType) {
+      console.error('Missing required parameters:', { requestId, refundType });
       return new Response(
         JSON.stringify({ error: 'Missing required parameters' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
       .from('cancellation_requests')
       .select(`
         *,
-        registration:registration_id(
+        registration:registrations!cancellation_requests_registration_id_fkey(
           user_id,
           kid_id,
           activity_id,
@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
           payment_status
         )
       `)
-      .eq('id', cancellationRequestId)
+      .eq('id', requestId)
       .single();
 
     if (requestError) {
@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
         refund_type: refundType,
         credit_note_id: creditNoteId
       })
-      .eq('id', cancellationRequestId);
+      .eq('id', requestId);
 
     if (updateRequestError) {
       console.error('Error updating cancellation request:', updateRequestError);
