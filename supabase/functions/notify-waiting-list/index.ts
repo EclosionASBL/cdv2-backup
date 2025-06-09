@@ -90,6 +90,21 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Set notification flag for the user
+    if (waitingListEntry.user_id) {
+      const { error: notificationError } = await supabase
+        .from('users')
+        .update({ has_new_registration_notification: true })
+        .eq('id', waitingListEntry.user_id);
+
+      if (notificationError) {
+        console.error('Error setting notification flag:', notificationError);
+        // Continue even if notification update fails
+      } else {
+        console.log('Notification flag set successfully for user:', waitingListEntry.user_id);
+      }
+    }
+
     // Unwrap arrays if needed
     const kid = Array.isArray(waitingListEntry.kid) ? waitingListEntry.kid[0] : waitingListEntry.kid;
     const parent = Array.isArray(waitingListEntry.parent) ? waitingListEntry.parent[0] : waitingListEntry.parent;

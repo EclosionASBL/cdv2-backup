@@ -229,27 +229,6 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
 
       if (error) throw error;
       
-      // Set notification flag for the user
-      if (waitingListEntry?.user_id) {
-        const { error: notificationError } = await supabase
-          .from('users')
-          .update({ has_new_registration_notification: true })
-          .eq('id', waitingListEntry.user_id);
-
-        if (notificationError) {
-          console.error('Error setting notification flag:', notificationError);
-          // Continue even if notification update fails
-        } else {
-          console.log('Notification flag set successfully for user:', waitingListEntry.user_id);
-          
-          // Update the auth store if this is the current user
-          const { user, fetchProfile } = useAuthStore.getState();
-          if (user && user.id === waitingListEntry.user_id) {
-            await fetchProfile();
-          }
-        }
-      }
-      
       // Call the notify-waiting-list edge function
       try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -291,15 +270,6 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
   markEntryConverted: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      // First get the waiting list entry to get the user_id
-      const { data: waitingListEntry, error: getError } = await supabase
-        .from('waiting_list')
-        .select('user_id')
-        .eq('id', id)
-        .single();
-
-      if (getError) throw getError;
-      
       // Update waiting list entry status to 'converted'
       const { error: updateError } = await supabase
         .from('waiting_list')
@@ -307,27 +277,6 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
         .eq('id', id);
 
       if (updateError) throw updateError;
-
-      // Set notification flag for the user
-      if (waitingListEntry?.user_id) {
-        const { error: notificationError } = await supabase
-          .from('users')
-          .update({ has_new_registration_notification: true })
-          .eq('id', waitingListEntry.user_id);
-
-        if (notificationError) {
-          console.error('Error setting notification flag:', notificationError);
-          // Continue even if notification update fails
-        } else {
-          console.log('Notification flag set successfully for user:', waitingListEntry.user_id);
-          
-          // Update the auth store if this is the current user
-          const { user, fetchProfile } = useAuthStore.getState();
-          if (user && user.id === waitingListEntry.user_id) {
-            await fetchProfile();
-          }
-        }
-      }
 
       await get().fetchWaitingList();
     } catch (error: any) {
