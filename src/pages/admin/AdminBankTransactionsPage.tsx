@@ -94,12 +94,7 @@ const AdminBankTransactionsPage = () => {
             invoice_number,
             amount,
             status,
-            user_id,
-            user:user_id(
-              prenom,
-              nom,
-              email
-            )
+            user_id
           )
         `)
         .order('transaction_date', { ascending: false });
@@ -113,7 +108,33 @@ const AdminBankTransactionsPage = () => {
         
       if (error) throw error;
       
-      setTransactions(data || []);
+      // For each transaction with an invoice, fetch the user details separately
+      const transactionsWithUserDetails = await Promise.all((data || []).map(async (transaction) => {
+        if (transaction.invoice && transaction.invoice.user_id) {
+          try {
+            const { data: userData, error: userError } = await supabase
+              .from('users')
+              .select('prenom, nom, email')
+              .eq('id', transaction.invoice.user_id)
+              .single();
+              
+            if (!userError && userData) {
+              return {
+                ...transaction,
+                invoice: {
+                  ...transaction.invoice,
+                  user: userData
+                }
+              };
+            }
+          } catch (err) {
+            console.error('Error fetching user details:', err);
+          }
+        }
+        return transaction;
+      }));
+      
+      setTransactions(transactionsWithUserDetails);
     } catch (err: any) {
       console.error('Error fetching bank transactions:', err);
       setError(err.message || 'Une erreur est survenue lors du chargement des transactions.');
