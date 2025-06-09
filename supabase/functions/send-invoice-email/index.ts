@@ -320,7 +320,7 @@ Deno.serve(async (req) => {
       // Add PDF attachment if we have the content
       if (pdfContent) {
         emailAttachments.push({
-          path: "data:application/pdf;base64," + pdfContent,
+          data: pdfContent,
           type: "application/pdf",
           name: `facture_${invoice_number}.pdf`
         });
