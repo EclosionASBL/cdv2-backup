@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Loader2, AlertCircle, Filter, Search, CheckCircle, Clock, FileText, Download, 
-  AlertTriangle, XCircle, RefreshCw, Upload, Database, DollarSign, FileUp, 
-  ArrowUpDown, Eye, Link2, X, Check
+  Loader2, Search, Filter, CheckCircle, Clock, FileText, 
+  Download, AlertTriangle, RefreshCw, Upload, Database, 
+  DollarSign, FileUp, ArrowUpDown, Eye, Link2, X
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -77,8 +77,8 @@ const AdminBankTransactionsPage = () => {
   const [batches, setBatches] = useState<string[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
   const [isConfirmPaymentModalOpen, setIsConfirmPaymentModalOpen] = useState(false);
-  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [invoiceToConfirm, setInvoiceToConfirm] = useState<any>(null);
+  const [transactionToConfirm, setTransactionToConfirm] = useState<any>(null);
 
   useEffect(() => {
     fetchTransactions();
@@ -255,84 +255,79 @@ const AdminBankTransactionsPage = () => {
       if (error) throw error;
       
       setSuggestedInvoices(data || []);
-    } catch (error) {
-      console.error('Error fetching suggested invoices:', error);
+    } catch (err) {
+      console.error('Error fetching suggested invoices:', err);
     } finally {
       setIsLoadingSuggestions(false);
     }
   };
 
-  const handleConfirmPayment = (invoice: Invoice) => {
-    setSelectedInvoiceForPayment(invoice);
-    setIsConfirmPaymentModalOpen(true);
-  };
-
-  const handleProcessPayment = async () => {
-    if (!selectedTransaction || !selectedInvoiceForPayment) return;
-    
-    try {
-      setIsProcessingPayment(true);
-      
-      // Update transaction with invoice link
-      const { error: updateTxError } = await supabase
-        .from('bank_transactions')
-        .update({ 
-          invoice_id: selectedInvoiceForPayment.id,
-          status: 'matched'
-        })
-        .eq('id', selectedTransaction.id);
-        
-      if (updateTxError) throw updateTxError;
-      
-      // Update invoice status
-      const { error: updateInvoiceError } = await supabase
-        .from('invoices')
-        .update({ 
-          status: 'paid',
-          paid_at: new Date().toISOString()
-        })
-        .eq('id', selectedInvoiceForPayment.id);
-        
-      if (updateInvoiceError) throw updateInvoiceError;
-      
-      // Update registrations
-      const { error: updateRegError } = await supabase
-        .from('registrations')
-        .update({ payment_status: 'paid' })
-        .eq('invoice_id', selectedInvoiceForPayment.invoice_number);
-        
-      if (updateRegError) throw updateRegError;
-      
-      toast.success('Paiement traité avec succès');
-      
-      // Close modals and refresh data
-      setIsConfirmPaymentModalOpen(false);
-      setIsTransactionDetailModalOpen(false);
-      fetchTransactions();
-      
-    } catch (error: any) {
-      console.error('Error processing payment:', error);
-      toast.error(`Erreur: ${error.message}`);
-    } finally {
-      setIsProcessingPayment(false);
-    }
-  };
-
   const handleLinkToInvoice = async (transactionId: string, invoiceId: string) => {
     try {
-      // Get the invoice details first
-      const { data: invoice, error: invoiceError } = await supabase
+      // Get transaction and invoice details first
+      const { data: transaction, error: txError } = await supabase
+        .from('bank_transactions')
+        .select('*')
+        .eq('id', transactionId)
+        .single();
+        
+      if (txError) throw txError;
+      
+      const { data: invoice, error: invError } = await supabase
         .from('invoices')
         .select('*')
         .eq('id', invoiceId)
         .single();
         
-      if (invoiceError) throw invoiceError;
+      if (invError) throw invError;
       
-      // Show confirmation modal
-      setSelectedInvoiceForPayment(invoice);
+      // Open confirmation modal
+      setTransactionToConfirm(transaction);
+      setInvoiceToConfirm(invoice);
       setIsConfirmPaymentModalOpen(true);
+    } catch (err: any) {
+      console.error('Error preparing to link transaction to invoice:', err);
+      toast.error(`Erreur: ${err.message}`);
+    }
+  };
+
+  const confirmLinkToInvoice = async () => {
+    if (!transactionToConfirm || !invoiceToConfirm) return;
+    
+    try {
+      // Call the match function with the transaction and invoice IDs
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
+      if (sessionError || !session) {
+        throw new Error('Session expirée. Veuillez vous reconnecter.');
+      }
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/match-transaction-to-invoice`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            transaction_id: transactionToConfirm.id,
+            invoice_id: invoiceToConfirm.id
+          }),
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erreur lors de l\'association');
+      }
+      
+      // Refresh transactions
+      fetchTransactions();
+      
+      toast.success('Transaction liée à la facture avec succès');
+      setIsConfirmPaymentModalOpen(false);
+      setIsTransactionDetailModalOpen(false);
     } catch (err: any) {
       console.error('Error linking transaction to invoice:', err);
       toast.error(`Erreur: ${err.message}`);
@@ -658,7 +653,7 @@ const AdminBankTransactionsPage = () => {
                   )}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {new Date(transaction.transaction_date).toLocaleDateString('fr-FR')}
+                        {new Date(transaction.transaction_date).toLocaleDateString('fr-BE')}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -839,7 +834,7 @@ const AdminBankTransactionsPage = () => {
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Date</h3>
                     <p className="mt-1 text-sm text-gray-900">
-                      {new Date(selectedTransaction.transaction_date).toLocaleDateString('fr-FR')}
+                      {new Date(selectedTransaction.transaction_date).toLocaleDateString('fr-BE')}
                     </p>
                   </div>
                   <div>
@@ -898,10 +893,10 @@ const AdminBankTransactionsPage = () => {
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="text-sm font-medium">{selectedTransaction.invoice.invoice_number}</p>
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-gray-500">
                           {selectedTransaction.invoice.user?.prenom} {selectedTransaction.invoice.user?.nom}
                         </p>
-                        <p className="text-xs text-gray-600">{selectedTransaction.invoice.user?.email}</p>
+                        <p className="text-xs text-gray-500">{selectedTransaction.invoice.user?.email}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium">{selectedTransaction.invoice.amount} €</p>
@@ -1040,64 +1035,75 @@ const AdminBankTransactionsPage = () => {
           <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
 
           <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
-            <Dialog.Title className="text-lg font-semibold mb-4 flex items-center">
-              <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+            <Dialog.Title className="text-lg font-semibold mb-4">
               Confirmer le paiement
             </Dialog.Title>
 
-            {selectedInvoiceForPayment && (
+            {transactionToConfirm && invoiceToConfirm && (
               <div className="space-y-4">
                 <p className="text-gray-600">
-                  Êtes-vous sûr de vouloir marquer cette facture comme payée ?
+                  Voulez-vous associer cette transaction à la facture sélectionnée et la marquer comme payée ?
                 </p>
 
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex justify-between items-start">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Transaction</h3>
+                  <div className="flex justify-between">
                     <div>
-                      <p className="font-medium">{selectedInvoiceForPayment.invoice_number}</p>
-                      <p className="text-sm text-gray-600">
-                        {selectedInvoiceForPayment.user?.prenom} {selectedInvoiceForPayment.user?.nom}
+                      <p className="text-sm text-gray-600">Date: {new Date(transactionToConfirm.transaction_date).toLocaleDateString('fr-BE')}</p>
+                      <p className="text-sm text-gray-600">De: {transactionToConfirm.account_name || 'Inconnu'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-sm font-medium ${transactionToConfirm.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {transactionToConfirm.amount} €
                       </p>
                     </div>
-                    <p className="font-medium">{selectedInvoiceForPayment.amount} €</p>
                   </div>
                 </div>
 
-                <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                  <div className="flex items-start">
-                    <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-yellow-700">
-                      Cette action mettra à jour le statut de la facture et des inscriptions associées. Elle ne peut pas être annulée.
-                    </p>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Facture</h3>
+                  <div className="flex justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{invoiceToConfirm.invoice_number}</p>
+                      <p className="text-sm text-gray-600">Statut: {invoiceToConfirm.status}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium">{invoiceToConfirm.amount} €</p>
+                    </div>
                   </div>
                 </div>
+
+                {transactionToConfirm.amount !== invoiceToConfirm.amount && (
+                  <div className={`p-4 rounded-lg ${
+                    transactionToConfirm.amount > invoiceToConfirm.amount 
+                      ? 'bg-blue-50 text-blue-700' 
+                      : 'bg-yellow-50 text-yellow-700'
+                  }`}>
+                    <div className="flex items-start">
+                      <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
+                      <p>
+                        {transactionToConfirm.amount > invoiceToConfirm.amount 
+                          ? `Le montant de la transaction (${transactionToConfirm.amount} €) est supérieur au montant de la facture (${invoiceToConfirm.amount} €).` 
+                          : `Le montant de la transaction (${transactionToConfirm.amount} €) est inférieur au montant de la facture (${invoiceToConfirm.amount} €).`}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
                     onClick={() => setIsConfirmPaymentModalOpen(false)}
                     className="btn-outline"
-                    disabled={isProcessingPayment}
                   >
                     Annuler
                   </button>
                   <button
                     type="button"
-                    onClick={handleProcessPayment}
-                    disabled={isProcessingPayment}
+                    onClick={confirmLinkToInvoice}
                     className="btn-primary"
                   >
-                    {isProcessingPayment ? (
-                      <span className="flex items-center">
-                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                        Traitement...
-                      </span>
-                    ) : (
-                      <span className="flex items-center">
-                        <Check className="h-4 w-4 mr-2" />
-                        Confirmer le paiement
-                      </span>
-                    )}
+                    Confirmer le paiement
                   </button>
                 </div>
               </div>
