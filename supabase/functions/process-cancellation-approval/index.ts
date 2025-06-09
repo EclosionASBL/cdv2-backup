@@ -58,11 +58,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Initialize Supabase client
+    // Initialize Supabase client with service role key
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !supabaseServiceKey) {
       console.error('Missing Supabase environment variables');
       return new Response(
         JSON.stringify({ error: 'Server configuration error' }),
@@ -70,14 +70,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Create admin client with service role key
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify the user is an admin
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
+    // Create client for user authentication
+    const supabaseAuth = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '');
+
+    // Verify the user is authenticated and is an admin
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(
       authHeader.replace('Bearer ', '')
     );
 
-    if (authError) {
+    if (authError || !user) {
       console.error('Auth error:', authError);
       return new Response(
         JSON.stringify({ error: 'Authorization failed' }),
@@ -85,16 +89,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!user) {
-      console.error('No user found in auth context');
-      return new Response(
-        JSON.stringify({ error: 'User not found' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // Check if user is admin
-    const { data: userData, error: userError } = await supabase
+    // Check if user is admin using admin client
+    const { data: userData, error: userError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
@@ -116,8 +112,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get the cancellation request details
-    const { data: cancellationRequest, error: requestError } = await supabase
+    // Get the cancellation request details using admin client
+    const { data: cancellationRequest, error: requestError } = await supabaseAdmin
       .from('cancellation_requests')
       .select(`
         *,
@@ -136,6 +132,14 @@ Deno.serve(async (req) => {
       console.error('Error fetching cancellation request:', requestError);
       return new Response(
         JSON.stringify({ error: 'Cancellation request not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (!cancellationRequest.registration) {
+      console.error('Registration not found for cancellation request:', requestId);
+      return new Response(
+        JSON.stringify({ error: 'Associated registration not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -159,8 +163,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Update the cancellation request
-    const { error: updateRequestError } = await supabase
+    // Update the cancellation request using admin client
+    const { error: updateRequestError } = await supabaseAdmin
       .from('cancellation_requests')
       .update({
         status: 'approved',
@@ -178,14 +182,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Update the registration status
+    // Update the registration status using admin client
     const cancellationStatus = refundType === 'full' 
       ? 'cancelled_full_refund' 
       : refundType === 'partial' 
         ? 'cancelled_partial_refund' 
         : 'cancelled_no_refund';
 
-    const { error: updateRegistrationError } = await supabase
+    const { error: updateRegistrationError } = await supabaseAdmin
       .from('registrations')
       .update({
         payment_status: 'cancelled',
@@ -201,10 +205,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Update the session's current_registrations count
+    // Update the session's current_registrations count using admin client
     try {
       // Get the current count
-      const { data: sessionData, error: sessionError } = await supabase
+      const { data: sessionData, error: sessionError } = await supabaseAdmin
         .from('sessions')
         .select('current_registrations')
         .eq('id', cancellationRequest.registration.activity_id)
@@ -214,15 +218,21 @@ Deno.serve(async (req) => {
         console.error('Error fetching session:', sessionError);
       } else if (sessionData && sessionData.current_registrations > 0) {
         // Decrement the count
-        await supabase
+        const { error: updateSessionError } = await supabaseAdmin
           .from('sessions')
           .update({ current_registrations: sessionData.current_registrations - 1 })
           .eq('id', cancellationRequest.registration.activity_id);
+        
+        if (updateSessionError) {
+          console.error('Error updating session registration count:', updateSessionError);
+        }
       }
     } catch (sessionError) {
       console.error('Error updating session registration count:', sessionError);
       // Continue despite this error
     }
+
+    console.log('Cancellation request processed successfully:', requestId);
 
     return new Response(
       JSON.stringify({ 
