@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useInvoiceStore } from '../../stores/invoiceStore';
+import { useAuthStore } from '../../stores/authStore';
 import { ArrowLeft, Filter, Search, FileText, Download, CheckCircle, Clock, Loader2, AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { supabase } from '../../lib/supabase';
 
 const InvoicesPage = () => {
+  const { user } = useAuthStore();
   const { invoices, isLoading, error, fetchInvoices, downloadInvoice } = useInvoiceStore();
   const [filter, setFilter] = useState<'all' | 'paid' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,9 +27,13 @@ const InvoicesPage = () => {
   }, [fetchInvoices]);
 
   const fetchUserBalance = async () => {
+    if (!user) return;
+    
     try {
       setIsLoadingBalance(true);
-      const { data, error } = await supabase.rpc('calculate_user_balance');
+      const { data, error } = await supabase.rpc('calculate_user_balance', {
+        user_id: user.id
+      });
       
       if (error) throw error;
       setUserBalance(data[0]);

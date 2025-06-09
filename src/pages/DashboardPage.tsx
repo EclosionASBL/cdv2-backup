@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useKidStore } from '../stores/kidStore';
-import { CalendarDays, User, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText, Bell, CreditCard } from 'lucide-react';
+import { CalendarDays, User, AlertTriangle, Users, PlusCircle, Loader2, CheckCircle, Clock, FileText, Bell, CreditCard, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import clsx from 'clsx';
 import { getAgeFromDate } from '../utils/date';
@@ -136,7 +136,9 @@ const DashboardPage = () => {
     try {
       setIsLoadingBalance(true);
       
-      const { data, error } = await supabase.rpc('calculate_user_balance');
+      const { data, error } = await supabase.rpc('calculate_user_balance', {
+        user_id: user.id
+      });
       
       if (error) throw error;
       setUserBalance(data[0]);
