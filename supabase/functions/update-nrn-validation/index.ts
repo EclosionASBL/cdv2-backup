@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2.39.7";
+import { createClient } from "npm:@supabase/supabase-js@2.49.1";
 
 function validateBelgianNRN(nrn: string): boolean {
   if (!/^\d{11}$/.test(nrn)) return false;

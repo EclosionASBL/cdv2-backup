@@ -5,13 +5,13 @@ import { PDFDocument, rgb, StandardFonts } from 'npm:pdf-lib@1.17.1';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
   'Content-Type': 'application/json'
 };
 
-interface GenerateInvoiceRequest {
-  invoice_number: string;
-  api_key: string;
+interface GenerateCreditNoteRequest {
+  credit_note_id: string;
+  api_key?: string;
 }
 
 Deno.serve(async (req) => {
@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('Starting generate-invoice-pdf function');
+    console.log('Starting generate-credit-note-pdf function');
     
     // Get the authorization header from the incoming request
     const authHeader = req.headers.get('Authorization');
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
     }
 
     // Parse request body with error handling
-    let requestData: GenerateInvoiceRequest;
+    let requestData: GenerateCreditNoteRequest;
     try {
       requestData = await req.json();
       console.log('Request data:', JSON.stringify(requestData));
@@ -55,13 +55,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { invoice_number, api_key } = requestData;
+    const { credit_note_id, api_key } = requestData;
 
     // Validate required parameters
-    if (!invoice_number) {
-      console.error('Missing required parameter: invoice_number');
+    if (!credit_note_id) {
+      console.error('Missing required parameter: credit_note_id');
       return new Response(
-        JSON.stringify({ error: 'Missing required parameter: invoice_number' }),
+        JSON.stringify({ error: 'Missing required parameter: credit_note_id' }),
         { 
           status: 400, 
           headers: corsHeaders 
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     }
 
     // Validate API key if provided and expected
-    if (expectedApiKey && api_key !== expectedApiKey) {
+    if (expectedApiKey && api_key && api_key !== expectedApiKey) {
       console.error('Invalid API key');
       return new Response(
         JSON.stringify({ error: 'Invalid API key' }),
@@ -101,19 +101,51 @@ Deno.serve(async (req) => {
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Fetching invoice data for:', invoice_number);
+    console.log('Fetching credit note data for:', credit_note_id);
     
-    // Get invoice data
-    const { data: invoice, error: invoiceError } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('invoice_number', invoice_number)
+    // Get credit note data
+    const { data: creditNote, error: creditNoteError } = await supabase
+      .from('credit_notes')
+      .select(`
+        *,
+        user:user_id(
+          prenom, 
+          nom, 
+          email, 
+          adresse, 
+          cpostal, 
+          localite, 
+          telephone
+        ),
+        registration:registration_id(
+          amount_paid,
+          invoice_id,
+          kid:kid_id(
+            prenom,
+            nom
+          ),
+          session:activity_id(
+            stage:stage_id(
+              title
+            ),
+            start_date,
+            end_date,
+            center:center_id(
+              name
+            )
+          )
+        ),
+        cancellation_request:cancellation_request_id(
+          refund_type
+        )
+      `)
+      .eq('id', credit_note_id)
       .single();
 
-    if (invoiceError) {
-      console.error('Error fetching invoice:', invoiceError);
+    if (creditNoteError) {
+      console.error('Error fetching credit note:', creditNoteError);
       return new Response(
-        JSON.stringify({ error: 'Error fetching invoice: ' + invoiceError.message }),
+        JSON.stringify({ error: 'Error fetching credit note: ' + creditNoteError.message }),
         { 
           status: 500, 
           headers: corsHeaders 
@@ -121,10 +153,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!invoice) {
-      console.error('Invoice not found:', invoice_number);
+    if (!creditNote) {
+      console.error('Credit note not found:', credit_note_id);
       return new Response(
-        JSON.stringify({ error: 'Invoice not found' }),
+        JSON.stringify({ error: 'Credit note not found' }),
         { 
           status: 404, 
           headers: corsHeaders 
@@ -132,57 +164,30 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get user data
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('prenom, nom, email, adresse, cpostal, localite, telephone')
-      .eq('id', invoice.user_id)
-      .single();
-
-    if (userError) {
-      console.error('Error fetching user:', userError);
-      return new Response(
-        JSON.stringify({ error: 'Error fetching user: ' + userError.message }),
-        { 
-          status: 500, 
-          headers: corsHeaders 
+    // Get invoice details if available
+    let invoiceDetails = null;
+    if (creditNote.invoice_id || creditNote.invoice_number || 
+        (creditNote.registration && creditNote.registration.invoice_id)) {
+      
+      const invoiceId = creditNote.invoice_number || 
+                        creditNote.registration.invoice_id || 
+                        creditNote.invoice_id;
+      
+      try {
+        const { data: invoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .select('invoice_number, amount, created_at')
+          .eq('invoice_number', invoiceId)
+          .maybeSingle();
+          
+        if (!invoiceError && invoice) {
+          invoiceDetails = invoice;
+          console.log('Found related invoice:', invoiceDetails);
         }
-      );
-    }
-
-    // Get registrations data
-    const { data: registrations, error: registrationsError } = await supabase
-      .from('registrations')
-      .select(`
-        id,
-        amount_paid,
-        price_type,
-        kid:kids(
-          prenom,
-          nom
-        ),
-        session:activity_id(
-          stage:stage_id(
-            title
-          ),
-          start_date,
-          end_date,
-          center:center_id(
-            name
-          )
-        )
-      `)
-      .in('id', invoice.registration_ids);
-
-    if (registrationsError) {
-      console.error('Error fetching registrations:', registrationsError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch registration details: ' + registrationsError.message }),
-        { 
-          status: 500, 
-          headers: corsHeaders 
-        }
-      );
+      } catch (invoiceError) {
+        console.error('Error fetching invoice details:', invoiceError);
+        // Continue without invoice details
+      }
     }
 
     console.log('Creating PDF document');
@@ -191,10 +196,10 @@ Deno.serve(async (req) => {
     const pdfDoc = await PDFDocument.create();
     
     // Set PDF metadata
-    pdfDoc.setTitle(`Facture ${invoice.invoice_number}`);
+    pdfDoc.setTitle(`Note de crédit ${creditNote.credit_note_number}`);
     pdfDoc.setAuthor('Éclosion ASBL');
-    pdfDoc.setSubject('Facture pour inscription aux stages');
-    pdfDoc.setKeywords(['facture', 'stage', 'enfant', 'éclosion']);
+    pdfDoc.setSubject('Note de crédit pour annulation de stage');
+    pdfDoc.setKeywords(['note de crédit', 'stage', 'enfant', 'éclosion']);
     pdfDoc.setCreator('Éclosion ASBL - Système de facturation');
     
     const page = pdfDoc.addPage([595.28, 841.89]); // A4 size
@@ -210,7 +215,7 @@ Deno.serve(async (req) => {
     let currentY = height - margin;
     
     // Add header
-    page.drawText('FACTURE', {
+    page.drawText('NOTE DE CRÉDIT', {
       x: margin,
       y: currentY,
       size: 24,
@@ -218,9 +223,9 @@ Deno.serve(async (req) => {
       color: rgb(0, 0, 0),
     });
     
-    // Add invoice number and date
+    // Add credit note number and date
     currentY -= 40;
-    page.drawText(`Facture N° ${invoice.invoice_number}`, {
+    page.drawText(`Note de crédit N° ${creditNote.credit_note_number}`, {
       x: margin,
       y: currentY,
       size: 12,
@@ -228,20 +233,33 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-BE')}`, {
+    page.drawText(`Date: ${new Date(creditNote.created_at).toLocaleDateString('fr-BE')}`, {
       x: margin,
       y: currentY,
       size: 10,
       font: helveticaFont,
     });
     
-    currentY -= lineHeight;
-    page.drawText(`Échéance: ${new Date(invoice.due_date).toLocaleDateString('fr-BE')}`, {
-      x: margin,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
+    // Add invoice reference if available
+    if (invoiceDetails || creditNote.invoice_number) {
+      currentY -= lineHeight;
+      page.drawText(`Référence facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration.invoice_id}`, {
+        x: margin,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      if (invoiceDetails) {
+        currentY -= lineHeight;
+        page.drawText(`Date facture: ${new Date(invoiceDetails.created_at).toLocaleDateString('fr-BE')}`, {
+          x: margin,
+          y: currentY,
+          size: 10,
+          font: helveticaFont,
+        });
+      }
+    }
     
     // Add company info
     currentY -= 40;
@@ -270,12 +288,14 @@ Deno.serve(async (req) => {
     
     // Add client info
     currentY -= 40;
-    page.drawText('Facturé à:', {
+    page.drawText('Client:', {
       x: margin,
       y: currentY,
       size: 12,
       font: helveticaBold,
     });
+    
+    const user = Array.isArray(creditNote.user) ? creditNote.user[0] : creditNote.user;
     
     currentY -= lineHeight;
     page.drawText(`${user.prenom} ${user.nom}`, {
@@ -338,7 +358,7 @@ Deno.serve(async (req) => {
       font: helveticaBold,
     });
     
-    page.drawText('Tarif', {
+    page.drawText('Type', {
       x: col3,
       y: currentY,
       size: 10,
@@ -361,72 +381,73 @@ Deno.serve(async (req) => {
       color: rgb(0, 0, 0),
     });
     
-    // Add table rows
+    // Add table row
     currentY -= 15;
     
-    for (const reg of registrations || []) {
-      const kidData = Array.isArray(reg.kid) ? reg.kid[0] : reg.kid;
-      const sessionData = Array.isArray(reg.session) ? reg.session[0] : reg.session;
-      const stageData = Array.isArray(sessionData.stage) ? sessionData.stage[0] : sessionData.stage;
-      const centerData = Array.isArray(sessionData.center) ? sessionData.center[0] : sessionData.center;
-      
-      const startDate = new Date(sessionData.start_date).toLocaleDateString('fr-BE');
-      const endDate = new Date(sessionData.end_date).toLocaleDateString('fr-BE');
-      
-      page.drawText(`${stageData.title}`, {
-        x: col1,
-        y: currentY,
-        size: 10,
-        font: helveticaFont,
-      });
-      
-      page.drawText(`${kidData.prenom} ${kidData.nom}`, {
-        x: col2,
-        y: currentY,
-        size: 10,
-        font: helveticaFont,
-      });
-      
-      let tarifText = 'Standard';
-      if (reg.price_type.includes('reduced')) {
-        tarifText = 'Réduit';
-      } else if (reg.price_type.includes('local')) {
-        tarifText = 'Local';
-      }
-      
-      page.drawText(tarifText, {
-        x: col3,
-        y: currentY,
-        size: 10,
-        font: helveticaFont,
-      });
-      
-      page.drawText(`${reg.amount_paid} €`, {
-        x: col4,
-        y: currentY,
-        size: 10,
-        font: helveticaFont,
-      });
-      
-      currentY -= 10;
-      page.drawText(`${startDate} au ${endDate}`, {
-        x: col1 + 10,
-        y: currentY,
-        size: 8,
-        font: helveticaFont,
-        color: rgb(0.5, 0.5, 0.5),
-      });
-      
-      page.drawText(`Centre: ${centerData.name}`, {
-        x: col2,
-        y: currentY,
-        size: 8,
-        font: helveticaFont,
-        color: rgb(0.5, 0.5, 0.5),
-      });
-      
-      currentY -= 15;
+    const registration = Array.isArray(creditNote.registration) ? creditNote.registration[0] : creditNote.registration;
+    const kid = Array.isArray(registration.kid) ? registration.kid[0] : registration.kid;
+    const session = Array.isArray(registration.session) ? registration.session[0] : registration.session;
+    const stage = Array.isArray(session.stage) ? session.stage[0] : session.stage;
+    const center = Array.isArray(session.center) ? session.center[0] : session.center;
+    
+    const startDate = new Date(session.start_date).toLocaleDateString('fr-BE');
+    const endDate = new Date(session.end_date).toLocaleDateString('fr-BE');
+    
+    page.drawText(`Annulation stage: ${stage.title}`, {
+      x: col1,
+      y: currentY,
+      size: 10,
+      font: helveticaFont,
+    });
+    
+    page.drawText(`${kid.prenom} ${kid.nom}`, {
+      x: col2,
+      y: currentY,
+      size: 10,
+      font: helveticaFont,
+    });
+    
+    const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
+      ? creditNote.cancellation_request[0] 
+      : creditNote.cancellation_request;
+    
+    let refundTypeText = 'Remboursement complet';
+    if (cancellationRequest.refund_type === 'partial') {
+      refundTypeText = 'Remboursement partiel';
     }
+    
+    page.drawText(refundTypeText, {
+      x: col3,
+      y: currentY,
+      size: 10,
+      font: helveticaFont,
+    });
+    
+    page.drawText(`${creditNote.amount} €`, {
+      x: col4,
+      y: currentY,
+      size: 10,
+      font: helveticaFont,
+    });
+    
+    currentY -= 10;
+    page.drawText(`${startDate} au ${endDate}`, {
+      x: col1 + 10,
+      y: currentY,
+      size: 8,
+      font: helveticaFont,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+    
+    page.drawText(`Centre: ${center.name}`, {
+      x: col2,
+      y: currentY,
+      size: 8,
+      font: helveticaFont,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+    
+    currentY -= 15;
     
     // Draw table footer line
     page.drawLine({
@@ -445,16 +466,53 @@ Deno.serve(async (req) => {
       font: helveticaBold,
     });
     
-    page.drawText(`${invoice.amount} €`, {
+    page.drawText(`${creditNote.amount} €`, {
       x: col4,
       y: currentY,
       size: 12,
       font: helveticaBold,
     });
     
-    // Add payment instructions
+    // Add invoice reference section
+    if (invoiceDetails || creditNote.invoice_number) {
+      currentY -= 40;
+      page.drawText('Référence facture:', {
+        x: margin,
+        y: currentY,
+        size: 12,
+        font: helveticaBold,
+      });
+      
+      currentY -= lineHeight;
+      page.drawText(`Numéro de facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration.invoice_id}`, {
+        x: margin,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      if (invoiceDetails) {
+        currentY -= lineHeight;
+        page.drawText(`Montant initial: ${invoiceDetails.amount} €`, {
+          x: margin,
+          y: currentY,
+          size: 10,
+          font: helveticaFont,
+        });
+        
+        currentY -= lineHeight;
+        page.drawText(`Montant après note de crédit: ${Math.max(0, invoiceDetails.amount - creditNote.amount)} €`, {
+          x: margin,
+          y: currentY,
+          size: 10,
+          font: helveticaFont,
+        });
+      }
+    }
+    
+    // Add note
     currentY -= 40;
-    page.drawText('Instructions de paiement:', {
+    page.drawText('Note:', {
       x: margin,
       y: currentY,
       size: 12,
@@ -462,7 +520,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText('Veuillez effectuer le paiement par virement bancaire aux coordonnées suivantes:', {
+    page.drawText('Cette note de crédit est émise suite à l\'annulation d\'une inscription.', {
       x: margin,
       y: currentY,
       size: 10,
@@ -470,39 +528,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight * 2;
-    page.drawText('IBAN: BE64 3631 1005 7452', {
-      x: margin,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
-    currentY -= lineHeight;
-    page.drawText('BIC: BBRUBEBB', {
-      x: margin,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
-    currentY -= lineHeight;
-    page.drawText('Bénéficiaire: Éclosion ASBL', {
-      x: margin,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
-    currentY -= lineHeight;
-    page.drawText(`Communication: ${invoice.communication}`, {
-      x: margin,
-      y: currentY,
-      size: 10,
-      font: helveticaBold,
-    });
-    
-    currentY -= lineHeight * 2;
-    page.drawText(`Veuillez effectuer le paiement avant le ${new Date(invoice.due_date).toLocaleDateString('fr-BE')}.`, {
+    page.drawText('Le montant sera remboursé par virement bancaire dans les 30 jours.', {
       x: margin,
       y: currentY,
       size: 10,
@@ -538,14 +564,14 @@ Deno.serve(async (req) => {
     
     console.log('Uploading PDF to Supabase Storage');
     
-    const fileName = `${invoice_number}.pdf`;
+    const fileName = `${creditNote.credit_note_number}.pdf`;
     
     // Check available buckets
     const { data: buckets } = await supabase.storage.listBuckets();
     console.log('Available buckets:', buckets?.map(b => b.name).join(', '));
     
     // Try different buckets in order of preference
-    const bucketsToTry = ['invoices', 'public', 'storage'];
+    const bucketsToTry = ['credit-notes', 'public', 'storage'];
     let uploadError = null;
     let pdfUrl = null;
     
@@ -556,7 +582,7 @@ Deno.serve(async (req) => {
         try {
           const { error: uploadErr } = await supabase.storage
             .from(bucketName)
-            .upload(`invoices/${fileName}`, pdfBytes, {
+            .upload(`credit-notes/${fileName}`, pdfBytes, {
               contentType: 'application/pdf',
               upsert: true
             });
@@ -564,7 +590,7 @@ Deno.serve(async (req) => {
           if (!uploadErr) {
             const { data: publicUrlData } = supabase.storage
               .from(bucketName)
-              .getPublicUrl(`invoices/${fileName}`);
+              .getPublicUrl(`credit-notes/${fileName}`);
               
             pdfUrl = publicUrlData.publicUrl;
             console.log('PDF uploaded successfully to bucket:', bucketName);
@@ -594,16 +620,16 @@ Deno.serve(async (req) => {
       );
     }
     
-    // Update invoice with PDF URL
+    // Update credit note with PDF URL
     const { error: updateError } = await supabase
-      .from('invoices')
+      .from('credit_notes')
       .update({ pdf_url: pdfUrl })
-      .eq('invoice_number', invoice_number);
+      .eq('id', credit_note_id);
       
     if (updateError) {
-      console.error('Error updating invoice with PDF URL:', updateError);
+      console.error('Error updating credit note with PDF URL:', updateError);
     } else {
-      console.log('Invoice updated with PDF URL');
+      console.log('Credit note updated with PDF URL');
     }
     
     return new Response(
@@ -617,7 +643,7 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error('Error generating invoice PDF:', error);
+    console.error('Error generating credit note PDF:', error);
     return new Response(
       JSON.stringify({ 
         error: error.message || 'Internal server error' 

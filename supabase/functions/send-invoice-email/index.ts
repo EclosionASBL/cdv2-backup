@@ -1,10 +1,10 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
+import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
 import { SMTPClient } from 'npm:emailjs@3.2.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
 };
 
 interface SendInvoiceEmailRequest {
@@ -235,10 +235,24 @@ Deno.serve(async (req) => {
       }).join('');
     }
 
-    // Skip PDF verification - just send the email with the link
-    console.log('Sending email to:', parent_email);
-    console.log('Email will include PDF URL:', pdfUrl);
-    
+    // Fetch the PDF content to attach it to the email
+    console.log('Fetching PDF content from URL:', pdfUrl);
+    let pdfBuffer;
+    try {
+      const pdfResponse = await fetch(pdfUrl);
+      if (!pdfResponse.ok) {
+        throw new Error(`Failed to fetch PDF: ${pdfResponse.status} ${pdfResponse.statusText}`);
+      }
+      
+      // Get the PDF as an ArrayBuffer
+      pdfBuffer = await pdfResponse.arrayBuffer();
+      console.log('PDF content fetched successfully');
+    } catch (fetchError) {
+      console.error('Error fetching PDF content:', fetchError);
+      // Continue without attachment if we can't fetch the PDF
+      console.log('Will send email without PDF attachment');
+    }
+
     // Send email with SMTP
     try {
       console.log('Preparing to send email with SMTP');
@@ -255,54 +269,62 @@ Deno.serve(async (req) => {
       const dueDate = new Date(invoiceData.due_date);
       const formattedDueDate = dueDate.toLocaleDateString('fr-BE');
 
+      const emailAttachments = [
+        { data: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #4f46e5;">Votre inscription est confirmée !</h1>
+            
+            <p>Bonjour ${parentName},</p>
+            
+            <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
+              <h2 style="margin-top: 0; color: #4f46e5;">Informations de paiement</h2>
+              <p>Votre facture a été générée. Vous avez jusqu'au <strong>${formattedDueDate}</strong> pour effectuer le paiement.</p>
+              
+              <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                <p style="margin: 5px 0;"><strong>Montant :</strong> ${invoiceData.amount} €</p>
+                <p style="margin: 5px 0;"><strong>IBAN :</strong> BE64 3631 1005 7452</p>
+                <p style="margin: 5px 0;"><strong>BIC :</strong> BBRUBEBB</p>
+                <p style="margin: 5px 0;"><strong>Bénéficiaire :</strong> Éclosion ASBL</p>
+                <p style="margin: 5px 0;"><strong>Communication :</strong> ${invoiceData.communication}</p>
+              </div>
+            </div>
+            
+            <p>Nous avons le plaisir de vous confirmer l'inscription de votre enfant aux activités suivantes :</p>
+            
+            ${registrationsHtml}
+            
+            <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+              <h2 style="margin-top: 0; color: #1f2937;">Que se passe-t-il maintenant ?</h2>
+              <p>Votre enfant est bien inscrit, même si le paiement n'est pas encore effectué.</p>
+              <p>Vous recevrez toutes les informations pratiques pour votre enfant une semaine avant le début des activités.</p>
+              <p>Pour toute question, n'hésitez pas à nous contacter :</p>
+              <ul>
+                <li>Par téléphone : <strong>0470 470 503</strong></li>
+                <li>Par email : <strong>info@eclosion.be</strong></li>
+              </ul>
+            </div>
+            
+            <p style="margin-top: 30px;">Merci de votre confiance !</p>
+            
+            <p>L'équipe Éclosion ASBL</p>
+          </div>
+        `, alternative: true }
+      ];
+
+      // Add PDF attachment if we have the content
+      if (pdfBuffer) {
+        emailAttachments.push({
+          data: pdfBuffer,
+          type: "application/pdf",
+          name: `facture_${invoice_number}.pdf`
+        });
+      }
+
       const message = {
         from: smtpSender,
         to: parent_email,
         subject: 'Confirmation d\'inscription et facture - Éclosion ASBL',
-        attachment: [
-          { data: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h1 style="color: #4f46e5;">Votre inscription est confirmée !</h1>
-              
-              <p>Bonjour ${parentName},</p>
-              
-              <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
-                <h2 style="margin-top: 0; color: #4f46e5;">Informations de paiement</h2>
-                <p>Votre facture a été générée. Vous avez jusqu'au <strong>${formattedDueDate}</strong> pour effectuer le paiement.</p>
-                
-                <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; margin-top: 15px;">
-                  <p style="margin: 5px 0;"><strong>Montant :</strong> ${invoiceData.amount} €</p>
-                  <p style="margin: 5px 0;"><strong>IBAN :</strong> BE64 3631 1005 7452</p>
-                  <p style="margin: 5px 0;"><strong>BIC :</strong> BBRUBEBB</p>
-                  <p style="margin: 5px 0;"><strong>Bénéficiaire :</strong> Éclosion ASBL</p>
-                  <p style="margin: 5px 0;"><strong>Communication :</strong> ${invoiceData.communication}</p>
-                </div>
-                
-                <p style="margin-top: 15px;"><a href="${pdfUrl}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;">Télécharger la facture</a></p>
-              </div>
-              
-              <p>Nous avons le plaisir de vous confirmer l'inscription de votre enfant aux activités suivantes :</p>
-              
-              ${registrationsHtml}
-              
-              <div style="margin-top: 30px; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
-                <h2 style="margin-top: 0; color: #1f2937;">Que se passe-t-il maintenant ?</h2>
-                <p>Votre enfant est bien inscrit, même si le paiement n'est pas encore effectué.</p>
-                <p>Vous recevrez toutes les informations pratiques pour votre enfant une semaine avant le début des activités.</p>
-                <p>Pour toute question, n'hésitez pas à nous contacter :</p>
-                <ul>
-                  <li>Par téléphone : <strong>0470 470 503</strong></li>
-                  <li>Par email : <strong>info@eclosion.be</strong></li>
-                </ul>
-              </div>
-              
-              <p style="margin-top: 30px;">Merci de votre confiance !</p>
-              
-              <p>L'équipe Éclosion ASBL</p>
-            </div>
-          `, alternative: true }
-          // Send only the link to the PDF, not the attachment itself
-        ]
+        attachment: emailAttachments
       };
 
       // Use callback-based send method instead of sendAsync

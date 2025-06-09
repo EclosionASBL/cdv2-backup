@@ -1,4 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
+import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
 import Stripe from 'npm:stripe@17.7.0';
 
 const stripe = Stripe(Deno.env.get('STRIPE_SECRET_KEY')!);
@@ -10,7 +10,7 @@ const supabase = createClient(
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
 };
 
 Deno.serve(async (req) => {

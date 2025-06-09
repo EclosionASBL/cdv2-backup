@@ -4,9 +4,14 @@ import { supabase } from '../../lib/supabase';
 import { useWaitingListStore } from '../../stores/waitingListStore';
 import { useCartStore } from '../../stores/cartStore';
 import { useRegistrationStore } from '../../stores/registrationStore';
+import { useCancellationRequestStore } from '../../stores/cancellationRequestStore';
 import { useAuthStore } from '../../stores/authStore';
-import { useActivityStore } from '../../stores/activityStore'; // Import useActivityStore
-import { Loader2, CheckCircle, Clock, ArrowLeft, Filter, Search, FileText, XCircle, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useActivityStore } from '../../stores/activityStore';
+import { 
+  Loader2, CheckCircle, Clock, ArrowLeft, Filter, Search, FileText, 
+  XCircle, RefreshCw, AlertTriangle, Ban, Download, ExternalLink
+} from 'lucide-react';
+import { CancellationRequestModal } from '../../components/modals/CancellationRequestModal';
 import clsx from 'clsx';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -20,6 +25,8 @@ interface Registration {
   price_type: string;
   reduced_declaration: boolean;
   invoice_id: string | null;
+  invoice_url: string | null;
+  cancellation_status: 'none' | 'requested' | 'cancelled_full_refund' | 'cancelled_partial_refund' | 'cancelled_no_refund';
   kid: {
     prenom: string;
     nom: string;
@@ -33,6 +40,13 @@ interface Registration {
     center: {
       name: string;
     };
+  };
+  cancellation_request?: {
+    id: string;
+    status: string;
+    refund_type: string | null;
+    credit_note_id: string | null;
+    credit_note_url: string | null;
   };
 }
 
@@ -56,7 +70,17 @@ const RegistrationsPage = () => {
   const { addItem } = useCartStore();
   const { fetchRegistrations } = useRegistrationStore();
   const { clearRegistrationNotification } = useAuthStore();
-  const { getPrice } = useActivityStore(); // Get the getPrice function
+  const { getPrice } = useActivityStore();
+  const { 
+    createRequest, 
+    checkExistingRequest,
+    isLoading: isCancellationRequestLoading 
+  } = useCancellationRequestStore();
+  
+  // State for cancellation request modal
+  const [isCancellationModalOpen, setIsCancellationModalOpen] = useState(false);
+  const [selectedRegistrationForCancellation, setSelectedRegistrationForCancellation] = useState<Registration | null>(null);
+  const [hasPendingCancellationRequests, setHasPendingCancellationRequests] = useState<Record<string, boolean>>({});
   
   useEffect(() => {
     fetchDetailedRegistrations();
@@ -83,6 +107,8 @@ const RegistrationsPage = () => {
           price_type,
           reduced_declaration,
           invoice_id,
+          invoice_url,
+          cancellation_status,
           kid:kids(
             prenom,
             nom,
@@ -103,13 +129,30 @@ const RegistrationsPage = () => {
             prix_local,
             prix_local_reduit,
             tarif_condition_id
+          ),
+          cancellation_request:cancellation_requests(
+            id,
+            status,
+            refund_type,
+            credit_note_id,
+            credit_note_url
           )
         `)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       
-      setRegistrations(data || []);
+      const registrationsData = data || [];
+      setRegistrations(registrationsData);
+      
+      // Check for existing cancellation requests
+      const cancellationStatuses: Record<string, boolean> = {};
+      for (const reg of registrationsData) {
+        const hasRequest = await checkExistingRequest(reg.id);
+        cancellationStatuses[reg.id] = hasRequest;
+      }
+      setHasPendingCancellationRequests(cancellationStatuses);
+      
     } catch (err) {
       console.error('Error fetching registrations:', err);
       setError('Une erreur est survenue lors du chargement des inscriptions.');
@@ -239,6 +282,43 @@ const RegistrationsPage = () => {
     }
   };
 
+  const handleRequestCancellation = (registration: Registration) => {
+    setSelectedRegistrationForCancellation(registration);
+    setIsCancellationModalOpen(true);
+  };
+
+  const handleConfirmCancellation = async (notes: string) => {
+    if (!selectedRegistrationForCancellation) return;
+    
+    try {
+      await createRequest(
+        selectedRegistrationForCancellation.id,
+        selectedRegistrationForCancellation.kid_id,
+        selectedRegistrationForCancellation.activity_id,
+        notes
+      );
+      
+      // Update the local state to show this registration has a pending cancellation request
+      setHasPendingCancellationRequests(prev => ({
+        ...prev,
+        [selectedRegistrationForCancellation.id]: true
+      }));
+      
+      // Update the registration's cancellation_status
+      const updatedRegistrations = registrations.map(reg => 
+        reg.id === selectedRegistrationForCancellation.id 
+          ? { ...reg, cancellation_status: 'requested' as const } 
+          : reg
+      );
+      setRegistrations(updatedRegistrations);
+      
+      toast.success("Votre demande d'annulation a été envoyée");
+      setIsCancellationModalOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || "Une erreur est survenue");
+    }
+  };
+
   const getPaymentStatusIcon = (status: string, invoiceId: string | null) => {
     if (status === 'paid') {
       return <CheckCircle className="h-4 w-4 text-green-500 mr-1" />;
@@ -277,6 +357,41 @@ const RegistrationsPage = () => {
         return 'bg-blue-100 text-blue-800';
       default:
         return 'bg-yellow-100 text-yellow-800';
+    }
+  };
+
+  const getCancellationStatusBadge = (status: string) => {
+    switch (status) {
+      case 'requested':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+            <Ban className="h-3 w-3 mr-1" />
+            Annulation en cours
+          </span>
+        );
+      case 'cancelled_full_refund':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Annulé (remboursement complet)
+          </span>
+        );
+      case 'cancelled_partial_refund':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Annulé (remboursement partiel)
+          </span>
+        );
+      case 'cancelled_no_refund':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <XCircle className="h-3 w-3 mr-1" />
+            Annulé (sans remboursement)
+          </span>
+        );
+      default:
+        return null;
     }
   };
 
@@ -337,14 +452,14 @@ const RegistrationsPage = () => {
   );
   
   return (
-    <div className="container max-w-6xl mx-auto py-12 px-4">
+    <div className="container max-w-6xl mx-auto py-8 px-4 sm:py-12">
       <Link to="/dashboard" className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-6">
         <ArrowLeft className="h-5 w-5 mr-2" />
         Retour au tableau de bord
       </Link>
       
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-        <h1 className="text-3xl font-bold">Mes inscriptions</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">Mes inscriptions</h1>
         
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative">
@@ -401,93 +516,123 @@ const RegistrationsPage = () => {
               <div className="p-4 bg-gray-50 border-b">
                 <h2 className="text-xl font-semibold">Inscriptions</h2>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Stage
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Enfant
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Dates
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Centre
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tarif
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Montant
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Statut
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredRegistrations.map((reg) => (
-                      <tr key={reg.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {reg.session.stage.title}
+              
+              {/* Mobile-friendly card layout */}
+              <div className="divide-y divide-gray-200">
+                {filteredRegistrations.map((reg) => {
+                  const hasCancellationRequest = reg.cancellation_status === 'requested';
+                  const isCancelled = reg.cancellation_status.startsWith('cancelled_');
+                  const daysUntilStart = Math.ceil(
+                    (new Date(reg.session.start_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+                  );
+                  
+                  // Get credit note info if available
+                  const creditNoteId = reg.cancellation_request?.credit_note_id;
+                  const creditNoteUrl = reg.cancellation_request?.credit_note_url;
+                  
+                  return (
+                    <div key={reg.id} className="p-4 hover:bg-gray-50">
+                      <div className="flex flex-col space-y-4">
+                        {/* Stage and kid info */}
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+                          <div>
+                            <h3 className="font-semibold text-lg text-gray-900">{reg.session.stage.title}</h3>
+                            <p className="text-sm text-gray-600">Pour: {reg.kid.prenom} {reg.kid.nom}</p>
                           </div>
-                          <div className="text-xs text-gray-500">
-                            {new Date(reg.created_at).toLocaleDateString('fr-BE')}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {reg.kid.prenom} {reg.kid.nom}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {new Date(reg.session.start_date).toLocaleDateString('fr-BE')}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            au {new Date(reg.session.end_date).toLocaleDateString('fr-BE')}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {reg.session.center.name}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {reg.price_type.includes('reduced') && (
-                              <span className="inline-block text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
-                                Tarif réduit
-                              </span>
+                          <div className="flex flex-col items-start sm:items-end">
+                            <span className={clsx(
+                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                              getPaymentStatusColor(reg.payment_status)
+                            )}>
+                              {getPaymentStatusIcon(reg.payment_status, reg.invoice_id)}
+                              {getPaymentStatusText(reg.payment_status, reg.invoice_id)}
+                            </span>
+                            
+                            {hasCancellationRequest && (
+                              <div className="mt-1">
+                                {getCancellationStatusBadge(reg.cancellation_status)}
+                              </div>
                             )}
-                            {reg.price_type.includes('local') && (
-                              <span className="inline-block text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                                Tarif local
-                              </span>
-                            )}
-                            {!reg.price_type.includes('reduced') && !reg.price_type.includes('local') && (
-                              <span className="text-sm text-gray-500">Standard</span>
+                            
+                            {isCancelled && (
+                              <div className="mt-1">
+                                {getCancellationStatusBadge(reg.cancellation_status)}
+                              </div>
                             )}
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {reg.amount_paid} €
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={clsx(
-                            "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                            getPaymentStatusColor(reg.payment_status)
-                          )}>
-                            {getPaymentStatusIcon(reg.payment_status, reg.invoice_id)}
-                            {getPaymentStatusText(reg.payment_status, reg.invoice_id)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                        
+                        {/* Dates, center, and price info */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <p className="text-xs text-gray-500 uppercase font-medium">Dates</p>
+                            <p className="text-sm">
+                              {new Date(reg.session.start_date).toLocaleDateString('fr-BE')} au {new Date(reg.session.end_date).toLocaleDateString('fr-BE')}
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <p className="text-xs text-gray-500 uppercase font-medium">Centre</p>
+                            <p className="text-sm">{reg.session.center.name}</p>
+                          </div>
+                          
+                          <div>
+                            <p className="text-xs text-gray-500 uppercase font-medium">Tarif</p>
+                            <div className="flex items-center">
+                              <p className="text-sm font-medium">{reg.amount_paid} €</p>
+                              {reg.price_type.includes('reduced') && (
+                                <span className="ml-2 inline-block text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                                  Tarif réduit
+                                </span>
+                              )}
+                              {reg.price_type.includes('local') && (
+                                <span className="ml-2 inline-block text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                                  Tarif local
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Actions */}
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {!hasCancellationRequest && !isCancelled && reg.payment_status !== 'cancelled' && (
+                            <button
+                              onClick={() => handleRequestCancellation(reg)}
+                              className="btn-outline py-1 px-3 text-sm text-red-600 border-red-200 hover:bg-red-50"
+                            >
+                              Demander annulation
+                            </button>
+                          )}
+                          
+                          {reg.invoice_url && (
+                            <a 
+                              href={reg.invoice_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn-outline py-1 px-3 text-sm flex items-center"
+                            >
+                              <FileText className="h-3 w-3 mr-1" />
+                              Voir la facture
+                            </a>
+                          )}
+                          
+                          {creditNoteId && creditNoteUrl && (
+                            <a 
+                              href={creditNoteUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn-outline py-1 px-3 text-sm flex items-center"
+                            >
+                              <FileText className="h-3 w-3 mr-1" />
+                              Note de crédit
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -504,119 +649,112 @@ const RegistrationsPage = () => {
                   <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Stage
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Enfant
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Dates
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Centre
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Statut
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {activeWaitingListEntries.map((entry) => (
-                        <tr key={entry.id} className={clsx(
-                          "hover:bg-gray-50",
-                          entry.status === 'invited' && "bg-blue-50"
-                        )}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {entry.session?.stage.title}
+                <div className="divide-y divide-gray-200">
+                  {activeWaitingListEntries.map((entry) => {
+                    // Unwrap nested objects
+                    const unwrappedEntry = unwrapEntry(entry);
+                    
+                    return (
+                      <div key={unwrappedEntry.id} className={clsx(
+                        "p-4",
+                        unwrappedEntry.status === 'invited' && "bg-blue-50"
+                      )}>
+                        <div className="flex flex-col space-y-4">
+                          {/* Stage and status info */}
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+                            <div>
+                              <h3 className="font-semibold text-lg text-gray-900">
+                                {unwrappedEntry.session?.stage.title}
+                              </h3>
+                              <p className="text-sm text-gray-600">
+                                Pour: {unwrappedEntry.kid?.prenom} {unwrappedEntry.kid?.nom}
+                              </p>
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {new Date(entry.created_at).toLocaleDateString('fr-BE')}
+                            <div>
+                              <span className={clsx(
+                                "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                                getWaitingListStatusColor(unwrappedEntry.status)
+                              )}>
+                                <Clock className="h-4 w-4 mr-1" />
+                                {getWaitingListStatusText(unwrappedEntry)}
+                              </span>
                             </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {entry.kid?.prenom} {entry.kid?.nom}
+                          </div>
+                          
+                          {/* Dates and center info */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase font-medium">Dates</p>
+                              <p className="text-sm">
+                                {unwrappedEntry.session && new Date(unwrappedEntry.session.start_date).toLocaleDateString('fr-BE')} au {unwrappedEntry.session && new Date(unwrappedEntry.session.end_date).toLocaleDateString('fr-BE')}
+                              </p>
                             </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {entry.session && new Date(entry.session.start_date).toLocaleDateString('fr-BE')}
+                            
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase font-medium">Centre</p>
+                              <p className="text-sm">{unwrappedEntry.session?.center.name}</p>
                             </div>
-                            <div className="text-sm text-gray-500">
-                              au {entry.session && new Date(entry.session.end_date).toLocaleDateString('fr-BE')}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {entry.session?.center.name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={clsx(
-                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                              getWaitingListStatusColor(entry.status)
-                            )}>
-                              <Clock className="h-4 w-4 mr-1" />
-                              {getWaitingListStatusText(entry)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex space-x-3">
-                              {entry.status === 'invited' && (
-                                <button
-                                  onClick={() => handleValidateWaitingList(entry)}
-                                  disabled={processingEntry === entry.id}
-                                  className={clsx(
-                                    "text-green-600 hover:text-green-800 text-sm font-medium",
-                                    processingEntry === entry.id && "opacity-50 cursor-not-allowed"
-                                  )}
-                                >
-                                  {processingEntry === entry.id ? (
-                                    <span className="flex items-center">
-                                      <Loader2 className="animate-spin h-3 w-3 mr-1" />
-                                      Validation...
-                                    </span>
-                                  ) : (
-                                    "Valider la place"
-                                  )}
-                                </button>
-                              )}
+                          </div>
+                          
+                          {/* Actions */}
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {unwrappedEntry.status === 'invited' && (
                               <button
-                                onClick={() => handleCancelWaitingList(entry.id)}
-                                disabled={processingEntry === entry.id}
+                                onClick={() => handleValidateWaitingList(unwrappedEntry)}
+                                disabled={processingEntry === unwrappedEntry.id}
                                 className={clsx(
-                                  "text-red-600 hover:text-red-800 text-sm font-medium",
-                                  processingEntry === entry.id && "opacity-50 cursor-not-allowed"
+                                  "btn-primary py-1 px-3 text-sm",
+                                  processingEntry === unwrappedEntry.id && "opacity-50 cursor-not-allowed"
                                 )}
                               >
-                                {processingEntry === entry.id ? (
+                                {processingEntry === unwrappedEntry.id ? (
                                   <span className="flex items-center">
                                     <Loader2 className="animate-spin h-3 w-3 mr-1" />
-                                    Annulation...
+                                    Validation...
                                   </span>
                                 ) : (
-                                  "Annuler"
+                                  "Valider la place"
                                 )}
                               </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                            )}
+                            <button
+                              onClick={() => handleCancelWaitingList(unwrappedEntry.id)}
+                              disabled={processingEntry === unwrappedEntry.id}
+                              className={clsx(
+                                "btn-outline py-1 px-3 text-sm text-red-600 border-red-200 hover:bg-red-50",
+                                processingEntry === unwrappedEntry.id && "opacity-50 cursor-not-allowed"
+                              )}
+                            >
+                              {processingEntry === unwrappedEntry.id ? (
+                                <span className="flex items-center">
+                                  <Loader2 className="animate-spin h-3 w-3 mr-1" />
+                                  Annulation...
+                                </span>
+                              ) : (
+                                "Annuler"
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
         </div>
       )}
+      
+      {/* Cancellation Request Modal */}
+      <CancellationRequestModal
+        isOpen={isCancellationModalOpen}
+        onClose={() => setIsCancellationModalOpen(false)}
+        onConfirm={handleConfirmCancellation}
+        registrationDetails={selectedRegistrationForCancellation}
+        isLoading={isCancellationRequestLoading}
+      />
+      
       <Toaster position="top-right" />
     </div>
   );
