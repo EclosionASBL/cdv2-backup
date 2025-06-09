@@ -1,9 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
 
+// Define CORS headers with explicit content-type
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
+  'Content-Type': 'application/json'
 };
 
 interface ProcessCodaRequest {
@@ -17,7 +19,7 @@ interface Transaction {
   currency: string;
   bank_reference: string;
   communication: string;
-  extracted_invoice_number: string | null; // New field for extracted invoice number
+  extracted_invoice_number: string | null;
   account_number: string;
   account_name: string;
   notes?: string;
@@ -110,8 +112,8 @@ function parseAmount(amountStr: string): {
     }
     
     // Convert cents to euros with proper decimal handling
-    // Divide by 1000 instead of 100 to fix the extra zero issue
-    const amount = amountInCents / 1000;
+    // Divide by 100 to convert cents to euros
+    const amount = amountInCents / 100;
     
     // Apply sign based on debit/credit indicator
     return {
@@ -213,11 +215,11 @@ async function parseCodaFile(fileContent: Uint8Array): Promise<Transaction[]> {
           transaction_date: date,
           amount: amount,
           currency: 'EUR', // Default currency
-          bank_reference: line.substring(10, 31).trim(),
           communication: communication,
           extracted_invoice_number: extractedInvoiceNumber,
           account_number: '',
           account_name: '',
+          bank_reference: line.substring(10, 31).trim(),
           notes: [dateNotes, amountNotes].filter(Boolean).join('. ')
         };
         break;
@@ -319,7 +321,18 @@ Deno.serve(async (req) => {
     }
 
     // Parse request body
-    const requestData = await req.json() as ProcessCodaRequest;
+    let requestData;
+    try {
+      requestData = await req.json() as ProcessCodaRequest;
+      console.log('Request data:', JSON.stringify(requestData));
+    } catch (parseError) {
+      console.error('Error parsing request JSON:', parseError);
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
     const { filePath, batchId } = requestData;
 
     if (!filePath) {
@@ -331,16 +344,34 @@ Deno.serve(async (req) => {
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseKey) {
       return new Response(
         JSON.stringify({ error: 'Server configuration error' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Check if this file has already been processed
+    const { data: existingImports, error: checkError } = await supabase
+      .from('bank_transactions')
+      .select('id')
+      .eq('raw_coda_file_path', filePath)
+      .limit(1);
+      
+    if (checkError) {
+      console.error('Error checking for existing imports:', checkError);
+    } else if (existingImports && existingImports.length > 0) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'This CODA file has already been imported. Please use a different file to avoid duplicate transactions.' 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Download the CODA file from storage
     console.log(`Downloading file: ${filePath}`);
@@ -366,7 +397,6 @@ Deno.serve(async (req) => {
 
     // Insert transactions into the database
     const insertedTransactions = [];
-    let matchedCount = 0;
     let errorCount = 0;
 
     for (const transaction of transactions) {
@@ -405,18 +435,6 @@ Deno.serve(async (req) => {
         }
 
         insertedTransactions.push(insertedTx);
-
-        // Try to match the transaction to an invoice
-        const { data: matchResult, error: matchError } = await supabase.rpc(
-          'match_transaction_to_invoice',
-          { transaction_id: insertedTx.id }
-        );
-
-        if (matchError) {
-          console.error('Error matching transaction:', matchError);
-        } else if (matchResult) {
-          matchedCount++;
-        }
       } catch (err) {
         console.error('Error processing transaction:', err);
         errorCount++;
@@ -426,7 +444,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Processed ${transactions.length} transactions, matched ${matchedCount}, errors: ${errorCount}`,
+        message: `Processed ${transactions.length} transactions, errors: ${errorCount}`,
         batch_id: importBatchId,
         transactions: insertedTransactions.length
       }),

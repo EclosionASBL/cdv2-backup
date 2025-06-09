@@ -2,30 +2,29 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Loader2, Search, Filter, CheckCircle, Clock, FileText, 
-  Download, AlertTriangle, RefreshCw, Upload, Database, 
-  DollarSign, FileUp, ArrowUpDown, Eye, Link2, X
+  Loader2, AlertCircle, Filter, Search, CheckCircle, Clock, 
+  Download, RefreshCw, Upload, Database, Link2, X, 
+  FileText, ExternalLink
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
 import clsx from 'clsx';
 
-interface BankTransaction {
+interface Transaction {
   id: string;
   transaction_date: string;
   amount: number;
   currency: string;
+  bank_reference: string;
   communication: string;
   extracted_invoice_number: string | null;
   account_number: string;
   account_name: string;
-  bank_reference: string;
   status: 'unmatched' | 'matched' | 'partially_matched' | 'overpaid' | 'ignored';
   invoice_id: string | null;
   raw_coda_file_path: string | null;
   import_batch_id: string | null;
-  notes: string | null;
-  created_at: string;
+  notes?: string;
   invoice?: {
     invoice_number: string;
     amount: number;
@@ -60,7 +59,7 @@ interface ImportResult {
 }
 
 const AdminBankTransactionsPage = () => {
-  const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unmatched' | 'matched' | 'partially_matched' | 'ignored'>('all');
@@ -69,16 +68,15 @@ const AdminBankTransactionsPage = () => {
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedTransaction, setSelectedTransaction] = useState<BankTransaction | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [isTransactionDetailModalOpen, setIsTransactionDetailModalOpen] = useState(false);
   const [suggestedInvoices, setSuggestedInvoices] = useState<Invoice[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [transactionNotes, setTransactionNotes] = useState('');
   const [batches, setBatches] = useState<string[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
-  const [isConfirmPaymentModalOpen, setIsConfirmPaymentModalOpen] = useState(false);
-  const [invoiceToConfirm, setInvoiceToConfirm] = useState<any>(null);
-  const [transactionToConfirm, setTransactionToConfirm] = useState<any>(null);
+  const [isConfirmLinkModalOpen, setIsConfirmLinkModalOpen] = useState(false);
+  const [selectedInvoiceForLink, setSelectedInvoiceForLink] = useState<Invoice | null>(null);
 
   useEffect(() => {
     fetchTransactions();
@@ -236,7 +234,7 @@ const AdminBankTransactionsPage = () => {
     }
   };
 
-  const handleViewTransactionDetails = async (transaction: BankTransaction) => {
+  const handleViewTransactionDetails = async (transaction: Transaction) => {
     setSelectedTransaction(transaction);
     setTransactionNotes(transaction.notes || '');
     setIsTransactionDetailModalOpen(true);
@@ -262,75 +260,53 @@ const AdminBankTransactionsPage = () => {
     }
   };
 
-  const handleLinkToInvoice = async (transactionId: string, invoiceId: string) => {
-    try {
-      // Get transaction and invoice details first
-      const { data: transaction, error: txError } = await supabase
-        .from('bank_transactions')
-        .select('*')
-        .eq('id', transactionId)
-        .single();
-        
-      if (txError) throw txError;
-      
-      const { data: invoice, error: invError } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('id', invoiceId)
-        .single();
-        
-      if (invError) throw invError;
-      
-      // Open confirmation modal
-      setTransactionToConfirm(transaction);
-      setInvoiceToConfirm(invoice);
-      setIsConfirmPaymentModalOpen(true);
-    } catch (err: any) {
-      console.error('Error preparing to link transaction to invoice:', err);
-      toast.error(`Erreur: ${err.message}`);
-    }
+  const handleConfirmLinkToInvoice = (invoice: Invoice) => {
+    setSelectedInvoiceForLink(invoice);
+    setIsConfirmLinkModalOpen(true);
   };
 
-  const confirmLinkToInvoice = async () => {
-    if (!transactionToConfirm || !invoiceToConfirm) return;
+  const handleLinkToInvoice = async () => {
+    if (!selectedTransaction || !selectedInvoiceForLink) return;
     
     try {
-      // Call the match function with the transaction and invoice IDs
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      // First update the transaction to link it to the invoice
+      const { error: updateError } = await supabase
+        .from('bank_transactions')
+        .update({ 
+          invoice_id: selectedInvoiceForLink.id,
+          status: 'matched',
+          notes: transactionNotes || 'Manually linked by admin'
+        })
+        .eq('id', selectedTransaction.id);
+
+      if (updateError) throw updateError;
       
-      if (sessionError || !session) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
+      // Then update the invoice status to paid
+      const { error: invoiceError } = await supabase
+        .from('invoices')
+        .update({ 
+          status: 'paid',
+          paid_at: new Date().toISOString()
+        })
+        .eq('id', selectedInvoiceForLink.id);
+
+      if (invoiceError) throw invoiceError;
       
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/match-transaction-to-invoice`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            transaction_id: transactionToConfirm.id,
-            invoice_id: invoiceToConfirm.id
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erreur lors de l\'association');
-      }
-      
-      // Refresh transactions
-      fetchTransactions();
+      // Finally update all registrations linked to this invoice
+      const { error: registrationError } = await supabase
+        .from('registrations')
+        .update({ payment_status: 'paid' })
+        .eq('invoice_id', selectedInvoiceForLink.invoice_number);
+
+      if (registrationError) throw registrationError;
       
       toast.success('Transaction liée à la facture avec succès');
-      setIsConfirmPaymentModalOpen(false);
+      setIsConfirmLinkModalOpen(false);
       setIsTransactionDetailModalOpen(false);
-    } catch (err: any) {
-      console.error('Error linking transaction to invoice:', err);
-      toast.error(`Erreur: ${err.message}`);
+      fetchTransactions();
+    } catch (error: any) {
+      console.error('Error linking transaction to invoice:', error);
+      toast.error(`Erreur: ${error.message}`);
     }
   };
 
@@ -594,7 +570,7 @@ const AdminBankTransactionsPage = () => {
       ) : error ? (
         <div className="bg-red-50 p-4 rounded-lg">
           <div className="flex">
-            <AlertTriangle className="h-5 w-5 text-red-500 mr-2" />
+            <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
             <p className="text-red-700">{error}</p>
           </div>
         </div>
@@ -653,7 +629,7 @@ const AdminBankTransactionsPage = () => {
                   )}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {new Date(transaction.transaction_date).toLocaleDateString('fr-BE')}
+                        {new Date(transaction.transaction_date).toLocaleDateString('fr-FR')}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -710,7 +686,7 @@ const AdminBankTransactionsPage = () => {
                         className="text-primary-600 hover:text-primary-900"
                         title="Voir les détails"
                       >
-                        <Eye className="h-5 w-5" />
+                        <FileText className="h-5 w-5" />
                       </button>
                     </td>
                   </tr>
@@ -752,7 +728,7 @@ const AdminBankTransactionsPage = () => {
                   htmlFor="coda-file-input"
                   className="cursor-pointer flex flex-col items-center justify-center"
                 >
-                  <FileUp className="h-10 w-10 text-gray-400 mb-2" />
+                  <Upload className="h-10 w-10 text-gray-400 mb-2" />
                   <span className="text-sm font-medium text-gray-700">
                     {selectedFile ? selectedFile.name : "Cliquez pour sélectionner un fichier"}
                   </span>
@@ -834,7 +810,7 @@ const AdminBankTransactionsPage = () => {
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Date</h3>
                     <p className="mt-1 text-sm text-gray-900">
-                      {new Date(selectedTransaction.transaction_date).toLocaleDateString('fr-BE')}
+                      {new Date(selectedTransaction.transaction_date).toLocaleDateString('fr-FR')}
                     </p>
                   </div>
                   <div>
@@ -892,14 +868,14 @@ const AdminBankTransactionsPage = () => {
                     <h3 className="text-sm font-medium text-gray-700 mb-2">Facture associée</h3>
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="text-sm font-medium">{selectedTransaction.invoice.invoice_number}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="font-medium">{selectedTransaction.invoice.invoice_number}</p>
+                        <p className="text-sm text-gray-600">
                           {selectedTransaction.invoice.user?.prenom} {selectedTransaction.invoice.user?.nom}
                         </p>
-                        <p className="text-xs text-gray-500">{selectedTransaction.invoice.user?.email}</p>
+                        <p className="text-sm text-gray-600">{selectedTransaction.invoice.user?.email}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium">{selectedTransaction.invoice.amount} €</p>
+                        <p className="font-medium">{selectedTransaction.invoice.amount} €</p>
                         <p className="text-xs">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                             selectedTransaction.invoice.status === 'paid' 
@@ -953,7 +929,7 @@ const AdminBankTransactionsPage = () => {
                               <div className="text-right">
                                 <p className="text-sm font-medium">{invoice.amount} €</p>
                                 <button
-                                  onClick={() => handleLinkToInvoice(selectedTransaction.id, invoice.id)}
+                                  onClick={() => handleConfirmLinkToInvoice(invoice)}
                                   className="text-xs text-primary-600 hover:text-primary-800"
                                 >
                                   Associer
@@ -1025,10 +1001,10 @@ const AdminBankTransactionsPage = () => {
         </div>
       </Dialog>
 
-      {/* Confirm Payment Modal */}
+      {/* Confirm Link Modal */}
       <Dialog
-        open={isConfirmPaymentModalOpen}
-        onClose={() => setIsConfirmPaymentModalOpen(false)}
+        open={isConfirmLinkModalOpen}
+        onClose={() => setIsConfirmLinkModalOpen(false)}
         className="fixed inset-0 z-50 overflow-y-auto"
       >
         <div className="flex min-h-screen items-center justify-center p-4">
@@ -1036,74 +1012,58 @@ const AdminBankTransactionsPage = () => {
 
           <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
             <Dialog.Title className="text-lg font-semibold mb-4">
-              Confirmer le paiement
+              Confirmer l'association
             </Dialog.Title>
 
-            {transactionToConfirm && invoiceToConfirm && (
+            {selectedTransaction && selectedInvoiceForLink && (
               <div className="space-y-4">
                 <p className="text-gray-600">
-                  Voulez-vous associer cette transaction à la facture sélectionnée et la marquer comme payée ?
+                  Êtes-vous sûr de vouloir associer cette transaction à la facture suivante ?
                 </p>
-
+                
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Transaction</h3>
-                  <div className="flex justify-between">
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <p className="text-sm text-gray-600">Date: {new Date(transactionToConfirm.transaction_date).toLocaleDateString('fr-BE')}</p>
-                      <p className="text-sm text-gray-600">De: {transactionToConfirm.account_name || 'Inconnu'}</p>
+                      <p className="text-sm font-medium text-gray-500">Transaction</p>
+                      <p className="font-medium">{selectedTransaction.amount} €</p>
+                      <p className="text-sm text-gray-600">
+                        {new Date(selectedTransaction.transaction_date).toLocaleDateString('fr-FR')}
+                      </p>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-medium ${transactionToConfirm.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {transactionToConfirm.amount} €
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Facture</p>
+                      <p className="font-medium">{selectedInvoiceForLink.invoice_number}</p>
+                      <p className="text-sm text-gray-600">{selectedInvoiceForLink.amount} €</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <div className="flex items-start">
+                    <AlertCircle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-yellow-700 font-medium">Important</p>
+                      <p className="text-sm text-yellow-600">
+                        Cette action marquera la facture comme payée et mettra à jour toutes les inscriptions associées.
                       </p>
                     </div>
                   </div>
                 </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Facture</h3>
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{invoiceToConfirm.invoice_number}</p>
-                      <p className="text-sm text-gray-600">Statut: {invoiceToConfirm.status}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">{invoiceToConfirm.amount} €</p>
-                    </div>
-                  </div>
-                </div>
-
-                {transactionToConfirm.amount !== invoiceToConfirm.amount && (
-                  <div className={`p-4 rounded-lg ${
-                    transactionToConfirm.amount > invoiceToConfirm.amount 
-                      ? 'bg-blue-50 text-blue-700' 
-                      : 'bg-yellow-50 text-yellow-700'
-                  }`}>
-                    <div className="flex items-start">
-                      <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
-                      <p>
-                        {transactionToConfirm.amount > invoiceToConfirm.amount 
-                          ? `Le montant de la transaction (${transactionToConfirm.amount} €) est supérieur au montant de la facture (${invoiceToConfirm.amount} €).` 
-                          : `Le montant de la transaction (${transactionToConfirm.amount} €) est inférieur au montant de la facture (${invoiceToConfirm.amount} €).`}
-                      </p>
-                    </div>
-                  </div>
-                )}
 
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => setIsConfirmPaymentModalOpen(false)}
+                    onClick={() => setIsConfirmLinkModalOpen(false)}
                     className="btn-outline"
                   >
                     Annuler
                   </button>
                   <button
                     type="button"
-                    onClick={confirmLinkToInvoice}
+                    onClick={handleLinkToInvoice}
                     className="btn-primary"
                   >
-                    Confirmer le paiement
+                    Confirmer l'association
                   </button>
                 </div>
               </div>
