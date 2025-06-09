@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2.39.7";
+import { createClient } from "npm:@supabase/supabase-js@2.49.1";
 import { Resend } from "npm:resend@2.1.0";
 
 const corsHeaders = {
