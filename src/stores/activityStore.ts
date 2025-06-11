@@ -298,7 +298,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
         .from('sessions')
         .select('semaine')
         .eq('active', true)
-        .is('semaine', 'not.null')
+        .not('semaine', 'is', null)
         .order('semaine');
         
       if (error) throw error;
