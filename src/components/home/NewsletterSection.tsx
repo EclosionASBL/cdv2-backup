@@ -28,34 +28,32 @@ const NewsletterSection = () => {
     setSuccess(null);
 
     try {
-      // Call the Supabase Edge Function
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/subscribe-newsletter`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(session?.access_token 
-              ? { 'Authorization': `Bearer ${session.access_token}` }
-              : {}),
-          },
-          body: JSON.stringify({ email }),
+      // Insert directly into the newsletter_subscribers table
+      const { error: insertError } = await supabase
+        .from('newsletter_subscribers')
+        .insert([
+          {
+            email: email,
+            source: 'website',
+            active: true
+          }
+        ]);
+
+      if (insertError) {
+        // Check if it's a duplicate email error
+        if (insertError.code === '23505') {
+          setError('Cette adresse email est déjà inscrite à notre newsletter');
+        } else {
+          throw insertError;
         }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Une erreur est survenue');
+        return;
       }
 
-      setSuccess(data.message || 'Vous êtes maintenant inscrit à notre newsletter');
+      setSuccess('Vous êtes maintenant inscrit à notre newsletter !');
       setEmail(''); // Clear the input on success
     } catch (err) {
       console.error('Error subscribing to newsletter:', err);
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      setError('Une erreur est survenue lors de l\'inscription');
     } finally {
       setIsLoading(false);
     }
