@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useActivityStore } from '../../stores/activityStore';
 import { useAuthStore } from '../../stores/authStore';
-import { ChevronRight, User, Clock, Loader2, UserPlus } from 'lucide-react';
+import { ChevronRight, User, Clock, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import ActivityModal, { ImageWithFallback } from '../common/ActivityModal';
 
@@ -25,6 +25,7 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
   const [selectedCenter, setSelectedCenter] = useState<string>('');
   const [selectedAge, setSelectedAge] = useState<string>('');
   const [selectedSemaine, setSelectedSemaine] = useState<string>('');
+  const [selectedStage, setSelectedStage] = useState<string>('');
   const [filteredActivities, setFilteredActivities] = useState<any[]>([]);
   const [semaineOptions, setSemaineOptions] = useState<{label: string, value: string}[]>([
     { label: 'Toutes les semaines', value: '' }
@@ -120,11 +121,6 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedActivity(null);
-  };
-
-  const handleRegisterClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent the card click from triggering
-    navigate('/register');
   };
 
   return (
@@ -298,16 +294,6 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
                         {activity.stage.age_min} - {activity.stage.age_max} ans
                       </span>
                     </div>
-                    
-                    {!user && !isFull && (
-                      <button
-                        onClick={handleRegisterClick}
-                        className="mt-3 w-full btn-primary py-2 text-sm flex items-center justify-center"
-                      >
-                        <UserPlus className="h-4 w-4 mr-2" />
-                        Inscrire mon enfant
-                      </button>
-                    )}
                   </div>
                 </div>
               );

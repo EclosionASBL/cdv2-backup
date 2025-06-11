@@ -1,6 +1,8 @@
 import { Dialog } from '@headlessui/react';
-import { Info, X, User, Clock } from 'lucide-react';
+import { X, User, UserPlus } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../../stores/authStore';
 import clsx from 'clsx';
 
 interface ImageWithFallbackProps {
@@ -53,9 +55,16 @@ interface ActivityModalProps {
 }
 
 const ActivityModal = ({ activity, isOpen, onClose }: ActivityModalProps) => {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  
   if (!activity) return null;
   
   const isSessionFull = (activity.current_registrations || 0) >= activity.capacity;
+
+  const handleRegisterClick = () => {
+    navigate('/login');
+  };
 
   return (
     <Dialog open={isOpen} onClose={onClose} className="fixed inset-0 z-50 overflow-y-auto">
@@ -124,6 +133,18 @@ const ActivityModal = ({ activity, isOpen, onClose }: ActivityModalProps) => {
                 <p>{activity.center.name}</p>
               </div>
             </div>
+
+            {!user && !isSessionFull && (
+              <div className="mt-4">
+                <button
+                  onClick={handleRegisterClick}
+                  className="w-full btn-primary py-3 flex items-center justify-center"
+                >
+                  <UserPlus className="h-5 w-5 mr-2" />
+                  Inscrire mon enfant
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
