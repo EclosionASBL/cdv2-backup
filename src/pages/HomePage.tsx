@@ -1,17 +1,77 @@
 import { Link } from 'react-router-dom';
-import { CalendarCheck, Users, CreditCard, ShieldCheck } from 'lucide-react';
+import { CalendarCheck, Users, CreditCard, ShieldCheck, Filter, Search, MapPin, Calendar, User } from 'lucide-react';
 import { useActivityStore } from '../stores/activityStore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import clsx from 'clsx';
 
 const HomePage = () => {
-  const { activities, fetchActivities, isLoading } = useActivityStore();
+  const { activities, centers, periodes, semaines, isLoading, fetchActivities, fetchCenters, fetchPeriodes, fetchSemaines } = useActivityStore();
+  
+  // State for filters
+  const [selectedCenter, setSelectedCenter] = useState<string | null>(null);
+  const [selectedAge, setSelectedAge] = useState<number | null>(null);
+  const [selectedSemaine, setSelectedSemaine] = useState<string | null>(null);
+  const [filteredActivities, setFilteredActivities] = useState<any[]>([]);
   
   useEffect(() => {
     fetchActivities();
-  }, [fetchActivities]);
+    fetchCenters();
+    fetchPeriodes();
+    fetchSemaines();
+  }, [fetchActivities, fetchCenters, fetchPeriodes, fetchSemaines]);
   
-  // Get top activities (limit to 4)
-  const topActivities = activities.slice(0, 4);
+  useEffect(() => {
+    // Filter activities based on selected filters
+    let filtered = [...activities];
+    
+    if (selectedCenter) {
+      filtered = filtered.filter(activity => activity.center_id === selectedCenter);
+    }
+    
+    if (selectedAge !== null) {
+      filtered = filtered.filter(activity => 
+        selectedAge >= activity.stage.age_min && selectedAge < activity.stage.age_max
+      );
+    }
+    
+    if (selectedSemaine) {
+      filtered = filtered.filter(activity => activity.semaine === selectedSemaine);
+    }
+    
+    // Sort by remaining places (ascending)
+    filtered.sort((a, b) => {
+      const remainingA = a.capacity - (a.current_registrations || 0);
+      const remainingB = b.capacity - (b.current_registrations || 0);
+      return remainingA - remainingB;
+    });
+    
+    // Limit to top 4 for display
+    setFilteredActivities(filtered.slice(0, 4));
+  }, [activities, selectedCenter, selectedAge, selectedSemaine]);
+  
+  // Generate age options from 2 to 18
+  const ageOptions = Array.from({ length: 17 }, (_, i) => i + 2);
+  
+  const ImageWithFallback = ({ src, alt, className }: { src: string | null, alt: string, className?: string }) => {
+    const [error, setError] = useState(false);
+    
+    if (error || !src) {
+      return (
+        <div className={clsx("bg-gray-200 flex items-center justify-center", className)}>
+          <User className="h-12 w-12 text-gray-400" />
+        </div>
+      );
+    }
+    
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className={className}
+        onError={() => setError(true)}
+      />
+    );
+  };
   
   return (
     <div className="page-transition">
@@ -110,7 +170,7 @@ const HomePage = () => {
       {/* Activities preview */}
       <section className="py-16 bg-gray-50">
         <div className="container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-12">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
             <div>
               <h2 className="text-3xl font-bold text-gray-900 mb-4">Nos stages populaires</h2>
               <p className="text-lg text-gray-600 max-w-3xl">
@@ -128,9 +188,62 @@ const HomePage = () => {
             </Link>
           </div>
           
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {isLoading ? (
-              Array(4).fill(0).map((_, index) => (
+          {/* Filters */}
+          <div className="bg-white p-4 rounded-xl shadow-md mb-8">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Centre</label>
+                <select
+                  className="form-input w-full"
+                  value={selectedCenter || ''}
+                  onChange={(e) => setSelectedCenter(e.target.value || null)}
+                >
+                  <option value="">Tous les centres</option>
+                  {centers.map((center) => (
+                    <option key={center.id} value={center.id}>
+                      {center.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Âge de l'enfant</label>
+                <select
+                  className="form-input w-full"
+                  value={selectedAge || ''}
+                  onChange={(e) => setSelectedAge(e.target.value ? parseInt(e.target.value) : null)}
+                >
+                  <option value="">Tous les âges</option>
+                  {ageOptions.map((age) => (
+                    <option key={age} value={age}>
+                      {age} ans
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Semaine</label>
+                <select
+                  className="form-input w-full"
+                  value={selectedSemaine || ''}
+                  onChange={(e) => setSelectedSemaine(e.target.value || null)}
+                >
+                  <option value="">Toutes les semaines</option>
+                  {semaines.map((semaine) => (
+                    <option key={semaine} value={semaine}>
+                      {semaine}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          {isLoading ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {Array(4).fill(0).map((_, index) => (
                 <div key={index} className="bg-white rounded-xl shadow animate-pulse">
                   <div className="h-52 bg-gray-200 rounded-t-xl"></div>
                   <div className="p-4">
@@ -140,24 +253,83 @@ const HomePage = () => {
                     <div className="h-8 bg-gray-200 rounded mt-4"></div>
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="col-span-full py-12 text-center">
-                <div className="bg-white rounded-xl shadow-md p-8 mx-auto max-w-2xl">
-                  <h3 className="text-2xl font-bold text-gray-800 mb-4">Disponible bientôt</h3>
-                  <p className="text-gray-600 mb-6">
-                    Notre catalogue de stages est en cours de préparation. Revenez bientôt pour découvrir notre sélection d'activités passionnantes pour vos enfants.
-                  </p>
-                  <Link
-                    to="/register"
-                    className="btn-primary inline-block"
-                  >
-                    Créer un compte pour être informé
-                  </Link>
-                </div>
+              ))}
+            </div>
+          ) : filteredActivities.length === 0 ? (
+            <div className="col-span-full py-12 text-center">
+              <div className="bg-white rounded-xl shadow-md p-8 mx-auto max-w-2xl">
+                <h3 className="text-2xl font-bold text-gray-800 mb-4">Aucun stage disponible</h3>
+                <p className="text-gray-600 mb-6">
+                  Aucun stage ne correspond à vos critères de recherche. Veuillez modifier vos filtres ou revenir plus tard.
+                </p>
+                <button
+                  onClick={() => {
+                    setSelectedCenter(null);
+                    setSelectedAge(null);
+                    setSelectedSemaine(null);
+                  }}
+                  className="btn-primary inline-block"
+                >
+                  Réinitialiser les filtres
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {filteredActivities.map((activity) => {
+                const remainingPlaces = activity.capacity - (activity.current_registrations || 0);
+                const isAlmostFull = remainingPlaces <= 3 && remainingPlaces > 0;
+                const isFull = remainingPlaces <= 0;
+                
+                return (
+                  <div key={activity.id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-all">
+                    <div className="relative">
+                      <ImageWithFallback
+                        src={activity.stage.image_url}
+                        alt={activity.stage.title}
+                        className="h-48 w-full object-cover"
+                      />
+                      {isFull && (
+                        <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                          Complet
+                        </div>
+                      )}
+                      {isAlmostFull && (
+                        <div className="absolute top-2 right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                          Plus que {remainingPlaces} place{remainingPlaces > 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-bold text-lg mb-1 line-clamp-1">{activity.stage.title}</h3>
+                      <div className="flex items-center text-sm text-gray-500 mb-1">
+                        <Calendar className="h-4 w-4 mr-1" />
+                        <span>
+                          {new Date(activity.start_date).toLocaleDateString('fr-BE')} - {new Date(activity.end_date).toLocaleDateString('fr-BE')}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500 mb-3">
+                        <MapPin className="h-4 w-4 mr-1" />
+                        <span>{activity.center.name}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-primary-600">{activity.prix_normal} €</span>
+                        <span className="text-sm text-gray-500">
+                          {activity.stage.age_min} - {activity.stage.age_max} ans
+                        </span>
+                      </div>
+                      <Link
+                        to={`/activities/${activity.id}`}
+                        className="btn-primary w-full text-center mt-3 py-2 block"
+                      >
+                        Voir les détails
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
       

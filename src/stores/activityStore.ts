@@ -44,6 +44,7 @@ interface ActivityFilters {
   maxAge?: number;
   dateStart?: string;
   dateEnd?: string;
+  semaine?: string;
 }
 
 interface ActivityState {
@@ -52,6 +53,7 @@ interface ActivityState {
   filters: ActivityFilters;
   centers: { id: string; name: string }[];
   periodes: string[];
+  semaines: string[];
   isLoading: boolean;
   error: string | null;
   fetchActivities: (filters?: ActivityFilters) => Promise<void>;
@@ -61,6 +63,7 @@ interface ActivityState {
   clearKidFilter: () => void;
   fetchCenters: () => Promise<void>;
   fetchPeriodes: () => Promise<void>;
+  fetchSemaines: () => Promise<void>;
   getPrice: (activity: Activity, kid_postal: string | null, kid_school: string | null) => Promise<{
     mainPrice: number;
     reducedPrice: number | null;
@@ -90,6 +93,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
   filters: {},
   centers: [],
   periodes: [],
+  semaines: [],
   isLoading: false,
   error: null,
   
@@ -108,13 +112,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       
       const activeFilters = { ...get().filters, ...filters };
       
-      // Required filters
-      if (!activeFilters.kid_id || !activeFilters.center_id || !activeFilters.periode) {
-        set({ activities: [] });
-        return;
-      }
-
-      // Apply filters
+      // Apply filters if provided
       if (activeFilters.center_id) {
         query = query.eq('center_id', activeFilters.center_id);
       }
@@ -122,48 +120,91 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       if (activeFilters.periode) {
         query = query.eq('periode', activeFilters.periode);
       }
+      
+      if (activeFilters.semaine) {
+        query = query.eq('semaine', activeFilters.semaine);
+      }
 
       // Only show sessions that are either visible now or have no visibility date set
       const now = new Date().toISOString();
       query = query.or(`visible_from.is.null,visible_from.lte.${now}`);
       
+      // Only show future sessions
+      query = query.gte('start_date', new Date().toISOString().split('T')[0]);
+      
       const { data, error } = await query;
       
       if (error) throw error;
 
-      // Get kid's data for price calculation
-      const { data: kidData } = await supabase
-        .from('kids')
-        .select('date_naissance, cpostal, ecole')
-        .eq('id', activeFilters.kid_id)
-        .single();
+      // If kid_id is provided, get kid's data for age filtering
+      let kidData = null;
+      if (activeFilters.kid_id) {
+        const { data: kidResult } = await supabase
+          .from('kids')
+          .select('date_naissance, cpostal, ecole')
+          .eq('id', activeFilters.kid_id)
+          .single();
 
-      if (!kidData) throw new Error('Kid not found');
+        if (kidResult) {
+          kidData = kidResult;
+        }
+      }
 
-      // Filter by kid's age and calculate prices
+      // Filter and process activities
       let filteredData = data || [];
-      filteredData = await Promise.all(filteredData.map(async (session) => {
-        const ageAtStart = calculateAgeAtDate(kidData.date_naissance, session.start_date);
-        if (ageAtStart >= session.stage.age_min && ageAtStart < session.stage.age_max + 1) {
-          const { mainPrice, reducedPrice } = await get().getPrice(
-            session,
-            kidData.cpostal,
-            kidData.ecole
-          );
+      
+      // Apply age filter if provided
+      if (activeFilters.minAge !== undefined || activeFilters.maxAge !== undefined) {
+        filteredData = filteredData.filter(session => {
+          const stageMinAge = session.stage.age_min;
+          const stageMaxAge = session.stage.age_max;
+          
+          if (activeFilters.minAge !== undefined && stageMaxAge < activeFilters.minAge) {
+            return false;
+          }
+          
+          if (activeFilters.maxAge !== undefined && stageMinAge > activeFilters.maxAge) {
+            return false;
+          }
+          
+          return true;
+        });
+      }
+      
+      // If kid data is available, filter by age
+      if (kidData) {
+        filteredData = filteredData.filter(session => {
+          const ageAtStart = calculateAgeAtDate(kidData.date_naissance, session.start_date);
+          return ageAtStart >= session.stage.age_min && ageAtStart < session.stage.age_max + 1;
+        });
+      }
+
+      // Calculate prices for each activity
+      const activitiesWithPrices = await Promise.all(filteredData.map(async (session) => {
+        let mainPrice = session.prix_normal;
+        let reducedPrice = session.prix_reduit;
+        
+        if (kidData && session.tarif_condition_id) {
+          const { mainPrice: calculatedMainPrice, reducedPrice: calculatedReducedPrice } = 
+            await get().getPrice(session, kidData.cpostal, kidData.ecole);
+          
           return {
             ...session,
-            calculated_main_price: mainPrice,
-            calculated_reduced_price: reducedPrice,
+            calculated_main_price: calculatedMainPrice,
+            calculated_reduced_price: calculatedReducedPrice,
             current_registrations: session.current_registrations || 0
           };
         }
-        return null;
+        
+        return {
+          ...session,
+          calculated_main_price: mainPrice,
+          calculated_reduced_price: reducedPrice,
+          current_registrations: session.current_registrations || 0
+        };
       }));
 
-      // Remove null values (sessions that didn't match age criteria)
-      filteredData = filteredData.filter(session => session !== null);
-
-      set({ activities: filteredData });
+      set({ activities: activitiesWithPrices });
     } catch (error: any) {
       set({ error: error.message });
     } finally {
@@ -246,6 +287,25 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       // Get unique periods
       const uniquePeriodes = [...new Set(data?.map(item => item.periode))];
       set({ periodes: uniquePeriodes });
+    } catch (error: any) {
+      set({ error: error.message });
+    }
+  },
+  
+  fetchSemaines: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('semaine')
+        .eq('active', true)
+        .is('semaine', 'not.null')
+        .order('semaine');
+        
+      if (error) throw error;
+      
+      // Get unique semaines and filter out null values
+      const uniqueSemaines = [...new Set(data?.map(item => item.semaine).filter(Boolean))];
+      set({ semaines: uniqueSemaines });
     } catch (error: any) {
       set({ error: error.message });
     }
