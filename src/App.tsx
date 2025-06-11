@@ -47,6 +47,7 @@ import AdminSchoolsPage from './pages/admin/AdminSchoolsPage';
 import AdminWaitingListPage from './pages/admin/AdminWaitingListPage';
 import AdminInclusionRequestsPage from './pages/admin/AdminInclusionRequestsPage';
 import AdminCancellationRequestsPage from './pages/admin/AdminCancellationRequestsPage';
+import AdminNewsletterPage from './pages/admin/AdminNewsletterPage';
 
 // Components
 import LoadingScreen from './components/common/LoadingScreen';
@@ -155,6 +156,7 @@ function App() {
           <Route path="/admin/waiting-list" element={<AdminWaitingListPage />} />
           <Route path="/admin/inclusion-requests" element={<AdminInclusionRequestsPage />} />
           <Route path="/admin/cancellation-requests" element={<AdminCancellationRequestsPage />} />
+          <Route path="/admin/newsletter" element={<AdminNewsletterPage />} />
         </Route>
       </Route>
 

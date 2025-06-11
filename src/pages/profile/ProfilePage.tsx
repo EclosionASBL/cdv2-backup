@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { validateBelgianNRN } from '../../utils/validateBelgianNRN';
 import BelgianNRNInput from '../../components/common/BelgianNRNInput';
 import clsx from 'clsx';
+import { useNewsletterStore } from '../../stores/newsletterStore';
 
 interface ProfileFormData {
   prenom: string;
@@ -27,9 +28,11 @@ interface ProfileFormData {
 const ProfilePage = () => {
   const navigate = useNavigate();
   const { user, profile, updateProfile, isLoading, fetchProfile } = useAuthStore();
+  const { subscribe, unsubscribe } = useNewsletterStore();
   const [updateSuccess, setUpdateSuccess] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [previousNewsletterValue, setPreviousNewsletterValue] = useState<boolean>(false);
   
   const {
     register,
@@ -42,6 +45,7 @@ const ProfilePage = () => {
 
   const accountType = watch('account_type', profile?.account_type || 'parent');
   const isLegalGuardian = watch('is_legal_guardian', profile?.is_legal_guardian !== false);
+  const newsletterValue = watch('newsletter', profile?.newsletter || false);
 
   useEffect(() => {
     if (user && !profile) {
@@ -71,6 +75,7 @@ const ProfilePage = () => {
         is_legal_guardian: profile.is_legal_guardian !== false,
       });
       setAvatarUrl(profile.avatar_url);
+      setPreviousNewsletterValue(profile.newsletter || false);
     }
   }, [profile, reset]);
   
@@ -91,8 +96,20 @@ const ProfilePage = () => {
         nnational: data.nnational === '' ? null : data.nnational
       };
 
+      // Handle newsletter subscription changes
+      if (data.newsletter !== previousNewsletterValue) {
+        if (data.newsletter) {
+          // User is subscribing
+          await subscribe(user?.email || '');
+        } else {
+          // User is unsubscribing
+          await unsubscribe(user?.email || '');
+        }
+      }
+
       await updateProfile(updatedData);
       setUpdateSuccess(true);
+      setPreviousNewsletterValue(data.newsletter);
       setTimeout(() => {
         navigate('/dashboard');
       }, 1500);

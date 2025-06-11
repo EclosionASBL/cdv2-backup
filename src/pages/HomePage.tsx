@@ -3,6 +3,7 @@ import { CalendarCheck, Users, CreditCard, ShieldCheck } from 'lucide-react';
 import { useActivityStore } from '../stores/activityStore';
 import { useEffect } from 'react';
 import PopularStages from '../components/home/PopularStages';
+import NewsletterSection from '../components/home/NewsletterSection';
 
 const HomePage = () => {
   const { activities, fetchActivities, isLoading } = useActivityStore();
@@ -108,44 +109,8 @@ const HomePage = () => {
       {/* Popular Stages section */}
       <PopularStages limit={4} />
       
-      {/* Newsletter */}
-      <section className="py-16 bg-primary-50">
-        <div className="container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            <div className="grid md:grid-cols-2">
-              <div className="p-8 md:p-12">
-                <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
-                  Restez informé !
-                </h2>
-                <p className="text-gray-600 mb-6">
-                  Inscrivez-vous à notre newsletter pour être informé des nouveaux stages et offres spéciales.
-                </p>
-                <form className="flex flex-col sm:flex-row gap-3">
-                  <input
-                    type="email"
-                    placeholder="Votre adresse email"
-                    className="form-input flex-grow"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    className="btn-primary whitespace-nowrap"
-                  >
-                    S'inscrire
-                  </button>
-                </form>
-              </div>
-              <div className="hidden md:block">
-                <img
-                  src="https://images.pexels.com/photos/3905856/pexels-photo-3905856.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2"
-                  alt="Enfants jouant ensemble"
-                  className="h-full w-full object-cover"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Newsletter Section */}
+      <NewsletterSection />
     </div>
   );
 };
