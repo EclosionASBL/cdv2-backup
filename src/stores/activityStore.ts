@@ -109,15 +109,10 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       const activeFilters = { ...get().filters, ...filters };
       
       // Filter out past activities
-      const today = new Date().toISOString();
+      const today = new Date().toISOString().split('T')[0]; // Format as YYYY-MM-DD
       query = query.gte('end_date', today);
       
       // Apply filters if provided
-      if (activeFilters.kid_id) {
-        // If kid_id is provided, we need to apply age filtering
-        // This will be done after fetching the data
-      }
-      
       if (activeFilters.center_id) {
         query = query.eq('center_id', activeFilters.center_id);
       }

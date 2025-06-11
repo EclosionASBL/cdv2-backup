@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useActivityStore } from '../../stores/activityStore';
-import { ChevronRight, User, Clock } from 'lucide-react';
+import { ChevronRight, User, Clock, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
 interface PopularStagesProps {
@@ -10,6 +10,19 @@ interface PopularStagesProps {
 
 const ImageWithFallback = ({ src, alt, className }: { src: string | null, alt: string, className?: string }) => {
   const [error, setError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 2;
+
+  const handleError = () => {
+    if (retryCount < maxRetries) {
+      // Try again after a short delay
+      setTimeout(() => {
+        setRetryCount(prev => prev + 1);
+      }, 1000);
+    } else {
+      setError(true);
+    }
+  };
   
   if (error || !src) {
     return (
@@ -24,7 +37,8 @@ const ImageWithFallback = ({ src, alt, className }: { src: string | null, alt: s
       src={src}
       alt={alt}
       className={className}
-      onError={() => setError(true)}
+      onError={handleError}
+      key={retryCount} // Force re-render on retry
     />
   );
 };
@@ -33,17 +47,19 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
   const { 
     activities, 
     centers, 
-    periodes,
     fetchActivities, 
     fetchCenters,
-    fetchPeriodes,
-    isLoading 
+    isLoading,
+    error
   } = useActivityStore();
   
   const [selectedCenter, setSelectedCenter] = useState<string>('');
   const [selectedAge, setSelectedAge] = useState<string>('');
   const [selectedSemaine, setSelectedSemaine] = useState<string>('');
   const [filteredActivities, setFilteredActivities] = useState<any[]>([]);
+  const [semaineOptions, setSemaineOptions] = useState<{label: string, value: string}[]>([
+    { label: 'Toutes les semaines', value: '' }
+  ]);
   
   // Age ranges for the filter
   const ageRanges = [
@@ -54,18 +70,12 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
     { label: '8 - 12 ans', value: '8-12' },
     { label: '12 - 13 ans', value: '12-13' }
   ];
-  
-  // Semaines options will be dynamically generated from activities
-  const [semaineOptions, setSemaineOptions] = useState<{label: string, value: string}[]>([
-    { label: 'Toutes les semaines', value: '' }
-  ]);
 
   useEffect(() => {
-    // Fetch activities, centers, and periodes on component mount
+    // Fetch activities and centers on component mount
     fetchActivities();
     fetchCenters();
-    fetchPeriodes();
-  }, [fetchActivities, fetchCenters, fetchPeriodes]);
+  }, [fetchActivities, fetchCenters]);
 
   useEffect(() => {
     // Extract unique semaines from activities and sort them
@@ -132,7 +142,7 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
   };
 
   return (
-    <div className="py-16 bg-gray-50">
+    <section className="py-16 bg-gray-50">
       <div className="container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-12">
           <div>
@@ -219,35 +229,38 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
         </div>
         
         {isLoading ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {Array(4).fill(0).map((_, index) => (
-              <div key={index} className="bg-white rounded-xl shadow animate-pulse">
-                <div className="h-52 bg-gray-200 rounded-t-xl"></div>
-                <div className="p-4">
-                  <div className="h-6 bg-gray-200 rounded mb-3"></div>
-                  <div className="h-4 bg-gray-200 rounded mb-2"></div>
-                  <div className="h-4 bg-gray-200 rounded mb-2 w-2/3"></div>
-                  <div className="h-8 bg-gray-200 rounded mt-4"></div>
-                </div>
-              </div>
-            ))}
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-12 w-12 animate-spin text-primary-600" />
           </div>
-        ) : filteredActivities.length === 0 ? (
+        ) : error ? (
+          <div className="bg-red-50 p-4 rounded-lg text-center">
+            <p className="text-red-700">Une erreur est survenue lors du chargement des stages.</p>
+            <button 
+              onClick={() => fetchActivities()}
+              className="mt-4 btn-primary"
+            >
+              Réessayer
+            </button>
+          </div>
+        ) : activities.length === 0 ? (
           <div className="bg-white rounded-xl shadow-md p-8 text-center">
             <h3 className="text-xl font-semibold text-gray-800 mb-2">Aucun stage disponible</h3>
             <p className="text-gray-600 mb-4">
-              {selectedCenter || selectedAge || selectedSemaine
-                ? "Aucun stage ne correspond à vos critères. Veuillez modifier vos filtres."
-                : "Aucun stage n'est disponible pour le moment. Revenez bientôt pour découvrir notre programmation."}
+              Aucun stage n'est disponible pour le moment. Revenez bientôt pour découvrir notre programmation.
             </p>
-            {(selectedCenter || selectedAge || selectedSemaine) && (
-              <button
-                onClick={resetFilters}
-                className="btn-primary"
-              >
-                Réinitialiser les filtres
-              </button>
-            )}
+          </div>
+        ) : filteredActivities.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-md p-8 text-center">
+            <h3 className="text-xl font-semibold text-gray-800 mb-2">Aucun stage ne correspond à vos critères</h3>
+            <p className="text-gray-600 mb-4">
+              Veuillez modifier vos filtres pour trouver des stages disponibles.
+            </p>
+            <button
+              onClick={resetFilters}
+              className="btn-primary"
+            >
+              Réinitialiser les filtres
+            </button>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -304,7 +317,7 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 };
 
