@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useActivityStore } from '../../stores/activityStore';
-import { ChevronRight, User, Clock, Loader2, Info } from 'lucide-react';
+import { useAuthStore } from '../../stores/authStore';
+import { ChevronRight, User, Clock, Loader2, UserPlus } from 'lucide-react';
 import clsx from 'clsx';
 import ActivityModal, { ImageWithFallback } from '../common/ActivityModal';
 
@@ -10,6 +11,8 @@ interface PopularStagesProps {
 }
 
 const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
   const { 
     activities, 
     centers, 
@@ -117,6 +120,11 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedActivity(null);
+  };
+
+  const handleRegisterClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent the card click from triggering
+    navigate('/register');
   };
 
   return (
@@ -250,7 +258,8 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
               return (
                 <div
                   key={activity.id}
-                  className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
+                  onClick={() => handleOpenModal(activity)}
+                  className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                 >
                   <div className="relative">
                     <ImageWithFallback
@@ -272,14 +281,7 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
                   
                   <div className="p-4">
                     <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-semibold text-lg mb-1 text-gray-900">{activity.stage.title}</h3>
-                      <button
-                        onClick={() => handleOpenModal(activity)}
-                        className="text-gray-400 hover:text-gray-600"
-                        aria-label="Voir les détails"
-                      >
-                        <Info className="h-5 w-5" />
-                      </button>
+                      <h3 className="font-semibold text-lg text-gray-900">{activity.stage.title}</h3>
                     </div>
                     <p className="text-sm text-gray-600 mb-1">
                       {new Date(activity.start_date).toLocaleDateString('fr-FR')} - {new Date(activity.end_date).toLocaleDateString('fr-FR')}
@@ -296,6 +298,16 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
                         {activity.stage.age_min} - {activity.stage.age_max} ans
                       </span>
                     </div>
+                    
+                    {!user && !isFull && (
+                      <button
+                        onClick={handleRegisterClick}
+                        className="mt-3 w-full btn-primary py-2 text-sm flex items-center justify-center"
+                      >
+                        <UserPlus className="h-4 w-4 mr-2" />
+                        Inscrire mon enfant
+                      </button>
+                    )}
                   </div>
                 </div>
               );
