@@ -86,6 +86,13 @@ function App() {
     return () => subscription.unsubscribe();
   }, [setUser, location, navigate]);
 
+  // Redirect logged-in users from home page to dashboard
+  useEffect(() => {
+    if (user && location.pathname === '/') {
+      navigate('/dashboard');
+    }
+  }, [user, location.pathname, navigate]);
+
   if (isLoading) {
     return <LoadingScreen />;
   }
