@@ -24,7 +24,6 @@ import AuthorizedPersonsPage from './pages/authorized-persons/AuthorizedPersonsP
 import NewAuthorizedPersonPage from './pages/authorized-persons/NewAuthorizedPersonPage';
 import EditAuthorizedPersonPage from './pages/authorized-persons/EditAuthorizedPersonPage';
 import ActivitiesPage from './pages/activities/ActivitiesPage';
-import ActivityDetailsPage from './pages/activities/ActivityDetailsPage';
 import CartPage from './pages/checkout/CartPage';
 import CheckoutPage from './pages/checkout/CheckoutPage';
 import OrderConfirmationPage from './pages/checkout/OrderConfirmationPage';
@@ -48,6 +47,7 @@ import AdminSchoolsPage from './pages/admin/AdminSchoolsPage';
 import AdminWaitingListPage from './pages/admin/AdminWaitingListPage';
 import AdminInclusionRequestsPage from './pages/admin/AdminInclusionRequestsPage';
 import AdminCancellationRequestsPage from './pages/admin/AdminCancellationRequestsPage';
+import AdminNewsletterPage from './pages/admin/AdminNewsletterPage';
 
 // Components
 import LoadingScreen from './components/common/LoadingScreen';
@@ -87,6 +87,13 @@ function App() {
     return () => subscription.unsubscribe();
   }, [setUser, location, navigate]);
 
+  // Redirect logged-in users from home page to dashboard
+  useEffect(() => {
+    if (user && location.pathname === '/') {
+      navigate('/dashboard');
+    }
+  }, [user, location.pathname, navigate]);
+
   if (isLoading) {
     return <LoadingScreen />;
   }
@@ -123,7 +130,6 @@ function App() {
           <Route path="/authorized-persons/new" element={<NewAuthorizedPersonPage />} />
           <Route path="/authorized-persons/edit/:id" element={<EditAuthorizedPersonPage />} />
           <Route path="/activities" element={<ActivitiesPage />} />
-          <Route path="/activities/:id" element={<ActivityDetailsPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order-confirmation" element={<OrderConfirmationPage />} />
@@ -150,6 +156,7 @@ function App() {
           <Route path="/admin/waiting-list" element={<AdminWaitingListPage />} />
           <Route path="/admin/inclusion-requests" element={<AdminInclusionRequestsPage />} />
           <Route path="/admin/cancellation-requests" element={<AdminCancellationRequestsPage />} />
+          <Route path="/admin/newsletter" element={<AdminNewsletterPage />} />
         </Route>
       </Route>
 

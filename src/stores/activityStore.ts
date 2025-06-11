@@ -108,13 +108,11 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       
       const activeFilters = { ...get().filters, ...filters };
       
-      // Required filters
-      if (!activeFilters.kid_id || !activeFilters.center_id || !activeFilters.periode) {
-        set({ activities: [] });
-        return;
-      }
-
-      // Apply filters
+      // Filter out past activities
+      const today = new Date().toISOString().split('T')[0]; // Format as YYYY-MM-DD
+      query = query.gte('end_date', today);
+      
+      // Apply filters if provided
       if (activeFilters.center_id) {
         query = query.eq('center_id', activeFilters.center_id);
       }
@@ -131,24 +129,47 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       
       if (error) throw error;
 
-      // Get kid's data for price calculation
-      const { data: kidData } = await supabase
-        .from('kids')
-        .select('date_naissance, cpostal, ecole')
-        .eq('id', activeFilters.kid_id)
-        .single();
-
-      if (!kidData) throw new Error('Kid not found');
-
-      // Filter by kid's age and calculate prices
       let filteredData = data || [];
-      filteredData = await Promise.all(filteredData.map(async (session) => {
-        const ageAtStart = calculateAgeAtDate(kidData.date_naissance, session.start_date);
-        if (ageAtStart >= session.stage.age_min && ageAtStart < session.stage.age_max + 1) {
+      
+      // If kid_id is provided, filter by age and calculate prices
+      if (activeFilters.kid_id) {
+        // Get kid's data for price calculation
+        const { data: kidData } = await supabase
+          .from('kids')
+          .select('date_naissance, cpostal, ecole')
+          .eq('id', activeFilters.kid_id)
+          .single();
+
+        if (kidData) {
+          // Filter by kid's age
+          filteredData = await Promise.all(filteredData.map(async (session) => {
+            const ageAtStart = calculateAgeAtDate(kidData.date_naissance, session.start_date);
+            if (ageAtStart >= session.stage.age_min && ageAtStart < session.stage.age_max + 1) {
+              const { mainPrice, reducedPrice } = await get().getPrice(
+                session,
+                kidData.cpostal,
+                kidData.ecole
+              );
+              return {
+                ...session,
+                calculated_main_price: mainPrice,
+                calculated_reduced_price: reducedPrice,
+                current_registrations: session.current_registrations || 0
+              };
+            }
+            return null;
+          }));
+
+          // Remove null values (sessions that didn't match age criteria)
+          filteredData = filteredData.filter(session => session !== null);
+        }
+      } else {
+        // If no kid_id, still calculate prices but with default values
+        filteredData = await Promise.all(filteredData.map(async (session) => {
           const { mainPrice, reducedPrice } = await get().getPrice(
             session,
-            kidData.cpostal,
-            kidData.ecole
+            null,
+            null
           );
           return {
             ...session,
@@ -156,12 +177,8 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
             calculated_reduced_price: reducedPrice,
             current_registrations: session.current_registrations || 0
           };
-        }
-        return null;
-      }));
-
-      // Remove null values (sessions that didn't match age criteria)
-      filteredData = filteredData.filter(session => session !== null);
+        }));
+      }
 
       set({ activities: filteredData });
     } catch (error: any) {
@@ -255,7 +272,7 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
     let mainPrice = activity.prix_normal;
     let reducedPrice = activity.prix_reduit;
 
-    if (activity.tarif_condition_id) {
+    if (activity.tarif_condition_id && (kid_postal || kid_school)) {
       try {
         const { data: condition, error } = await supabase
           .from('tarif_conditions')
