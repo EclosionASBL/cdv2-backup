@@ -1,47 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useActivityStore } from '../../stores/activityStore';
-import { ChevronRight, User, Clock, Loader2 } from 'lucide-react';
+import { ChevronRight, User, Clock, Loader2, Info } from 'lucide-react';
 import clsx from 'clsx';
+import ActivityModal, { ImageWithFallback } from '../common/ActivityModal';
 
 interface PopularStagesProps {
   limit?: number;
 }
-
-const ImageWithFallback = ({ src, alt, className }: { src: string | null, alt: string, className?: string }) => {
-  const [error, setError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const maxRetries = 2;
-
-  const handleError = () => {
-    if (retryCount < maxRetries) {
-      // Try again after a short delay
-      setTimeout(() => {
-        setRetryCount(prev => prev + 1);
-      }, 1000);
-    } else {
-      setError(true);
-    }
-  };
-  
-  if (error || !src) {
-    return (
-      <div className={clsx("bg-gray-100 flex items-center justify-center", className)}>
-        <User className="h-12 w-12 text-gray-400" />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt={alt}
-      className={className}
-      onError={handleError}
-      key={retryCount} // Force re-render on retry
-    />
-  );
-};
 
 const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
   const { 
@@ -60,6 +26,8 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
   const [semaineOptions, setSemaineOptions] = useState<{label: string, value: string}[]>([
     { label: 'Toutes les semaines', value: '' }
   ]);
+  const [selectedActivity, setSelectedActivity] = useState<any>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Age ranges for the filter
   const ageRanges = [
@@ -139,6 +107,16 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
     setSelectedCenter('');
     setSelectedAge('');
     setSelectedSemaine('');
+  };
+
+  const handleOpenModal = (activity: any) => {
+    setSelectedActivity(activity);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedActivity(null);
   };
 
   return (
@@ -270,9 +248,8 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
               const isFull = remainingPlaces <= 0;
               
               return (
-                <Link
+                <div
                   key={activity.id}
-                  to={`/activities/${activity.id}`}
                   className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
                 >
                   <div className="relative">
@@ -294,9 +271,18 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
                   </div>
                   
                   <div className="p-4">
-                    <h3 className="font-semibold text-lg mb-1 text-gray-900">{activity.stage.title}</h3>
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-semibold text-lg mb-1 text-gray-900">{activity.stage.title}</h3>
+                      <button
+                        onClick={() => handleOpenModal(activity)}
+                        className="text-gray-400 hover:text-gray-600"
+                        aria-label="Voir les détails"
+                      >
+                        <Info className="h-5 w-5" />
+                      </button>
+                    </div>
                     <p className="text-sm text-gray-600 mb-1">
-                      {new Date(activity.start_date).toLocaleDateString('fr-BE')} - {new Date(activity.end_date).toLocaleDateString('fr-BE')}
+                      {new Date(activity.start_date).toLocaleDateString('fr-FR')} - {new Date(activity.end_date).toLocaleDateString('fr-FR')}
                     </p>
                     <p className="text-sm text-gray-600 mb-2">
                       {activity.center.name}
@@ -311,12 +297,19 @@ const PopularStages = ({ limit = 4 }: PopularStagesProps) => {
                       </span>
                     </div>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Activity Details Modal */}
+      <ActivityModal 
+        activity={selectedActivity}
+        isOpen={isModalOpen && selectedActivity !== null}
+        onClose={handleCloseModal}
+      />
     </section>
   );
 };

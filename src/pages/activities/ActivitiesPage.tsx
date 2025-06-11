@@ -10,121 +10,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { Filter, Loader2, AlertCircle, ShoppingCart, Info, X, User, Clock, FileText } from 'lucide-react';
 import clsx from 'clsx';
 import toast, { Toaster } from 'react-hot-toast';
-
-interface ActivityModalProps {
-  activity: any;
-  onClose: () => void;
-}
-
-const ImageWithFallback = ({ src, alt, className }: { src: string | null, alt: string, className?: string }) => {
-  const [error, setError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const maxRetries = 3;
-
-  const handleError = () => {
-    if (retryCount < maxRetries) {
-      // Exponential backoff: wait longer between each retry
-      const timeout = Math.pow(2, retryCount) * 1000;
-      setTimeout(() => {
-        setRetryCount(prev => prev + 1);
-        setError(false); // Reset error to trigger a new load attempt
-      }, timeout);
-    } else {
-      setError(true);
-    }
-  };
-
-  if (error || !src) {
-    return (
-      <div className={clsx("bg-gray-100 flex items-center justify-center", className)}>
-        <User className="h-12 w-12 text-gray-400" />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt={alt}
-      className={className}
-      onError={handleError}
-      key={retryCount} // Force re-render on retry
-    />
-  );
-};
-
-const ActivityModal = ({ activity, onClose }: ActivityModalProps) => {
-  const isSessionFull = (activity.current_registrations || 0) >= activity.capacity;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-lg max-w-2xl w-full p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-        >
-          <X className="h-6 w-6" />
-        </button>
-
-        <div className="space-y-4">
-          <div className="flex items-start space-x-4">
-            <ImageWithFallback
-              src={activity.stage.image_url}
-              alt={activity.stage.title}
-              className="h-32 w-32 object-cover rounded-lg"
-            />
-            <div>
-              <h2 className="text-2xl font-bold">{activity.stage.title}</h2>
-              <div className="inline-flex items-center px-2 py-1 rounded-full text-sm bg-accent-500 text-white mt-2">
-                {activity.periode}
-              </div>
-              {isSessionFull && (
-                <div className="inline-flex items-center px-2 py-1 rounded-full text-sm bg-red-500 text-white mt-2 ml-2">
-                  Complet
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="prose prose-sm max-w-none">
-            <p>{activity.stage.description}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <h3 className="font-semibold text-gray-700">Dates</h3>
-              <p>{new Date(activity.start_date).toLocaleDateString('fr-FR')} - {new Date(activity.end_date).toLocaleDateString('fr-FR')}</p>
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-700">Places disponibles</h3>
-              <p>{isSessionFull ? 'Complet' : `${activity.capacity - (activity.current_registrations || 0)}/${activity.capacity} places`}</p>
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-700">Prix</h3>
-              <p className="text-primary-600 font-bold">
-                {activity.calculated_main_price ?? activity.prix_normal} €
-                {(activity.calculated_reduced_price ?? activity.prix_reduit) && (
-                  <span className="text-sm text-gray-500 ml-2">
-                    (Réduit: {activity.calculated_reduced_price ?? activity.prix_reduit} €)
-                  </span>
-                )}
-              </p>
-              {activity.calculated_main_price !== activity.prix_normal && (
-                <span className="inline-block mt-1 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                  Tarif local appliqué
-                </span>
-              )}
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-700">Centre</h3>
-              <p>{activity.center.name}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+import ActivityModal, { ImageWithFallback } from '../../components/common/ActivityModal';
 
 const ActivitiesPage = () => {
   const navigate = useNavigate();
@@ -161,6 +47,7 @@ const ActivitiesPage = () => {
 
   const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [joiningWaitingList, setJoiningWaitingList] = useState<string | null>(null);
   const [requestingInclusion, setRequestingInclusion] = useState<string | null>(null);
   const [selectedKidDetails, setSelectedKidDetails] = useState<any>(null);
@@ -294,9 +181,14 @@ const ActivitiesPage = () => {
 
   const showNoFiltersMessage = !filters.kid_id || !filters.center_id || !filters.periode;
 
-  const handleInfoClick = (e: React.MouseEvent, activity: any) => {
-    e.stopPropagation(); // Prevent the card click event from firing
+  const handleOpenModal = (activity: any) => {
     setSelectedActivity(activity);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedActivity(null);
   };
 
   // Check if the selected kid has special needs
@@ -480,7 +372,10 @@ const ActivitiesPage = () => {
                             </div>
                           </div>
                           <button
-                            onClick={(e) => handleInfoClick(e, activity)}
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevent card selection
+                              handleOpenModal(activity);
+                            }}
                             className="text-gray-400 hover:text-gray-600"
                           >
                             <Info className="h-5 w-5" />
@@ -585,17 +480,18 @@ const ActivitiesPage = () => {
                   </button>
                 </div>
               )}
-
-              {selectedActivity && (
-                <ActivityModal
-                  activity={selectedActivity}
-                  onClose={() => setSelectedActivity(null)}
-                />
-              )}
             </>
           )}
         </div>
       </div>
+
+      {/* Activity Details Modal */}
+      <ActivityModal
+        activity={selectedActivity}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
+      
       <Toaster position="top-right" />
     </div>
   );

@@ -24,7 +24,6 @@ import AuthorizedPersonsPage from './pages/authorized-persons/AuthorizedPersonsP
 import NewAuthorizedPersonPage from './pages/authorized-persons/NewAuthorizedPersonPage';
 import EditAuthorizedPersonPage from './pages/authorized-persons/EditAuthorizedPersonPage';
 import ActivitiesPage from './pages/activities/ActivitiesPage';
-import ActivityDetailsPage from './pages/activities/ActivityDetailsPage';
 import CartPage from './pages/checkout/CartPage';
 import CheckoutPage from './pages/checkout/CheckoutPage';
 import OrderConfirmationPage from './pages/checkout/OrderConfirmationPage';
@@ -123,7 +122,6 @@ function App() {
           <Route path="/authorized-persons/new" element={<NewAuthorizedPersonPage />} />
           <Route path="/authorized-persons/edit/:id" element={<EditAuthorizedPersonPage />} />
           <Route path="/activities" element={<ActivitiesPage />} />
-          <Route path="/activities/:id" element={<ActivityDetailsPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order-confirmation" element={<OrderConfirmationPage />} />
