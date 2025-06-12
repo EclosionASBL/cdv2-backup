@@ -55,9 +55,6 @@ const AdminCancellationRequestsPage = () => {
   const [processing, setProcessing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
-  const [relatedRequests, setRelatedRequests] = useState<CancellationRequest[]>([]);
-  const [consolidatedApproval, setConsolidatedApproval] = useState(false);
 
   useEffect(() => {
     fetchRequests();
@@ -96,80 +93,24 @@ const AdminCancellationRequestsPage = () => {
     try {
       setProcessing(true);
       
-      if (consolidatedApproval && selectedInvoiceId && relatedRequests.length > 0) {
-        // Call the create-consolidated-credit-note function
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session?.access_token) {
-          throw new Error('No active session');
+      // Call the edge function to process the approval
+      const { data, error } = await supabase.functions.invoke('process-cancellation-approval', {
+        body: {
+          requestId: request.id,
+          refundType,
+          adminNotes
         }
-        
-        // Get the invoice details
-        const { data: invoice, error: invoiceError } = await supabase
-          .from('invoices')
-          .select('*')
-          .eq('invoice_number', selectedInvoiceId)
-          .single();
-          
-        if (invoiceError) {
-          throw new Error('Failed to fetch invoice details');
-        }
-        
-        // Calculate total refund amount
-        const totalAmount = relatedRequests.reduce((sum, req) => {
-          const registration = Array.isArray(req.registration) ? req.registration[0] : req.registration;
-          return sum + registration.amount_paid;
-        }, 0);
-        
-        // Get registration IDs
-        const registrationIds = relatedRequests.map(req => req.registration_id);
-        
-        // Call the consolidated credit note function
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-consolidated-credit-note`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({
-            invoiceId: invoice.id,
-            type: refundType,
-            registrationIds: registrationIds,
-            amount: refundType === 'full' ? totalAmount : totalAmount * 0.5,
-            cancelRegistrations: true,
-            adminNotes: adminNotes || ''
-          })
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to create consolidated credit note');
-        }
-        
-        toast.success('Consolidated credit note created successfully');
-      } else {
-        // Call the edge function to process the approval
-        const { data, error } = await supabase.functions.invoke('process-cancellation-approval', {
-          body: {
-            requestId: request.id,
-            refundType,
-            adminNotes
-          }
-        });
+      });
 
-        if (error) {
-          console.error('Edge function error:', error);
-          throw new Error(error.message || 'Failed to process cancellation approval');
-        }
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to process cancellation approval');
       }
 
       toast.success('Cancellation request approved successfully');
       await fetchRequests();
       setIsModalOpen(false);
       setSelectedRequest(null);
-      setConsolidatedApproval(false);
-      setRelatedRequests([]);
-      setSelectedInvoiceId(null);
     } catch (err: any) {
       console.error('Error approving cancellation:', err);
       toast.error(err.message || 'Failed to approve cancellation request');
@@ -201,36 +142,6 @@ const AdminCancellationRequestsPage = () => {
       toast.error('Failed to reject cancellation request');
     } finally {
       setProcessing(false);
-    }
-  };
-
-  const findRelatedRequests = async (invoiceId: string) => {
-    try {
-      // Find all cancellation requests for registrations in this invoice
-      const { data, error } = await supabase
-        .from('cancellation_requests')
-        .select(`
-          *,
-          registration:registrations(amount_paid, payment_status, invoice_id),
-          kid:kids(prenom, nom),
-          session:sessions(
-            stage:stages(title),
-            start_date,
-            end_date,
-            center:centers(name)
-          ),
-          user:users(email, prenom, nom, telephone)
-        `)
-        .eq('status', 'pending')
-        .filter('registration.invoice_id', 'eq', invoiceId);
-        
-      if (error) throw error;
-      
-      setRelatedRequests(data || []);
-      return data || [];
-    } catch (err) {
-      console.error('Error finding related requests:', err);
-      return [];
     }
   };
 
@@ -430,11 +341,6 @@ const AdminCancellationRequestsPage = () => {
                       <div className="text-xs text-gray-500">
                         {request.registration.payment_status}
                       </div>
-                      {request.registration.invoice_id && (
-                        <div className="text-xs text-gray-500">
-                          Invoice: {request.registration.invoice_id}
-                        </div>
-                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
@@ -454,13 +360,7 @@ const AdminCancellationRequestsPage = () => {
                         <button
                           onClick={() => {
                             setSelectedRequest(request);
-                            setSelectedInvoiceId(request.registration.invoice_id);
                             setIsModalOpen(true);
-                            if (request.registration.invoice_id) {
-                              findRelatedRequests(request.registration.invoice_id);
-                            } else {
-                              setRelatedRequests([]);
-                            }
                           }}
                           className="text-blue-600 hover:text-blue-900"
                         >
@@ -495,13 +395,10 @@ const AdminCancellationRequestsPage = () => {
             {selectedRequest && (
               <CancellationRequestModal
                 request={selectedRequest}
-                relatedRequests={relatedRequests}
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onClose={() => setIsModalOpen(false)}
                 processing={processing}
-                consolidatedApproval={consolidatedApproval}
-                setConsolidatedApproval={setConsolidatedApproval}
               />
             )}
           </Dialog.Panel>
@@ -514,26 +411,19 @@ const AdminCancellationRequestsPage = () => {
 // Modal Component for Request Details
 const CancellationRequestModal = ({
   request,
-  relatedRequests,
   onApprove,
   onReject,
   onClose,
-  processing,
-  consolidatedApproval,
-  setConsolidatedApproval
+  processing
 }: {
   request: CancellationRequest;
-  relatedRequests: CancellationRequest[];
   onApprove: (request: CancellationRequest, refundType: 'full' | 'partial' | 'none', adminNotes?: string) => void;
   onReject: (request: CancellationRequest, adminNotes: string) => void;
   onClose: () => void;
   processing: boolean;
-  consolidatedApproval: boolean;
-  setConsolidatedApproval: (value: boolean) => void;
 }) => {
   const [adminNotes, setAdminNotes] = useState(request.admin_notes || '');
   const [refundType, setRefundType] = useState<'full' | 'partial' | 'none'>('full');
-  const hasMultipleRequests = relatedRequests.length > 1;
 
   return (
     <div className="p-6">
@@ -610,39 +500,6 @@ const CancellationRequestModal = ({
             )}
           </div>
         </div>
-
-        {/* Related Requests */}
-        {hasMultipleRequests && (
-          <div className="bg-blue-50 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium text-blue-900">Related Cancellation Requests</h3>
-              <div className="text-sm text-blue-700">{relatedRequests.length} requests found</div>
-            </div>
-            <p className="text-sm text-blue-700 mb-3">
-              Multiple cancellation requests were found for the same invoice. You can process them together.
-            </p>
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {relatedRequests.map(req => (
-                <div key={req.id} className="bg-white p-2 rounded border border-blue-100 text-sm">
-                  <div className="font-medium">{req.kid.prenom} {req.kid.nom}</div>
-                  <div className="text-gray-600">{req.session.stage.title}</div>
-                  <div className="text-gray-500 text-xs">€{req.registration.amount_paid.toFixed(2)}</div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3">
-              <label className="flex items-center space-x-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={consolidatedApproval}
-                  onChange={(e) => setConsolidatedApproval(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-blue-800 font-medium">Process all requests together with a single credit note</span>
-              </label>
-            </div>
-          </div>
-        )}
 
         {/* Parent Notes */}
         {request.parent_notes && (
