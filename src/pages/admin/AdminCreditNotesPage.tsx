@@ -58,6 +58,8 @@ interface CreditNote {
   amount: number;
   created_at: string;
   pdf_url: string | null;
+  invoice_id?: string;
+  invoice_number?: string;
 }
 
 interface CreditNoteFormData {
@@ -103,7 +105,7 @@ const AdminCreditNotesPage = () => {
       const from = (currentPage - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
       
-      // Build query with pagination - fetch invoices first
+      // Fetch invoices first (without trying to join credit_notes)
       let query = supabase
         .from('invoices')
         .select(`
@@ -112,13 +114,6 @@ const AdminCreditNotesPage = () => {
             prenom,
             nom,
             email
-          ),
-          credit_notes(
-            id,
-            credit_note_number,
-            amount,
-            created_at,
-            pdf_url
           )
         `, { count: 'exact' });
       
@@ -146,9 +141,23 @@ const AdminCreditNotesPage = () => {
         setTotalPages(Math.ceil(count / itemsPerPage));
       }
 
+      // Now fetch credit notes separately
+      const { data: creditNotesData, error: creditNotesError } = await supabase
+        .from('credit_notes')
+        .select('*');
+
+      if (creditNotesError) {
+        console.error('Error fetching credit notes:', creditNotesError);
+      }
+
       // Now fetch registrations for each invoice that has registration_ids
-      const invoicesWithRegistrations = await Promise.all(
+      const invoicesWithDetails = await Promise.all(
         (invoicesData || []).map(async (invoice) => {
+          // Add credit notes to invoice
+          const invoiceCreditNotes = creditNotesData?.filter(
+            note => note.invoice_id === invoice.id || note.invoice_number === invoice.invoice_number
+          ) || [];
+
           if (invoice.registration_ids && invoice.registration_ids.length > 0) {
             const { data: registrationsData, error: registrationsError } = await supabase
               .from('registrations')
@@ -179,17 +188,29 @@ const AdminCreditNotesPage = () => {
 
             if (registrationsError) {
               console.error('Error fetching registrations:', registrationsError);
-              return { ...invoice, registrations: [] };
+              return { 
+                ...invoice, 
+                registrations: [],
+                credit_notes: invoiceCreditNotes
+              };
             }
 
-            return { ...invoice, registrations: registrationsData || [] };
+            return { 
+              ...invoice, 
+              registrations: registrationsData || [],
+              credit_notes: invoiceCreditNotes
+            };
           }
           
-          return { ...invoice, registrations: [] };
+          return { 
+            ...invoice, 
+            registrations: [],
+            credit_notes: invoiceCreditNotes
+          };
         })
       );
       
-      setInvoices(invoicesWithRegistrations);
+      setInvoices(invoicesWithDetails);
     } catch (err: any) {
       console.error('Error fetching invoices:', err);
       setError(err.message || 'Une erreur est survenue lors du chargement des factures');
