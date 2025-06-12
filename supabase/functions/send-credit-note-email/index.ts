@@ -133,19 +133,61 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get all registrations for this invoice if it's a consolidated credit note
+    let allRegistrations = [];
+    if (creditNote.invoice_id) {
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .select('registration_ids')
+        .eq('id', creditNote.invoice_id)
+        .single();
+        
+      if (!invoiceError && invoice && invoice.registration_ids) {
+        // Get all registrations for this invoice
+        const { data: registrationsData, error: registrationsError } = await supabase
+          .from('registrations')
+          .select(`
+            id,
+            amount_paid,
+            cancellation_status,
+            kid:kid_id(
+              prenom,
+              nom
+            ),
+            session:activity_id(
+              stage:stage_id(
+                title
+              ),
+              start_date,
+              end_date
+            )
+          `)
+          .in('id', invoice.registration_ids)
+          .eq('cancellation_status', 'cancelled_full_refund');
+          
+        if (!registrationsError && registrationsData) {
+          allRegistrations = registrationsData;
+        }
+      }
+    }
+
     // Unwrap nested objects if they're arrays
     const user = Array.isArray(creditNote.user) ? creditNote.user[0] : creditNote.user;
     const registration = Array.isArray(creditNote.registration) ? creditNote.registration[0] : creditNote.registration;
-    const kid = Array.isArray(registration.kid) ? registration.kid[0] : registration.kid;
-    const session = Array.isArray(registration.session) ? registration.session[0] : registration.session;
-    const stage = Array.isArray(session.stage) ? session.stage[0] : session.stage;
+    const kid = Array.isArray(registration?.kid) ? registration.kid[0] : registration?.kid;
+    const session = Array.isArray(registration?.session) ? registration.session[0] : registration?.session;
+    const stage = Array.isArray(session?.stage) ? session.stage[0] : session?.stage;
     const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
       ? creditNote.cancellation_request[0] 
       : creditNote.cancellation_request;
 
     // Format dates
-    const startDate = new Date(session.start_date).toLocaleDateString('fr-FR');
-    const endDate = new Date(session.end_date).toLocaleDateString('fr-FR');
+    let startDate = '';
+    let endDate = '';
+    if (session) {
+      startDate = new Date(session.start_date).toLocaleDateString('fr-FR');
+      endDate = new Date(session.end_date).toLocaleDateString('fr-FR');
+    }
 
     // Use provided email or fallback to user's email
     const recipientEmail = parent_email || user.email;
@@ -161,17 +203,57 @@ Deno.serve(async (req) => {
     }
 
     // Determine if this is a full cancellation or partial adjustment
-    const isFullCancellation = cancellationRequest.refund_type === 'full' || 
-                              registration.cancellation_status === 'cancelled_full_refund';
+    const isFullCancellation = cancellationRequest?.refund_type === 'full' || 
+                              registration?.cancellation_status === 'cancelled_full_refund';
     
     // Customize email subject and intro based on cancellation type
     const emailSubject = isFullCancellation 
-      ? `Note de crédit - Annulation d'inscription` 
-      : `Note de crédit - Ajustement de prix`;
+      ? `Note de crédit ${creditNote.credit_note_number} - Annulation d'inscription` 
+      : `Note de crédit ${creditNote.credit_note_number} - Ajustement de prix`;
     
-    const emailIntro = isFullCancellation
-      ? `Suite à l'annulation de l'inscription de ${kid.prenom} au stage "${stage.title}" (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.`
-      : `Suite à l'ajustement de prix pour l'inscription de ${kid.prenom} au stage "${stage.title}" (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.`;
+    // Build registration details HTML
+    let registrationsHtml = '';
+    
+    if (allRegistrations.length > 0) {
+      // Multiple registrations
+      registrationsHtml = allRegistrations.map(reg => {
+        const regKid = Array.isArray(reg.kid) ? reg.kid[0] : reg.kid;
+        const regSession = Array.isArray(reg.session) ? reg.session[0] : reg.session;
+        const regStage = Array.isArray(regSession.stage) ? regSession.stage[0] : regSession.stage;
+        
+        const regStartDate = new Date(regSession.start_date).toLocaleDateString('fr-FR');
+        const regEndDate = new Date(regSession.end_date).toLocaleDateString('fr-FR');
+        
+        return `
+          <div style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 8px;">
+            <p style="margin: 5px 0;"><strong>${regStage.title}</strong></p>
+            <p style="margin: 5px 0;">Pour: ${regKid.prenom} ${regKid.nom}</p>
+            <p style="margin: 5px 0;">Du ${regStartDate} au ${regEndDate}</p>
+          </div>
+        `;
+      }).join('');
+    } else if (kid && stage) {
+      // Single registration
+      registrationsHtml = `
+        <div style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 8px;">
+          <p style="margin: 5px 0;"><strong>${stage.title}</strong></p>
+          <p style="margin: 5px 0;">Pour: ${kid.prenom} ${kid.nom}</p>
+          <p style="margin: 5px 0;">Du ${startDate} au ${endDate}</p>
+        </div>
+      `;
+    }
+    
+    // Create email intro text
+    let emailIntro = '';
+    if (allRegistrations.length > 0) {
+      emailIntro = `Suite à l'annulation de plusieurs inscriptions, nous vous informons qu'une note de crédit a été émise.`;
+    } else if (kid && stage) {
+      emailIntro = isFullCancellation
+        ? `Suite à l'annulation de l'inscription de ${kid.prenom} au stage "${stage.title}" (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.`
+        : `Suite à l'ajustement de prix pour l'inscription de ${kid.prenom} au stage "${stage.title}" (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.`;
+    } else {
+      emailIntro = `Suite à l'annulation d'une ou plusieurs inscriptions, nous vous informons qu'une note de crédit a été émise.`;
+    }
 
     // Fetch the PDF content to attach it to the email
     console.log('Fetching PDF content from URL:', creditNote.pdf_url);
@@ -220,6 +302,13 @@ Deno.serve(async (req) => {
                 <p style="margin: 5px 0;"><strong>Montant :</strong> ${creditNote.amount} €</p>
                 <p style="margin: 5px 0;"><strong>Date :</strong> ${new Date(creditNote.created_at).toLocaleDateString('fr-BE')}</p>
               </div>
+              
+              ${registrationsHtml ? `
+              <div style="margin-top: 15px;">
+                <h3 style="color: #4f46e5;">Inscriptions concernées</h3>
+                ${registrationsHtml}
+              </div>
+              ` : ''}
             </div>
             
             <p>Le montant sera remboursé par virement bancaire dans les 30 jours.</p>

@@ -165,13 +165,54 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get all registrations for this invoice if it's a consolidated credit note
+    let allRegistrations = [];
+    if (creditNote.invoice_id) {
+      const { data: invoice, error: invoiceError } = await supabase
+        .from('invoices')
+        .select('registration_ids')
+        .eq('id', creditNote.invoice_id)
+        .single();
+        
+      if (!invoiceError && invoice && invoice.registration_ids) {
+        // Get all registrations for this invoice
+        const { data: registrationsData, error: registrationsError } = await supabase
+          .from('registrations')
+          .select(`
+            id,
+            amount_paid,
+            cancellation_status,
+            kid:kid_id(
+              prenom,
+              nom
+            ),
+            session:activity_id(
+              stage:stage_id(
+                title
+              ),
+              start_date,
+              end_date,
+              center:center_id(
+                name
+              )
+            )
+          `)
+          .in('id', invoice.registration_ids)
+          .eq('cancellation_status', 'cancelled_full_refund');
+          
+        if (!registrationsError && registrationsData) {
+          allRegistrations = registrationsData;
+        }
+      }
+    }
+
     // Get invoice details if available
     let invoiceDetails = null;
     if (creditNote.invoice_id || creditNote.invoice_number || 
         (creditNote.registration && creditNote.registration.invoice_id)) {
       
       const invoiceId = creditNote.invoice_number || 
-                        creditNote.registration.invoice_id || 
+                        creditNote.registration?.invoice_id || 
                         creditNote.invoice_id;
       
       try {
@@ -244,7 +285,7 @@ Deno.serve(async (req) => {
     // Add invoice reference if available
     if (invoiceDetails || creditNote.invoice_number) {
       currentY -= lineHeight;
-      page.drawText(`Référence facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration.invoice_id}`, {
+      page.drawText(`Référence facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration?.invoice_id}`, {
         x: margin,
         y: currentY,
         size: 10,
@@ -382,78 +423,171 @@ Deno.serve(async (req) => {
       color: rgb(0, 0, 0),
     });
     
-    // Add table row
+    // Add table rows
     currentY -= 15;
     
-    const registration = Array.isArray(creditNote.registration) ? creditNote.registration[0] : creditNote.registration;
-    const kid = Array.isArray(registration.kid) ? registration.kid[0] : registration.kid;
-    const session = Array.isArray(registration.session) ? registration.session[0] : registration.session;
-    const stage = Array.isArray(session.stage) ? session.stage[0] : session.stage;
-    const center = Array.isArray(session.center) ? session.center[0] : session.center;
+    // Determine which registrations to display
+    const registrationsToDisplay = allRegistrations.length > 0 ? allRegistrations : [creditNote.registration];
     
-    const startDate = new Date(session.start_date).toLocaleDateString('fr-BE');
-    const endDate = new Date(session.end_date).toLocaleDateString('fr-BE');
+    let totalAmount = 0;
     
-    // Determine if this is a full cancellation or a price adjustment
-    const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
-      ? creditNote.cancellation_request[0] 
-      : creditNote.cancellation_request;
-    
-    const isFullCancellation = cancellationRequest.refund_type === 'full' || 
-                              registration.cancellation_status === 'cancelled_full_refund';
-    
-    const description = isFullCancellation
-      ? `Annulation stage: ${stage.title}`
-      : `Ajustement de prix: ${stage.title}`;
-    
-    page.drawText(description, {
-      x: col1,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
-    page.drawText(`${kid.prenom} ${kid.nom}`, {
-      x: col2,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
-    let refundTypeText = isFullCancellation ? 'Remboursement complet' : 'Remboursement partiel';
-    
-    page.drawText(refundTypeText, {
-      x: col3,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
-    page.drawText(`${creditNote.amount} €`, {
-      x: col4,
-      y: currentY,
-      size: 10,
-      font: helveticaFont,
-    });
-    
-    currentY -= 10;
-    page.drawText(`${startDate} au ${endDate}`, {
-      x: col1 + 10,
-      y: currentY,
-      size: 8,
-      font: helveticaFont,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-    
-    page.drawText(`Centre: ${center.name}`, {
-      x: col2,
-      y: currentY,
-      size: 8,
-      font: helveticaFont,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-    
-    currentY -= 15;
+    for (const registration of registrationsToDisplay) {
+      if (!registration) continue;
+      
+      const kid = Array.isArray(registration.kid) ? registration.kid[0] : registration.kid;
+      const session = Array.isArray(registration.session) ? registration.session[0] : registration.session;
+      const stage = Array.isArray(session.stage) ? session.stage[0] : session.stage;
+      const center = Array.isArray(session.center) ? session.center[0] : session.center;
+      
+      if (!kid || !session || !stage || !center) continue;
+      
+      const startDate = new Date(session.start_date).toLocaleDateString('fr-BE');
+      const endDate = new Date(session.end_date).toLocaleDateString('fr-BE');
+      
+      // Determine if this is a full cancellation or a price adjustment
+      const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
+        ? creditNote.cancellation_request[0] 
+        : creditNote.cancellation_request;
+      
+      const isFullCancellation = cancellationRequest?.refund_type === 'full' || 
+                                registration.cancellation_status === 'cancelled_full_refund';
+      
+      const description = isFullCancellation
+        ? `Annulation stage: ${stage.title}`
+        : `Ajustement de prix: ${stage.title}`;
+      
+      page.drawText(description, {
+        x: col1,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      page.drawText(`${kid.prenom} ${kid.nom}`, {
+        x: col2,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      let refundTypeText = isFullCancellation ? 'Remboursement complet' : 'Remboursement partiel';
+      
+      page.drawText(refundTypeText, {
+        x: col3,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      // For multiple registrations, calculate the proportional amount
+      let rowAmount = 0;
+      if (allRegistrations.length > 0) {
+        // If we have multiple registrations, distribute the credit note amount proportionally
+        const totalRegistrationAmount = allRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0);
+        const proportion = registration.amount_paid / totalRegistrationAmount;
+        rowAmount = creditNote.amount * proportion;
+      } else {
+        // Single registration, use the full credit note amount
+        rowAmount = creditNote.amount;
+      }
+      
+      totalAmount += rowAmount;
+      
+      page.drawText(`${rowAmount.toFixed(2)} €`, {
+        x: col4,
+        y: currentY,
+        size: 10,
+        font: helveticaFont,
+      });
+      
+      currentY -= 10;
+      page.drawText(`${startDate} au ${endDate}`, {
+        x: col1 + 10,
+        y: currentY,
+        size: 8,
+        font: helveticaFont,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      
+      page.drawText(`Centre: ${center.name}`, {
+        x: col2,
+        y: currentY,
+        size: 8,
+        font: helveticaFont,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      
+      currentY -= 15;
+      
+      // If we have many registrations, check if we need a new page
+      if (currentY < 200 && registrationsToDisplay.indexOf(registration) < registrationsToDisplay.length - 1) {
+        // Add a new page
+        const newPage = pdfDoc.addPage([595.28, 841.89]);
+        page = newPage;
+        currentY = height - margin;
+        
+        // Add header to new page
+        page.drawText('NOTE DE CRÉDIT (suite)', {
+          x: margin,
+          y: currentY,
+          size: 24,
+          font: helveticaBold,
+          color: rgb(0, 0, 0),
+        });
+        
+        // Add credit note number to new page
+        currentY -= 40;
+        page.drawText(`Note de crédit N° ${creditNote.credit_note_number}`, {
+          x: margin,
+          y: currentY,
+          size: 12,
+          font: helveticaBold,
+        });
+        
+        // Add table header to new page
+        currentY -= 40;
+        
+        page.drawText('Description', {
+          x: col1,
+          y: currentY,
+          size: 10,
+          font: helveticaBold,
+        });
+        
+        page.drawText('Enfant', {
+          x: col2,
+          y: currentY,
+          size: 10,
+          font: helveticaBold,
+        });
+        
+        page.drawText('Type', {
+          x: col3,
+          y: currentY,
+          size: 10,
+          font: helveticaBold,
+        });
+        
+        page.drawText('Montant', {
+          x: col4,
+          y: currentY,
+          size: 10,
+          font: helveticaBold,
+        });
+        
+        // Draw table header line on new page
+        currentY -= 5;
+        page.drawLine({
+          start: { x: margin, y: currentY },
+          end: { x: width - margin, y: currentY },
+          thickness: 1,
+          color: rgb(0, 0, 0),
+        });
+        
+        // Reset currentY for next row
+        currentY -= 15;
+      }
+    }
     
     // Draw table footer line
     page.drawLine({
@@ -490,7 +624,7 @@ Deno.serve(async (req) => {
       });
       
       currentY -= lineHeight;
-      page.drawText(`Numéro de facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration.invoice_id}`, {
+      page.drawText(`Numéro de facture: ${creditNote.invoice_number || invoiceDetails?.invoice_number || creditNote.registration?.invoice_id}`, {
         x: margin,
         y: currentY,
         size: 10,
@@ -526,6 +660,18 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
+    
+    // Determine if this is a full cancellation or price adjustment
+    const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
+      ? creditNote.cancellation_request[0] 
+      : creditNote.cancellation_request;
+    
+    const registration = Array.isArray(creditNote.registration) 
+      ? creditNote.registration[0] 
+      : creditNote.registration;
+    
+    const isFullCancellation = cancellationRequest?.refund_type === 'full' || 
+                              registration?.cancellation_status === 'cancelled_full_refund';
     
     // Customize the note text based on whether it's a full cancellation or price adjustment
     const noteText = isFullCancellation

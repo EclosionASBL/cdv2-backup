@@ -284,9 +284,9 @@ const AdminCreditNotesPage = () => {
         throw new Error('Session expirée. Veuillez vous reconnecter.');
       }
       
-      // Call the Edge Function to create the credit note
+      // Call the Edge Function to create the consolidated credit note
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-credit-note`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-consolidated-credit-note`,
         {
           method: 'POST',
           headers: {
@@ -324,27 +324,39 @@ const AdminCreditNotesPage = () => {
 
   const handleInvoiceSelect = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
+    
+    // Filter out already cancelled registrations
+    const activeRegistrations = invoice.registrations?.filter(
+      reg => reg.cancellation_status === 'none'
+    ) || [];
+    
     setFormData({
       invoiceId: invoice.id,
       type: 'full',
-      registrationIds: invoice.registrations?.map(reg => reg.id) || [],
-      amount: invoice.amount,
+      registrationIds: activeRegistrations.map(reg => reg.id),
+      amount: activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0),
       cancelRegistrations: true,
       adminNotes: ''
     });
+    
     setIsCreateModalOpen(true);
   };
 
   const handleTypeChange = (type: 'full' | 'partial' | 'custom') => {
     if (!selectedInvoice) return;
     
+    // Filter out already cancelled registrations
+    const activeRegistrations = selectedInvoice.registrations?.filter(
+      reg => reg.cancellation_status === 'none'
+    ) || [];
+    
     let amount = 0;
     let registrationIds: string[] = [];
     
     if (type === 'full') {
-      // Full refund - all registrations, full amount
-      amount = selectedInvoice.amount;
-      registrationIds = selectedInvoice.registrations?.map(reg => reg.id) || [];
+      // Full refund - all active registrations, sum of their amounts
+      amount = activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0);
+      registrationIds = activeRegistrations.map(reg => reg.id);
     } else if (type === 'partial') {
       // Partial refund - no registrations selected by default
       amount = 0;
@@ -792,10 +804,9 @@ const AdminCreditNotesPage = () => {
                         : 'Sélectionnez une inscription pour le remboursement personnalisé'}
                     </h3>
                     <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {selectedInvoice.registrations?.map((registration) => {
+                      {selectedInvoice.registrations?.filter(reg => reg.cancellation_status === 'none').map((registration) => {
                         const isSelected = formData.registrationIds.includes(registration.id);
                         const isDisabled = formData.type === 'custom' && formData.registrationIds.length > 0 && !isSelected;
-                        const isCancelled = registration.cancellation_status !== 'none';
                         
                         return (
                           <div 
@@ -803,10 +814,10 @@ const AdminCreditNotesPage = () => {
                             className={clsx(
                               "border rounded-lg p-3",
                               isSelected ? "border-primary-500 bg-primary-50" : "border-gray-200",
-                              (isDisabled || isCancelled) ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-gray-300"
+                              isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-gray-300"
                             )}
                             onClick={() => {
-                              if (!isDisabled && !isCancelled) {
+                              if (!isDisabled) {
                                 handleRegistrationToggle(registration.id, registration.amount_paid);
                               }
                             }}
@@ -823,11 +834,6 @@ const AdminCreditNotesPage = () => {
                                 <p className="text-sm text-gray-600">
                                   Centre: {registration.session.center.name}
                                 </p>
-                                {isCancelled && (
-                                  <span className="inline-block mt-1 text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded">
-                                    Déjà annulée
-                                  </span>
-                                )}
                               </div>
                               <div className="text-right">
                                 <p className="font-medium">{formatCurrency(registration.amount_paid)}</p>

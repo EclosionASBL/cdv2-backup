@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
       try {
         const { data: invoice, error: invoiceError } = await supabaseAdmin
           .from('invoices')
-          .select('id, invoice_number')
+          .select('id, invoice_number, registration_ids')
           .eq('invoice_number', cancellationRequest.registration.invoice_id)
           .single();
           
@@ -203,53 +203,127 @@ Deno.serve(async (req) => {
         creditNoteNumber = sequenceData;
         console.log('Generated credit note number:', creditNoteNumber);
         
-        // Create credit note record
-        const { data: creditNote, error: creditNoteError } = await supabaseAdmin
-          .from('credit_notes')
-          .insert({
-            user_id: cancellationRequest.registration.user_id,
-            registration_id: cancellationRequest.registration_id,
-            cancellation_request_id: cancellationRequest.id,
-            credit_note_number: creditNoteNumber,
-            amount: refundAmount,
-            status: 'issued',
-            invoice_id: invoiceId,
-            invoice_number: invoiceNumber
-          })
-          .select('id')
-          .single();
-          
-        if (creditNoteError) {
-          console.error('Error creating credit note record:', creditNoteError);
-          throw new Error('Failed to create credit note record');
+        // Check if there are other registrations in the same invoice
+        let shouldCreateConsolidatedCreditNote = false;
+        let allRegistrationIds: string[] = [];
+        
+        if (invoiceId) {
+          const { data: invoice, error: invoiceError } = await supabaseAdmin
+            .from('invoices')
+            .select('registration_ids')
+            .eq('id', invoiceId)
+            .single();
+            
+          if (!invoiceError && invoice && invoice.registration_ids && invoice.registration_ids.length > 1) {
+            // There are multiple registrations in this invoice
+            allRegistrationIds = invoice.registration_ids;
+            shouldCreateConsolidatedCreditNote = true;
+          }
         }
         
-        creditNoteId = creditNote.id;
-        console.log('Created credit note with ID:', creditNoteId);
-        
+        if (shouldCreateConsolidatedCreditNote) {
+          // Create a consolidated credit note for all registrations in the invoice
+          const { data: creditNote, error: creditNoteError } = await supabaseAdmin
+            .from('credit_notes')
+            .insert({
+              user_id: cancellationRequest.registration.user_id,
+              registration_id: cancellationRequest.registration_id,
+              cancellation_request_id: null, // No specific cancellation request for consolidated note
+              credit_note_number: creditNoteNumber,
+              amount: refundAmount, // Start with the amount for this registration
+              status: 'issued',
+              invoice_id: invoiceId,
+              invoice_number: invoiceNumber
+            })
+            .select('id')
+            .single();
+            
+          if (creditNoteError) {
+            console.error('Error creating credit note record:', creditNoteError);
+            throw new Error('Failed to create credit note record');
+          }
+          
+          creditNoteId = creditNote.id;
+          console.log('Created consolidated credit note with ID:', creditNoteId);
+          
+          // Update the cancellation request with the credit note number
+          const { error: updateRequestError } = await supabaseAdmin
+            .from('cancellation_requests')
+            .update({
+              status: 'approved',
+              admin_notes: adminNotes,
+              refund_type: refundType,
+              credit_note_id: creditNoteNumber
+            })
+            .eq('id', requestId);
+            
+          if (updateRequestError) {
+            console.error('Error updating cancellation request:', updateRequestError);
+            // Continue despite this error
+          }
+        } else {
+          // Create credit note record for just this registration
+          const { data: creditNote, error: creditNoteError } = await supabaseAdmin
+            .from('credit_notes')
+            .insert({
+              user_id: cancellationRequest.registration.user_id,
+              registration_id: cancellationRequest.registration_id,
+              cancellation_request_id: cancellationRequest.id,
+              credit_note_number: creditNoteNumber,
+              amount: refundAmount,
+              status: 'issued',
+              invoice_id: invoiceId,
+              invoice_number: invoiceNumber
+            })
+            .select('id')
+            .single();
+            
+          if (creditNoteError) {
+            console.error('Error creating credit note record:', creditNoteError);
+            throw new Error('Failed to create credit note record');
+          }
+          
+          creditNoteId = creditNote.id;
+          console.log('Created credit note with ID:', creditNoteId);
+          
+          // Update the cancellation request with the credit note ID
+          const { error: updateRequestError } = await supabaseAdmin
+            .from('cancellation_requests')
+            .update({
+              status: 'approved',
+              admin_notes: adminNotes,
+              refund_type: refundType,
+              credit_note_id: creditNoteNumber
+            })
+            .eq('id', requestId);
+            
+          if (updateRequestError) {
+            console.error('Error updating cancellation request:', updateRequestError);
+            // Continue despite this error
+          }
+        }
       } catch (creditNoteError: any) {
         console.error('Error handling credit note creation:', creditNoteError);
         // Continue with the process even if credit note creation fails
       }
-    }
-
-    // Update the cancellation request using admin client
-    const { error: updateRequestError } = await supabaseAdmin
-      .from('cancellation_requests')
-      .update({
-        status: 'approved',
-        admin_notes: adminNotes,
-        refund_type: refundType,
-        credit_note_id: creditNoteNumber // Store the credit note number (not the UUID)
-      })
-      .eq('id', requestId);
-
-    if (updateRequestError) {
-      console.error('Error updating cancellation request:', updateRequestError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to update cancellation request' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+    } else {
+      // Just update the cancellation request status
+      const { error: updateRequestError } = await supabaseAdmin
+        .from('cancellation_requests')
+        .update({
+          status: 'approved',
+          admin_notes: adminNotes,
+          refund_type: refundType
+        })
+        .eq('id', requestId);
+        
+      if (updateRequestError) {
+        console.error('Error updating cancellation request:', updateRequestError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to update cancellation request' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     // Update the registration status using admin client
@@ -281,7 +355,7 @@ Deno.serve(async (req) => {
       const { data: sessionData, error: sessionError } = await supabaseAdmin
         .from('sessions')
         .select('current_registrations')
-        .eq('id', cancellationRequest.registration.activity_id)
+        .eq('id', cancellationRequest.activity_id)
         .single();
       
       if (sessionError) {
@@ -291,7 +365,7 @@ Deno.serve(async (req) => {
         const { error: updateSessionError } = await supabaseAdmin
           .from('sessions')
           .update({ current_registrations: sessionData.current_registrations - 1 })
-          .eq('id', cancellationRequest.registration.activity_id);
+          .eq('id', cancellationRequest.activity_id);
         
         if (updateSessionError) {
           console.error('Error updating session registration count:', updateSessionError);
@@ -300,6 +374,38 @@ Deno.serve(async (req) => {
     } catch (sessionError) {
       console.error('Error updating session registration count:', sessionError);
       // Continue despite this error
+    }
+
+    // Check if all registrations for this invoice are now cancelled
+    if (invoiceId) {
+      try {
+        // Get all registrations for this invoice
+        const { data: allRegistrations, error: regError } = await supabaseAdmin
+          .from('registrations')
+          .select('id, cancellation_status')
+          .in('id', invoiceId);
+          
+        if (!regError && allRegistrations) {
+          // Check if all registrations are cancelled
+          const allCancelled = allRegistrations.every(reg => 
+            reg.cancellation_status.startsWith('cancelled_')
+          );
+          
+          // If all registrations are cancelled, mark the invoice as cancelled
+          if (allCancelled) {
+            const { error: updateInvoiceError } = await supabaseAdmin
+              .from('invoices')
+              .update({ status: 'cancelled' })
+              .eq('id', invoiceId);
+              
+            if (updateInvoiceError) {
+              console.error('Error updating invoice status:', updateInvoiceError);
+            }
+          }
+        }
+      } catch (invoiceError) {
+        console.error('Error checking invoice registrations:', invoiceError);
+      }
     }
 
     // Generate PDF for the credit note if it was created
