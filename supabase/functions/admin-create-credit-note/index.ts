@@ -326,7 +326,7 @@ Deno.serve(async (req) => {
             credit_note_number: creditNoteNumber,
             amount: regCreditAmount,
             status: 'issued',
-            invoice_id: invoiceWithDetails.invoice_number,
+            invoice_id: invoiceWithDetails.id,
             invoice_number: invoiceWithDetails.invoice_number
           })
           .select()

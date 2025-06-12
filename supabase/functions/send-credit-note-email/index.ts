@@ -112,7 +112,11 @@ Deno.serve(async (req) => {
             ),
             start_date,
             end_date
-          )
+          ),
+          cancellation_status
+        ),
+        cancellation_request:cancellation_request_id(
+          refund_type
         )
       `)
       .eq('id', credit_note_id)
@@ -135,6 +139,9 @@ Deno.serve(async (req) => {
     const kid = Array.isArray(registration.kid) ? registration.kid[0] : registration.kid;
     const session = Array.isArray(registration.session) ? registration.session[0] : registration.session;
     const stage = Array.isArray(session.stage) ? session.stage[0] : session.stage;
+    const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
+      ? creditNote.cancellation_request[0] 
+      : creditNote.cancellation_request;
 
     // Format dates
     const startDate = new Date(session.start_date).toLocaleDateString('fr-FR');
@@ -152,6 +159,19 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    // Determine if this is a full cancellation or partial adjustment
+    const isFullCancellation = cancellationRequest.refund_type === 'full' || 
+                              registration.cancellation_status === 'cancelled_full_refund';
+    
+    // Customize email subject and intro based on cancellation type
+    const emailSubject = isFullCancellation 
+      ? `Note de crédit - Annulation d'inscription` 
+      : `Note de crédit - Ajustement de prix`;
+    
+    const emailIntro = isFullCancellation
+      ? `Suite à l'annulation de l'inscription de ${kid.prenom} au stage "${stage.title}" (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.`
+      : `Suite à l'ajustement de prix pour l'inscription de ${kid.prenom} au stage "${stage.title}" (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.`;
 
     // Fetch the PDF content to attach it to the email
     console.log('Fetching PDF content from URL:', creditNote.pdf_url);
@@ -190,8 +210,7 @@ Deno.serve(async (req) => {
             
             <p>Bonjour ${user.prenom},</p>
             
-            <p>Suite à l'annulation de l'inscription de ${kid.prenom} au stage "${stage.title}" 
-            (du ${startDate} au ${endDate}), nous vous informons qu'une note de crédit a été émise.</p>
+            <p>${emailIntro}</p>
             
             <div style="margin-top: 30px; margin-bottom: 30px; padding: 20px; background-color: #f0f4ff; border-radius: 8px; border-left: 4px solid #4f46e5;">
               <h2 style="margin-top: 0; color: #4f46e5;">Détails de la note de crédit</h2>
@@ -230,7 +249,7 @@ Deno.serve(async (req) => {
       const message = {
         from: smtpSender,
         to: recipientEmail,
-        subject: `Note de crédit ${creditNote.credit_note_number} - Éclosion ASBL`,
+        subject: emailSubject,
         attachment: emailAttachments
       };
 
