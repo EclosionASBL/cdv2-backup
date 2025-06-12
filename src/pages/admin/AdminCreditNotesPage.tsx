@@ -94,7 +94,7 @@ const AdminCreditNotesPage = () => {
 
   useEffect(() => {
     fetchInvoices();
-  }, [filter, currentPage]);
+  }, [filter, currentPage, searchTerm]); // Add searchTerm to the dependency array
 
   const fetchInvoices = async () => {
     try {
@@ -221,7 +221,7 @@ const AdminCreditNotesPage = () => {
 
   const handleSearch = () => {
     setCurrentPage(1); // Reset to first page when searching
-    fetchInvoices();
+    // No need to call fetchInvoices() here as it will be triggered by the useEffect
   };
 
   const handleCreateCreditNote = async () => {
@@ -346,19 +346,6 @@ const AdminCreditNotesPage = () => {
     return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(amount);
   };
 
-  // Filter invoices based on search term
-  const filteredInvoices = invoices.filter(invoice => {
-    if (!searchTerm) return true;
-    
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      invoice.invoice_number.toLowerCase().includes(searchLower) ||
-      invoice.user?.email.toLowerCase().includes(searchLower) ||
-      invoice.user?.nom?.toLowerCase().includes(searchLower) ||
-      invoice.user?.prenom?.toLowerCase().includes(searchLower)
-    );
-  });
-
   return (
     <div className="space-y-6">
       <Toaster position="top-right" />
@@ -419,7 +406,7 @@ const AdminCreditNotesPage = () => {
             <p className="text-red-700">{error}</p>
           </div>
         </div>
-      ) : filteredInvoices.length === 0 ? (
+      ) : invoices.length === 0 ? (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
           <p className="text-gray-600 mb-4">
             {searchTerm || filter !== 'all'
@@ -457,7 +444,7 @@ const AdminCreditNotesPage = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredInvoices.map((invoice) => (
+                {invoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
