@@ -131,10 +131,10 @@ const AdminCreditNotesPage = () => {
         query = query.eq('status', 'pending');
       }
       
-      // Apply search filter
+      // Apply search filter - only search on invoice_number directly
       if (searchTerm.trim()) {
         const searchLower = searchTerm.toLowerCase().trim();
-        query = query.or(`invoice_number.ilike.%${searchLower}%,user.email.ilike.%${searchLower}%,user.nom.ilike.%${searchLower}%,user.prenom.ilike.%${searchLower}%`);
+        query = query.ilike('invoice_number', `%${searchLower}%`);
       }
       
       // Apply pagination
@@ -158,8 +158,22 @@ const AdminCreditNotesPage = () => {
         return;
       }
 
-      // Collect all registration IDs from all invoices
-      const allRegistrationIds = invoicesData
+      // If there's a search term, also filter client-side by user details
+      let filteredInvoices = invoicesData;
+      if (searchTerm.trim()) {
+        const searchLower = searchTerm.toLowerCase().trim();
+        filteredInvoices = invoicesData.filter(invoice => {
+          const matchesInvoiceNumber = invoice.invoice_number.toLowerCase().includes(searchLower);
+          const matchesUserEmail = invoice.user?.email?.toLowerCase().includes(searchLower);
+          const matchesUserName = invoice.user?.nom?.toLowerCase().includes(searchLower) || 
+                                  invoice.user?.prenom?.toLowerCase().includes(searchLower);
+          
+          return matchesInvoiceNumber || matchesUserEmail || matchesUserName;
+        });
+      }
+
+      // Collect all registration IDs from filtered invoices
+      const allRegistrationIds = filteredInvoices
         .filter(invoice => invoice.registration_ids && invoice.registration_ids.length > 0)
         .flatMap(invoice => invoice.registration_ids || []);
 
@@ -206,7 +220,7 @@ const AdminCreditNotesPage = () => {
       const { data: creditNotesData, error: creditNotesError } = await supabase
         .from('credit_notes')
         .select('*')
-        .or(`invoice_id.in.(${invoicesData.map(inv => inv.id).join(',')}),invoice_number.in.(${invoicesData.map(inv => `"${inv.invoice_number}"`).join(',')})`);
+        .or(`invoice_id.in.(${filteredInvoices.map(inv => inv.id).join(',')}),invoice_number.in.(${filteredInvoices.map(inv => `"${inv.invoice_number}"`).join(',')})`);
 
       if (creditNotesError) {
         console.error('Error fetching credit notes:', creditNotesError);
@@ -227,7 +241,7 @@ const AdminCreditNotesPage = () => {
       }
 
       // Combine all data
-      const invoicesWithDetails = invoicesData.map(invoice => {
+      const invoicesWithDetails = filteredInvoices.map(invoice => {
         const registrations = invoice.registration_ids 
           ? invoice.registration_ids.map(id => registrationsMap.get(id)).filter(Boolean) as Registration[]
           : [];
