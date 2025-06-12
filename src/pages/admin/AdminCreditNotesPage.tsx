@@ -73,6 +73,7 @@ interface CreditNoteFormData {
 
 const AdminCreditNotesPage = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'paid' | 'pending'>('all');
@@ -94,18 +95,19 @@ const AdminCreditNotesPage = () => {
 
   useEffect(() => {
     fetchInvoices();
-  }, [filter, currentPage, searchTerm]); // Add searchTerm to the dependency array
+  }, [filter]); // Remove searchTerm from dependency array
+
+  useEffect(() => {
+    // Apply client-side filtering when search term or filter changes
+    applyFiltering();
+  }, [searchTerm, allInvoices, filter, currentPage]);
 
   const fetchInvoices = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // Calculate pagination range
-      const from = (currentPage - 1) * itemsPerPage;
-      const to = from + itemsPerPage - 1;
-      
-      // Fetch invoices first (without trying to join credit_notes)
+      // Fetch all invoices without search filtering
       let query = supabase
         .from('invoices')
         .select(`
@@ -115,31 +117,21 @@ const AdminCreditNotesPage = () => {
             nom,
             email
           )
-        `, { count: 'exact' });
+        `);
       
-      // Apply filter
+      // Apply status filter only
       if (filter === 'paid') {
         query = query.eq('status', 'paid');
       } else if (filter === 'pending') {
         query = query.eq('status', 'pending');
       }
       
-      // Apply search if provided
-      if (searchTerm) {
-        query = query.or(`invoice_number.ilike.%${searchTerm}%,user.email.ilike.%${searchTerm}%,user.nom.ilike.%${searchTerm}%,user.prenom.ilike.%${searchTerm}%`);
-      }
+      // Order by created_at
+      query = query.order('created_at', { ascending: false });
       
-      // Apply pagination
-      query = query.range(from, to).order('created_at', { ascending: false });
-      
-      const { data: invoicesData, error: invoicesError, count } = await query;
+      const { data: invoicesData, error: invoicesError } = await query;
       
       if (invoicesError) throw invoicesError;
-      
-      // Calculate total pages
-      if (count !== null) {
-        setTotalPages(Math.ceil(count / itemsPerPage));
-      }
 
       // Now fetch credit notes separately
       const { data: creditNotesData, error: creditNotesError } = await supabase
@@ -210,7 +202,7 @@ const AdminCreditNotesPage = () => {
         })
       );
       
-      setInvoices(invoicesWithDetails);
+      setAllInvoices(invoicesWithDetails);
     } catch (err: any) {
       console.error('Error fetching invoices:', err);
       setError(err.message || 'Une erreur est survenue lors du chargement des factures');
@@ -219,9 +211,34 @@ const AdminCreditNotesPage = () => {
     }
   };
 
+  const applyFiltering = () => {
+    let filtered = [...allInvoices];
+
+    // Apply search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(invoice => 
+        invoice.invoice_number.toLowerCase().includes(searchLower) ||
+        invoice.user?.email?.toLowerCase().includes(searchLower) ||
+        invoice.user?.nom?.toLowerCase().includes(searchLower) ||
+        invoice.user?.prenom?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Calculate pagination
+    const totalItems = filtered.length;
+    setTotalPages(Math.ceil(totalItems / itemsPerPage));
+    
+    // Apply pagination
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedInvoices = filtered.slice(startIndex, endIndex);
+    
+    setInvoices(paginatedInvoices);
+  };
+
   const handleSearch = () => {
     setCurrentPage(1); // Reset to first page when searching
-    // No need to call fetchInvoices() here as it will be triggered by the useEffect
   };
 
   const handleCreateCreditNote = async () => {
