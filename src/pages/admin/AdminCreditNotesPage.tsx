@@ -73,8 +73,7 @@ interface CreditNoteFormData {
 
 const AdminCreditNotesPage = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'paid' | 'pending'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -91,23 +90,29 @@ const AdminCreditNotesPage = () => {
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 10;
+
+  // Debounced search effect
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setCurrentPage(1);
+      fetchInvoices();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, filter]);
 
   useEffect(() => {
     fetchInvoices();
-  }, [filter]); // Remove searchTerm from dependency array
-
-  useEffect(() => {
-    // Apply client-side filtering when search term or filter changes
-    applyFiltering();
-  }, [searchTerm, allInvoices, filter, currentPage]);
+  }, [currentPage]);
 
   const fetchInvoices = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // Fetch all invoices without search filtering
+      // Build the base query with pagination
       let query = supabase
         .from('invoices')
         .select(`
@@ -117,92 +122,126 @@ const AdminCreditNotesPage = () => {
             nom,
             email
           )
-        `);
+        `, { count: 'exact' });
       
-      // Apply status filter only
+      // Apply status filter
       if (filter === 'paid') {
         query = query.eq('status', 'paid');
       } else if (filter === 'pending') {
         query = query.eq('status', 'pending');
       }
       
+      // Apply search filter
+      if (searchTerm.trim()) {
+        const searchLower = searchTerm.toLowerCase().trim();
+        query = query.or(`invoice_number.ilike.%${searchLower}%,user.email.ilike.%${searchLower}%,user.nom.ilike.%${searchLower}%,user.prenom.ilike.%${searchLower}%`);
+      }
+      
+      // Apply pagination
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      query = query.range(from, to);
+      
       // Order by created_at
       query = query.order('created_at', { ascending: false });
       
-      const { data: invoicesData, error: invoicesError } = await query;
+      const { data: invoicesData, error: invoicesError, count } = await query;
       
       if (invoicesError) throw invoicesError;
 
-      // Now fetch credit notes separately
+      // Update pagination info
+      setTotalCount(count || 0);
+      setTotalPages(Math.ceil((count || 0) / itemsPerPage));
+
+      if (!invoicesData || invoicesData.length === 0) {
+        setInvoices([]);
+        return;
+      }
+
+      // Collect all registration IDs from all invoices
+      const allRegistrationIds = invoicesData
+        .filter(invoice => invoice.registration_ids && invoice.registration_ids.length > 0)
+        .flatMap(invoice => invoice.registration_ids || []);
+
+      // Fetch all registrations in one query if there are any
+      let registrationsMap = new Map<string, Registration>();
+      if (allRegistrationIds.length > 0) {
+        const { data: registrationsData, error: registrationsError } = await supabase
+          .from('registrations')
+          .select(`
+            id,
+            kid_id,
+            activity_id,
+            amount_paid,
+            payment_status,
+            price_type,
+            cancellation_status,
+            kid:kids(
+              prenom,
+              nom
+            ),
+            session:activity_id(
+              stage:stage_id(
+                title
+              ),
+              start_date,
+              end_date,
+              center:center_id(
+                name
+              )
+            )
+          `)
+          .in('id', allRegistrationIds);
+
+        if (registrationsError) {
+          console.error('Error fetching registrations:', registrationsError);
+        } else if (registrationsData) {
+          registrationsData.forEach(reg => {
+            registrationsMap.set(reg.id, reg);
+          });
+        }
+      }
+
+      // Fetch all credit notes in one query
       const { data: creditNotesData, error: creditNotesError } = await supabase
         .from('credit_notes')
-        .select('*');
+        .select('*')
+        .or(`invoice_id.in.(${invoicesData.map(inv => inv.id).join(',')}),invoice_number.in.(${invoicesData.map(inv => `"${inv.invoice_number}"`).join(',')})`);
 
       if (creditNotesError) {
         console.error('Error fetching credit notes:', creditNotesError);
       }
 
-      // Now fetch registrations for each invoice that has registration_ids
-      const invoicesWithDetails = await Promise.all(
-        (invoicesData || []).map(async (invoice) => {
-          // Add credit notes to invoice
-          const invoiceCreditNotes = creditNotesData?.filter(
-            note => note.invoice_id === invoice.id || note.invoice_number === invoice.invoice_number
-          ) || [];
-
-          if (invoice.registration_ids && invoice.registration_ids.length > 0) {
-            const { data: registrationsData, error: registrationsError } = await supabase
-              .from('registrations')
-              .select(`
-                id,
-                kid_id,
-                activity_id,
-                amount_paid,
-                payment_status,
-                price_type,
-                cancellation_status,
-                kid:kids(
-                  prenom,
-                  nom
-                ),
-                session:activity_id(
-                  stage:stage_id(
-                    title
-                  ),
-                  start_date,
-                  end_date,
-                  center:center_id(
-                    name
-                  )
-                )
-              `)
-              .in('id', invoice.registration_ids);
-
-            if (registrationsError) {
-              console.error('Error fetching registrations:', registrationsError);
-              return { 
-                ...invoice, 
-                registrations: [],
-                credit_notes: invoiceCreditNotes
-              };
+      // Create credit notes map
+      const creditNotesMap = new Map<string, CreditNote[]>();
+      if (creditNotesData) {
+        creditNotesData.forEach(note => {
+          const key = note.invoice_id || note.invoice_number;
+          if (key) {
+            if (!creditNotesMap.has(key)) {
+              creditNotesMap.set(key, []);
             }
-
-            return { 
-              ...invoice, 
-              registrations: registrationsData || [],
-              credit_notes: invoiceCreditNotes
-            };
+            creditNotesMap.get(key)!.push(note);
           }
-          
-          return { 
-            ...invoice, 
-            registrations: [],
-            credit_notes: invoiceCreditNotes
-          };
-        })
-      );
+        });
+      }
+
+      // Combine all data
+      const invoicesWithDetails = invoicesData.map(invoice => {
+        const registrations = invoice.registration_ids 
+          ? invoice.registration_ids.map(id => registrationsMap.get(id)).filter(Boolean) as Registration[]
+          : [];
+        
+        const creditNotes = creditNotesMap.get(invoice.id) || creditNotesMap.get(invoice.invoice_number) || [];
+
+        return {
+          ...invoice,
+          registrations,
+          credit_notes: creditNotes
+        };
+      });
       
-      setAllInvoices(invoicesWithDetails);
+      setInvoices(invoicesWithDetails);
     } catch (err: any) {
       console.error('Error fetching invoices:', err);
       setError(err.message || 'Une erreur est survenue lors du chargement des factures');
@@ -211,34 +250,9 @@ const AdminCreditNotesPage = () => {
     }
   };
 
-  const applyFiltering = () => {
-    let filtered = [...allInvoices];
-
-    // Apply search filter
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(invoice => 
-        invoice.invoice_number.toLowerCase().includes(searchLower) ||
-        invoice.user?.email?.toLowerCase().includes(searchLower) ||
-        invoice.user?.nom?.toLowerCase().includes(searchLower) ||
-        invoice.user?.prenom?.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Calculate pagination
-    const totalItems = filtered.length;
-    setTotalPages(Math.ceil(totalItems / itemsPerPage));
-    
-    // Apply pagination
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    const paginatedInvoices = filtered.slice(startIndex, endIndex);
-    
-    setInvoices(paginatedInvoices);
-  };
-
   const handleSearch = () => {
-    setCurrentPage(1); // Reset to first page when searching
+    setCurrentPage(1);
+    fetchInvoices();
   };
 
   const handleCreateCreditNote = async () => {
@@ -389,7 +403,7 @@ const AdminCreditNotesPage = () => {
         <div className="relative flex-grow">
           <input
             type="text"
-            placeholder="Rechercher une facture..."
+            placeholder="Rechercher une facture (numéro, nom, email)..."
             className="form-input pl-10 pr-4 py-2 w-full"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -428,7 +442,7 @@ const AdminCreditNotesPage = () => {
           <p className="text-gray-600 mb-4">
             {searchTerm || filter !== 'all'
               ? 'Aucune facture ne correspond à vos critères.'
-              : 'Aucune facture trouvée.'}
+              : 'Aucune facture trouvée. Utilisez la recherche pour trouver des factures.'}
           </p>
         </div>
       ) : (
@@ -582,9 +596,9 @@ const AdminCreditNotesPage = () => {
                   <p className="text-sm text-gray-700">
                     Affichage de <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> à{' '}
                     <span className="font-medium">
-                      {Math.min(currentPage * itemsPerPage, (totalPages * itemsPerPage))}
+                      {Math.min(currentPage * itemsPerPage, totalCount)}
                     </span>{' '}
-                    sur <span className="font-medium">{totalPages * itemsPerPage}</span> résultats
+                    sur <span className="font-medium">{totalCount}</span> résultats
                   </p>
                 </div>
                 <div>
@@ -603,19 +617,32 @@ const AdminCreditNotesPage = () => {
                     </button>
                     
                     {/* Page numbers */}
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                      <button
-                        key={page}
-                        onClick={() => setCurrentPage(page)}
-                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                          currentPage === page
-                            ? 'z-10 bg-primary-50 border-primary-500 text-primary-600'
-                            : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                        }`}
-                      >
-                        {page}
-                      </button>
-                    ))}
+                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                      let page;
+                      if (totalPages <= 5) {
+                        page = i + 1;
+                      } else if (currentPage <= 3) {
+                        page = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        page = totalPages - 4 + i;
+                      } else {
+                        page = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                            currentPage === page
+                              ? 'z-10 bg-primary-50 border-primary-500 text-primary-600'
+                              : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      );
+                    })}
                     
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
