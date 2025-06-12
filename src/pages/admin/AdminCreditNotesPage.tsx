@@ -18,6 +18,7 @@ interface Invoice {
   due_date: string | null;
   paid_at: string | null;
   user_id: string;
+  registration_ids: string[] | null;
   user?: {
     prenom: string;
     nom: string;
@@ -102,7 +103,7 @@ const AdminCreditNotesPage = () => {
       const from = (currentPage - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
       
-      // Build query with pagination
+      // Build query with pagination - fetch invoices first
       let query = supabase
         .from('invoices')
         .select(`
@@ -111,29 +112,6 @@ const AdminCreditNotesPage = () => {
             prenom,
             nom,
             email
-          ),
-          registrations!invoice_number(
-            id,
-            kid_id,
-            activity_id,
-            amount_paid,
-            payment_status,
-            price_type,
-            cancellation_status,
-            kid:kids(
-              prenom,
-              nom
-            ),
-            session:activity_id(
-              stage:stage_id(
-                title
-              ),
-              start_date,
-              end_date,
-              center:center_id(
-                name
-              )
-            )
           ),
           credit_notes(
             id,
@@ -159,16 +137,59 @@ const AdminCreditNotesPage = () => {
       // Apply pagination
       query = query.range(from, to).order('created_at', { ascending: false });
       
-      const { data, error, count } = await query;
+      const { data: invoicesData, error: invoicesError, count } = await query;
       
-      if (error) throw error;
+      if (invoicesError) throw invoicesError;
       
       // Calculate total pages
       if (count !== null) {
         setTotalPages(Math.ceil(count / itemsPerPage));
       }
+
+      // Now fetch registrations for each invoice that has registration_ids
+      const invoicesWithRegistrations = await Promise.all(
+        (invoicesData || []).map(async (invoice) => {
+          if (invoice.registration_ids && invoice.registration_ids.length > 0) {
+            const { data: registrationsData, error: registrationsError } = await supabase
+              .from('registrations')
+              .select(`
+                id,
+                kid_id,
+                activity_id,
+                amount_paid,
+                payment_status,
+                price_type,
+                cancellation_status,
+                kid:kids(
+                  prenom,
+                  nom
+                ),
+                session:activity_id(
+                  stage:stage_id(
+                    title
+                  ),
+                  start_date,
+                  end_date,
+                  center:center_id(
+                    name
+                  )
+                )
+              `)
+              .in('id', invoice.registration_ids);
+
+            if (registrationsError) {
+              console.error('Error fetching registrations:', registrationsError);
+              return { ...invoice, registrations: [] };
+            }
+
+            return { ...invoice, registrations: registrationsData || [] };
+          }
+          
+          return { ...invoice, registrations: [] };
+        })
+      );
       
-      setInvoices(data || []);
+      setInvoices(invoicesWithRegistrations);
     } catch (err: any) {
       console.error('Error fetching invoices:', err);
       setError(err.message || 'Une erreur est survenue lors du chargement des factures');
