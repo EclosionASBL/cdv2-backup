@@ -134,7 +134,7 @@ const AdminCreditNotesPage = () => {
       // Apply search filter
       if (searchTerm.trim()) {
         const searchLower = searchTerm.toLowerCase().trim();
-        query = query.or(`invoice_number.ilike.%${searchLower}%,user.email.ilike.%${searchLower}%,user.nom.ilike.%${searchLower}%,user.prenom.ilike.%${searchLower}%`);
+        query = query.or(`invoice_number.ilike.%${searchLower}%,users.email.ilike.%${searchLower}%,users.nom.ilike.%${searchLower}%,users.prenom.ilike.%${searchLower}%`);
       }
       
       // Apply pagination
