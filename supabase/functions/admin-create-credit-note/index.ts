@@ -240,23 +240,6 @@ Deno.serve(async (req) => {
       refundType = 'partial';
     }
 
-    // Generate a credit note number
-    const currentYear = new Date().getFullYear();
-    const { data: creditNoteNumber, error: sequenceError } = await supabaseAdmin.rpc(
-      'get_next_credit_note_sequence',
-      { p_year: currentYear }
-    );
-    
-    if (sequenceError) {
-      console.error('Error generating credit note number:', sequenceError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to generate credit note number' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    console.log('Generated credit note number:', creditNoteNumber);
-
     // Create cancellation requests and credit notes for each registration
     const results = [];
     
@@ -315,6 +298,20 @@ Deno.serve(async (req) => {
           const proportion = registration.amount_paid / totalRegAmount;
           regCreditAmount = creditNoteAmount * proportion;
         }
+        
+        // Generate a unique credit note number for each registration
+        const currentYear = new Date().getFullYear();
+        const { data: creditNoteNumber, error: sequenceError } = await supabaseAdmin.rpc(
+          'get_next_credit_note_sequence',
+          { p_year: currentYear }
+        );
+        
+        if (sequenceError) {
+          console.error('Error generating credit note number:', sequenceError);
+          continue;
+        }
+        
+        console.log(`Generated credit note number for registration ${regId}:`, creditNoteNumber);
         
         // 3. Create credit note
         const { data: creditNote, error: creditNoteError } = await supabaseAdmin
@@ -438,6 +435,7 @@ Deno.serve(async (req) => {
         results.push({
           registration_id: registration.id,
           credit_note_id: creditNote.id,
+          credit_note_number: creditNoteNumber,
           success: true
         });
         
@@ -484,8 +482,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: 'Credit note(s) created successfully',
-        results,
-        creditNoteNumber
+        results
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
