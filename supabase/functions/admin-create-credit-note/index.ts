@@ -451,15 +451,32 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Check if all registrations were cancelled and update invoice status if needed
-    if (cancelRegistrations && type === 'full') {
-      const { error: updateInvoiceError } = await supabaseAdmin
-        .from('invoices')
-        .update({ status: 'cancelled' })
-        .eq('id', invoiceId);
+    // Check if all registrations for this invoice are now cancelled
+    // Only update invoice status to 'cancelled' if ALL registrations are cancelled
+    if (cancelRegistrations) {
+      // Get all registrations for this invoice
+      const { data: allRegistrations, error: regError } = await supabaseAdmin
+        .from('registrations')
+        .select('id, cancellation_status')
+        .in('id', invoice.registration_ids);
         
-      if (updateInvoiceError) {
-        console.error('Error updating invoice status:', updateInvoiceError);
+      if (!regError && allRegistrations) {
+        // Check if all registrations are cancelled
+        const allCancelled = allRegistrations.every(reg => 
+          reg.cancellation_status.startsWith('cancelled_')
+        );
+        
+        // Only mark invoice as cancelled if all registrations are cancelled
+        if (allCancelled) {
+          const { error: updateInvoiceError } = await supabaseAdmin
+            .from('invoices')
+            .update({ status: 'cancelled' })
+            .eq('id', invoiceId);
+            
+          if (updateInvoiceError) {
+            console.error('Error updating invoice status:', updateInvoiceError);
+          }
+        }
       }
     }
 

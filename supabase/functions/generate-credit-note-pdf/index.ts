@@ -133,7 +133,8 @@ Deno.serve(async (req) => {
             center:center_id(
               name
             )
-          )
+          ),
+          cancellation_status
         ),
         cancellation_request:cancellation_request_id(
           refund_type
@@ -393,7 +394,19 @@ Deno.serve(async (req) => {
     const startDate = new Date(session.start_date).toLocaleDateString('fr-BE');
     const endDate = new Date(session.end_date).toLocaleDateString('fr-BE');
     
-    page.drawText(`Annulation stage: ${stage.title}`, {
+    // Determine if this is a full cancellation or a price adjustment
+    const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
+      ? creditNote.cancellation_request[0] 
+      : creditNote.cancellation_request;
+    
+    const isFullCancellation = cancellationRequest.refund_type === 'full' || 
+                              registration.cancellation_status === 'cancelled_full_refund';
+    
+    const description = isFullCancellation
+      ? `Annulation stage: ${stage.title}`
+      : `Ajustement de prix: ${stage.title}`;
+    
+    page.drawText(description, {
       x: col1,
       y: currentY,
       size: 10,
@@ -407,14 +420,7 @@ Deno.serve(async (req) => {
       font: helveticaFont,
     });
     
-    const cancellationRequest = Array.isArray(creditNote.cancellation_request) 
-      ? creditNote.cancellation_request[0] 
-      : creditNote.cancellation_request;
-    
-    let refundTypeText = 'Remboursement complet';
-    if (cancellationRequest.refund_type === 'partial') {
-      refundTypeText = 'Remboursement partiel';
-    }
+    let refundTypeText = isFullCancellation ? 'Remboursement complet' : 'Remboursement partiel';
     
     page.drawText(refundTypeText, {
       x: col3,
@@ -520,7 +526,13 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight;
-    page.drawText('Cette note de crédit est émise suite à l\'annulation d\'une inscription.', {
+    
+    // Customize the note text based on whether it's a full cancellation or price adjustment
+    const noteText = isFullCancellation
+      ? 'Cette note de crédit est émise suite à l\'annulation d\'une inscription.'
+      : 'Cette note de crédit est émise suite à un ajustement de prix.';
+    
+    page.drawText(noteText, {
       x: margin,
       y: currentY,
       size: 10,
