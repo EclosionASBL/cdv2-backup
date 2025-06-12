@@ -114,41 +114,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get the invoice details
+    // Get the invoice details with a simple query first
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from('invoices')
-      .select(`
-        *,
-        user:user_id(
-          id,
-          email,
-          prenom,
-          nom
-        ),
-        registrations:registration_ids(
-          id,
-          kid_id,
-          activity_id,
-          amount_paid,
-          payment_status,
-          price_type,
-          cancellation_status,
-          kid:kids(
-            prenom,
-            nom
-          ),
-          session:activity_id(
-            stage:stage_id(
-              title
-            ),
-            start_date,
-            end_date,
-            center:center_id(
-              name
-            )
-          )
-        )
-      `)
+      .select('*')
       .eq('id', invoiceId)
       .single();
 
@@ -160,6 +129,85 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get the user details separately
+    const { data: user_data, error: userDataError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, prenom, nom')
+      .eq('id', invoice.user_id)
+      .single();
+
+    if (userDataError) {
+      console.error('Error fetching user data:', userDataError);
+      return new Response(
+        JSON.stringify({ error: 'User not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Get the registrations separately using the registration_ids array
+    let registrations = [];
+    if (invoice.registration_ids && invoice.registration_ids.length > 0) {
+      const { data: registrationsData, error: registrationsError } = await supabaseAdmin
+        .from('registrations')
+        .select(`
+          id,
+          kid_id,
+          activity_id,
+          amount_paid,
+          payment_status,
+          price_type,
+          cancellation_status
+        `)
+        .in('id', invoice.registration_ids);
+
+      if (registrationsError) {
+        console.error('Error fetching registrations:', registrationsError);
+        return new Response(
+          JSON.stringify({ error: 'Error fetching registrations' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      registrations = registrationsData || [];
+
+      // Get additional details for each registration
+      for (let i = 0; i < registrations.length; i++) {
+        const reg = registrations[i];
+        
+        // Get kid details
+        const { data: kidData } = await supabaseAdmin
+          .from('kids')
+          .select('prenom, nom')
+          .eq('id', reg.kid_id)
+          .single();
+
+        // Get session details
+        const { data: sessionData } = await supabaseAdmin
+          .from('sessions')
+          .select(`
+            start_date,
+            end_date,
+            stage:stage_id(title),
+            center:center_id(name)
+          `)
+          .eq('id', reg.activity_id)
+          .single();
+
+        registrations[i] = {
+          ...reg,
+          kid: kidData || { prenom: '', nom: '' },
+          session: sessionData || { start_date: null, end_date: null, stage: { title: '' }, center: { name: '' } }
+        };
+      }
+    }
+
+    // Reconstruct the invoice object with the fetched data
+    const invoiceWithDetails = {
+      ...invoice,
+      user: user_data,
+      registrations: registrations
+    };
+
     // Process based on credit note type
     let creditNoteAmount = 0;
     let registrationsToProcess: string[] = [];
@@ -167,15 +215,15 @@ Deno.serve(async (req) => {
 
     if (type === 'full') {
       // Full refund - use all registrations and full invoice amount
-      creditNoteAmount = invoice.amount;
-      registrationsToProcess = invoice.registrations.map(reg => reg.id);
+      creditNoteAmount = invoiceWithDetails.amount;
+      registrationsToProcess = invoiceWithDetails.registrations.map(reg => reg.id);
       refundType = 'full';
     } else if (type === 'partial') {
       // Partial refund - use selected registrations and sum their amounts
       registrationsToProcess = registrationIds;
       
       // Calculate the sum of selected registration amounts
-      const selectedRegistrations = invoice.registrations.filter(reg => 
+      const selectedRegistrations = invoiceWithDetails.registrations.filter(reg => 
         registrationIds.includes(reg.id)
       );
       
@@ -213,10 +261,10 @@ Deno.serve(async (req) => {
     const results = [];
     
     for (const regId of registrationsToProcess) {
-      const registration = invoice.registrations.find(r => r.id === regId);
+      const registration = invoiceWithDetails.registrations.find(r => r.id === regId);
       
       if (!registration) {
-        console.warn(`Registration ${regId} not found in invoice ${invoice.id}`);
+        console.warn(`Registration ${regId} not found in invoice ${invoiceWithDetails.id}`);
         continue;
       }
       
@@ -231,7 +279,7 @@ Deno.serve(async (req) => {
         const { data: cancellationRequest, error: cancellationError } = await supabaseAdmin
           .from('cancellation_requests')
           .insert({
-            user_id: invoice.user_id,
+            user_id: invoiceWithDetails.user_id,
             registration_id: registration.id,
             kid_id: registration.kid_id,
             activity_id: registration.activity_id,
@@ -260,7 +308,7 @@ Deno.serve(async (req) => {
         } else if (type === 'custom' && registrationsToProcess.length > 1) {
           // For custom amount with multiple registrations, distribute proportionally
           const totalRegAmount = registrationsToProcess.reduce((sum, id) => {
-            const reg = invoice.registrations.find(r => r.id === id);
+            const reg = invoiceWithDetails.registrations.find(r => r.id === id);
             return sum + (reg ? reg.amount_paid : 0);
           }, 0);
           
@@ -272,14 +320,14 @@ Deno.serve(async (req) => {
         const { data: creditNote, error: creditNoteError } = await supabaseAdmin
           .from('credit_notes')
           .insert({
-            user_id: invoice.user_id,
+            user_id: invoiceWithDetails.user_id,
             registration_id: registration.id,
             cancellation_request_id: cancellationRequest.id,
             credit_note_number: creditNoteNumber,
             amount: regCreditAmount,
             status: 'issued',
-            invoice_id: invoice.invoice_number,
-            invoice_number: invoice.invoice_number
+            invoice_id: invoiceWithDetails.invoice_number,
+            invoice_number: invoiceWithDetails.invoice_number
           })
           .select()
           .single();
@@ -370,7 +418,7 @@ Deno.serve(async (req) => {
             },
             body: JSON.stringify({
               credit_note_id: creditNote.id,
-              parent_email: invoice.user.email
+              parent_email: invoiceWithDetails.user.email
             }),
           });
           
