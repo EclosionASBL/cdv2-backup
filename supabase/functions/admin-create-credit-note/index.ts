@@ -216,15 +216,20 @@ Deno.serve(async (req) => {
     if (type === 'full') {
       // Full refund - use all registrations and full invoice amount
       creditNoteAmount = invoiceWithDetails.amount;
-      registrationsToProcess = invoiceWithDetails.registrations.map(reg => reg.id);
+      registrationsToProcess = invoiceWithDetails.registrations
+        .filter(reg => reg.cancellation_status === 'none')
+        .map(reg => reg.id);
       refundType = 'full';
     } else if (type === 'partial') {
       // Partial refund - use selected registrations and sum their amounts
-      registrationsToProcess = registrationIds;
+      registrationsToProcess = registrationIds.filter(id => {
+        const reg = invoiceWithDetails.registrations.find(r => r.id === id);
+        return reg && reg.cancellation_status === 'none';
+      });
       
       // Calculate the sum of selected registration amounts
       const selectedRegistrations = invoiceWithDetails.registrations.filter(reg => 
-        registrationIds.includes(reg.id)
+        registrationsToProcess.includes(reg.id)
       );
       
       creditNoteAmount = selectedRegistrations.reduce(
@@ -236,7 +241,10 @@ Deno.serve(async (req) => {
     } else if (type === 'custom') {
       // Custom amount - use the provided amount and selected registration
       creditNoteAmount = amount;
-      registrationsToProcess = registrationIds;
+      registrationsToProcess = registrationIds.filter(id => {
+        const reg = invoiceWithDetails.registrations.find(r => r.id === id);
+        return reg && reg.cancellation_status === 'none';
+      });
       refundType = 'partial';
     }
 
@@ -258,25 +266,60 @@ Deno.serve(async (req) => {
       }
       
       try {
-        // 1. Create cancellation request
-        const { data: cancellationRequest, error: cancellationError } = await supabaseAdmin
+        // Check if a cancellation request already exists for this registration
+        const { data: existingRequest, error: checkError } = await supabaseAdmin
           .from('cancellation_requests')
-          .insert({
-            user_id: invoiceWithDetails.user_id,
-            registration_id: registration.id,
-            kid_id: registration.kid_id,
-            activity_id: registration.activity_id,
-            status: 'approved',
-            refund_type: refundType,
-            admin_notes: adminNotes,
-            parent_notes: 'Créé par un administrateur'
-          })
-          .select()
-          .single();
+          .select('id')
+          .eq('registration_id', registration.id)
+          .maybeSingle();
           
-        if (cancellationError) {
-          console.error(`Error creating cancellation request for registration ${regId}:`, cancellationError);
-          continue;
+        if (checkError) {
+          console.error(`Error checking existing cancellation request for registration ${regId}:`, checkError);
+        }
+        
+        let cancellationRequestId;
+        
+        if (existingRequest) {
+          console.log(`Cancellation request already exists for registration ${regId}, using existing ID:`, existingRequest.id);
+          cancellationRequestId = existingRequest.id;
+          
+          // Update the existing request
+          const { error: updateError } = await supabaseAdmin
+            .from('cancellation_requests')
+            .update({
+              status: 'approved',
+              refund_type: refundType,
+              admin_notes: adminNotes
+            })
+            .eq('id', cancellationRequestId);
+            
+          if (updateError) {
+            console.error(`Error updating existing cancellation request for registration ${regId}:`, updateError);
+            throw updateError;
+          }
+        } else {
+          // 1. Create cancellation request
+          const { data: cancellationRequest, error: cancellationError } = await supabaseAdmin
+            .from('cancellation_requests')
+            .insert({
+              user_id: invoiceWithDetails.user_id,
+              registration_id: registration.id,
+              kid_id: registration.kid_id,
+              activity_id: registration.activity_id,
+              status: 'approved',
+              refund_type: refundType,
+              admin_notes: adminNotes,
+              parent_notes: 'Créé par un administrateur'
+            })
+            .select()
+            .single();
+            
+          if (cancellationError) {
+            console.error(`Error creating cancellation request for registration ${regId}:`, cancellationError);
+            throw new Error(`Error creating cancellation request for registration ${regId}: ${cancellationError.message}`);
+          }
+          
+          cancellationRequestId = cancellationRequest.id;
         }
         
         // 2. Calculate individual credit note amount for this registration
@@ -308,7 +351,7 @@ Deno.serve(async (req) => {
         
         if (sequenceError) {
           console.error('Error generating credit note number:', sequenceError);
-          continue;
+          throw new Error(`Error generating credit note number: ${sequenceError.message}`);
         }
         
         console.log(`Generated credit note number for registration ${regId}:`, creditNoteNumber);
@@ -319,7 +362,7 @@ Deno.serve(async (req) => {
           .insert({
             user_id: invoiceWithDetails.user_id,
             registration_id: registration.id,
-            cancellation_request_id: cancellationRequest.id,
+            cancellation_request_id: cancellationRequestId,
             credit_note_number: creditNoteNumber,
             amount: regCreditAmount,
             status: 'issued',
@@ -331,7 +374,7 @@ Deno.serve(async (req) => {
           
         if (creditNoteError) {
           console.error(`Error creating credit note for registration ${regId}:`, creditNoteError);
-          continue;
+          throw new Error(`Error creating credit note for registration ${regId}: ${creditNoteError.message}`);
         }
         
         // 4. Update registration status if requested
@@ -350,6 +393,7 @@ Deno.serve(async (req) => {
             
           if (updateRegError) {
             console.error(`Error updating registration ${regId}:`, updateRegError);
+            throw new Error(`Error updating registration ${regId}: ${updateRegError.message}`);
           } else {
             // 5. Update session registration count
             try {
