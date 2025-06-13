@@ -124,35 +124,52 @@ const AdminWaitingListPage = () => {
   const getActivityName = (activityId: string) => {
     const activity = activities.find(a => a.id === activityId);
     if (!activity) return 'Activité inconnue';
-    return `${activity.stage.title} - ${new Date(activity.start_date).toLocaleDateString('fr-FR')} au ${new Date(activity.end_date).toLocaleDateString('fr-FR')}`;
+    return `${activity.stage.title} - ${new Date(activity.start_date).toLocaleDateString('fr-FR')} au ${new Date(activity.end_date).toLocaleDateString('fr-FR')} - Centre: ${activity.center.name}`;
   };
 
   const getStatusBadge = (status: string, expiresAt: string | null) => {
-    if (status === 'waiting') {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-          <Clock className="h-3 w-3 mr-1" />
-          En attente
-        </span>
-      );
-    } else if (status === 'invited') {
-      // Calculate remaining time if expires_at is set
-      let remainingText = '';
-      if (expiresAt) {
-        const expiresAtDate = new Date(expiresAt);
-        const now = new Date();
-        const hoursRemaining = Math.max(0, Math.floor((expiresAtDate.getTime() - now.getTime()) / (1000 * 60 * 60)));
-        remainingText = ` (${hoursRemaining}h restantes)`;
-      }
-      
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-          <Mail className="h-3 w-3 mr-1" />
-          Invité{remainingText}
-        </span>
-      );
+    switch (status) {
+      case 'invited':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <Mail className="h-3 w-3 mr-1" />
+            Invité
+          </span>
+        );
+      case 'waiting':
+      default:
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+            <Clock className="h-3 w-3 mr-1" />
+            En attente
+          </span>
+        );
     }
-    return null;
+  };
+
+  const getWaitingListStatusColor = (status: string) => {
+    switch (status) {
+      case 'invited':
+        return 'bg-blue-100 text-blue-800';
+      case 'waiting':
+      default:
+        return 'bg-amber-100 text-amber-800';
+    }
+  };
+
+  const getWaitingListStatusText = (entry: any) => {
+    if (entry.status === 'invited') {
+      // Calculate remaining time if expires_at is set
+      if (entry.expires_at) {
+        const expiresAt = new Date(entry.expires_at);
+        const now = new Date();
+        const hoursRemaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60)));
+        
+        return `Place disponible - Confirmer dans ${hoursRemaining}h`;
+      }
+      return 'Place disponible';
+    }
+    return 'En attente';
   };
 
   // Unwrap arrays for kid and parent if needed
@@ -162,7 +179,7 @@ const AdminWaitingListPage = () => {
     const session = Array.isArray(entry.session) ? entry.session[0] : entry.session;
     return { ...entry, kid, parent, session };
   };
-
+  
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -194,7 +211,7 @@ const AdminWaitingListPage = () => {
             <option value="">Toutes les activités</option>
             {activities.map((activity) => (
               <option key={activity.id} value={activity.id}>
-                {activity.stage.title} - {new Date(activity.start_date).toLocaleDateString('fr-FR')}
+                {activity.stage.title} - {new Date(activity.start_date).toLocaleDateString('fr-FR')} - {activity.center.name}
               </option>
             ))}
           </select>
