@@ -311,7 +311,7 @@ Deno.serve(async (req) => {
               ` : ''}
             </div>
             
-            <p>Le montant sera remboursé par virement bancaire dans les 30 jours.</p>
+            <p>Le montant de cette note de crédit sera ajouté à votre provision. Vous pourrez demander un remboursement via la section 'Mes factures' de votre espace personnel.</p>
             
             <p>Pour toute question, n'hésitez pas à nous contacter :</p>
             <ul>

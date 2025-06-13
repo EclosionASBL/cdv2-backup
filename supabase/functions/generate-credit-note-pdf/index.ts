@@ -686,7 +686,7 @@ Deno.serve(async (req) => {
     });
     
     currentY -= lineHeight * 2;
-    page.drawText('Le montant sera remboursé par virement bancaire dans les 30 jours.', {
+    page.drawText('Le montant de cette note de crédit sera ajouté à votre provision. Vous pourrez demander un remboursement via la section \'Mes factures\' de votre espace personnel.', {
       x: margin,
       y: currentY,
       size: 10,
