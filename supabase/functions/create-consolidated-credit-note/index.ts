@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Initialize Supabase client
+    // Initialize Supabase client with service role key
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if user is admin
+    // Check if user is admin using admin client
     const { data: userData, error: userError } = await supabaseAdmin
       .from('users')
       .select('role')
@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
     if (sequenceError) {
       console.error('Error generating credit note number:', sequenceError);
       return new Response(
-        JSON.stringify({ error: 'Error generating credit note number' }),
+        JSON.stringify({ error: 'Failed to generate credit note number' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -222,7 +222,7 @@ Deno.serve(async (req) => {
     if (creditNoteError) {
       console.error('Error creating credit note:', creditNoteError);
       return new Response(
-        JSON.stringify({ error: 'Error creating credit note' }),
+        JSON.stringify({ error: 'Failed to create credit note' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -232,29 +232,71 @@ Deno.serve(async (req) => {
     
     for (const registration of validRegistrations) {
       try {
-        // Create a cancellation request for each registration
-        const { data: cancellationRequest, error: cancellationError } = await supabaseAdmin
+        // Check if a cancellation request already exists for this registration
+        const { data: existingRequest, error: checkError } = await supabaseAdmin
           .from('cancellation_requests')
-          .insert({
-            user_id: invoice.user_id,
-            registration_id: registration.id,
-            kid_id: registration.kid_id,
-            activity_id: registration.activity_id,
-            status: 'approved',
-            refund_type: refundType,
-            admin_notes: adminNotes,
-            parent_notes: 'Créé par un administrateur',
-            credit_note_id: creditNote.credit_note_number
-          })
-          .select()
-          .single();
+          .select('id, status')
+          .eq('registration_id', registration.id)
+          .maybeSingle();
           
-        if (cancellationError) {
-          console.error(`Error creating cancellation request for registration ${registration.id}:`, cancellationError);
-          throw new Error(`Error creating cancellation request: ${cancellationError.message}`);
+        if (checkError) {
+          console.error(`Error checking existing cancellation request for registration ${registration.id}:`, checkError);
+          throw new Error(`Error checking existing request: ${checkError.message}`);
         }
 
-        // Update registration status if requested
+        let cancellationRequestId;
+        
+        if (existingRequest) {
+          // Update existing cancellation request
+          console.log(`Updating existing cancellation request ${existingRequest.id} for registration ${registration.id}`);
+          
+          const { error: updateError } = await supabaseAdmin
+            .from('cancellation_requests')
+            .update({
+              status: 'approved',
+              refund_type: refundType,
+              admin_notes: adminNotes,
+              credit_note_id: creditNoteNumber,
+              credit_note_url: null // Will be updated later
+            })
+            .eq('id', existingRequest.id);
+            
+          if (updateError) {
+            console.error(`Error updating cancellation request ${existingRequest.id}:`, updateError);
+            throw new Error(`Error updating cancellation request: ${updateError.message}`);
+          }
+          
+          cancellationRequestId = existingRequest.id;
+        } else {
+          // Create new cancellation request
+          console.log(`Creating new cancellation request for registration ${registration.id}`);
+          
+          const { data: newRequest, error: insertError } = await supabaseAdmin
+            .from('cancellation_requests')
+            .insert({
+              user_id: invoice.user_id,
+              registration_id: registration.id,
+              kid_id: registration.kid_id,
+              activity_id: registration.activity_id,
+              status: 'approved',
+              refund_type: refundType,
+              admin_notes: adminNotes,
+              parent_notes: 'Créé par un administrateur',
+              credit_note_id: creditNoteNumber,
+              credit_note_url: null // Will be updated later
+            })
+            .select()
+            .single();
+            
+          if (insertError) {
+            console.error(`Error creating cancellation request for registration ${registration.id}:`, insertError);
+            throw new Error(`Error creating cancellation request: ${insertError.message}`);
+          }
+          
+          cancellationRequestId = newRequest.id;
+        }
+
+        // If requested, update registration to cancelled
         if (cancelRegistrations) {
           const cancellationStatus = refundType === 'full' 
             ? 'cancelled_full_refund' 
@@ -302,7 +344,7 @@ Deno.serve(async (req) => {
 
         results.push({
           registration_id: registration.id,
-          cancellation_request_id: cancellationRequest.id,
+          cancellation_request_id: cancellationRequestId,
           success: true
         });
       } catch (processError) {
@@ -315,9 +357,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Check if all registrations for this invoice are now cancelled
+    // If all registrations are cancelled and we're cancelling registrations, update invoice status
     if (cancelRegistrations) {
-      // Get all registrations for this invoice
+      // Check if all registrations for this invoice are now cancelled
       const { data: allRegistrations, error: regError } = await supabaseAdmin
         .from('registrations')
         .select('id, cancellation_status')
@@ -367,6 +409,30 @@ Deno.serve(async (req) => {
       
       const pdfData = await pdfResponse.json();
       console.log('Credit note PDF generated:', pdfData);
+      
+      // Update the credit note with the PDF URL
+      if (pdfData.pdf_url) {
+        const { error: updateError } = await supabaseAdmin
+          .from('credit_notes')
+          .update({ pdf_url: pdfData.pdf_url })
+          .eq('id', creditNote.id);
+          
+        if (updateError) {
+          console.error('Error updating credit note with PDF URL:', updateError);
+        } else {
+          console.log('Credit note updated with PDF URL');
+          
+          // Update all cancellation requests with the PDF URL
+          const { error: updateRequestsError } = await supabaseAdmin
+            .from('cancellation_requests')
+            .update({ credit_note_url: pdfData.pdf_url })
+            .eq('credit_note_id', creditNoteNumber);
+            
+          if (updateRequestsError) {
+            console.error('Error updating cancellation requests with credit note URL:', updateRequestsError);
+          }
+        }
+      }
       
       // Send email with credit note
       console.log('Sending credit note email for:', creditNote.id);
