@@ -116,9 +116,9 @@ Deno.serve(async (req) => {
     const { data: result, error: functionError } = await supabaseAdmin.rpc(
       'process_cancellation_approval',
       {
-        request_id: requestId,
-        refund_type: refundType,
-        admin_notes: adminNotes || null
+        p_request_id: requestId,
+        p_refund_type: refundType,
+        p_admin_notes: adminNotes || null
       }
     );
 
