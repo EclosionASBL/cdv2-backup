@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Loader2, AlertCircle, Filter, Search, RefreshCw, 
-  Download, Upload, Mail, Trash2, CheckCircle, X, 
-  Calendar, User, ArrowUpDown, FileText, ExternalLink,
-  Link2, CreditCard, Database
+  Loader2, AlertCircle, Filter, Search, CheckCircle, Clock, 
+  Download, RefreshCw, Upload, Database, Link2, X, 
+  FileText, ExternalLink
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -66,11 +65,9 @@ const AdminBankTransactionsPage = () => {
   const [filter, setFilter] = useState<'all' | 'unmatched' | 'matched' | 'partially_matched' | 'ignored'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isCsvImportModalOpen, setIsCsvImportModalOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedCsvFile, setSelectedCsvFile] = useState<File | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [isTransactionDetailModalOpen, setIsTransactionDetailModalOpen] = useState(false);
   const [suggestedInvoices, setSuggestedInvoices] = useState<Invoice[]>([]);
@@ -80,16 +77,7 @@ const AdminBankTransactionsPage = () => {
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
   const [isConfirmLinkModalOpen, setIsConfirmLinkModalOpen] = useState(false);
   const [selectedInvoiceForLink, setSelectedInvoiceForLink] = useState<Invoice | null>(null);
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [csvMapping, setCsvMapping] = useState<Record<string, string>>({
-    transaction_date: '',
-    amount: '',
-    currency: '',
-    communication: '',
-    account_number: '',
-    account_name: '',
-    bank_reference: ''
-  });
+  const [modalSearchTerm, setModalSearchTerm] = useState('');
 
   useEffect(() => {
     fetchTransactions();
@@ -163,7 +151,8 @@ const AdminBankTransactionsPage = () => {
       const { data, error } = await supabase
         .from('bank_transactions')
         .select('import_batch_id')
-        .not('import_batch_id', 'is', null);
+        .not('import_batch_id', 'is', null)
+        .order('created_at', { ascending: false });
         
       if (error) throw error;
       
@@ -178,58 +167,6 @@ const AdminBankTransactionsPage = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
-    }
-  };
-
-  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      setSelectedCsvFile(file);
-      
-      // Read the first line of the CSV to get headers
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result as string;
-        const firstLine = text.split('\n')[0];
-        const headers = firstLine.split(',').map(header => header.trim());
-        setCsvHeaders(headers);
-        
-        // Try to auto-map columns based on common names
-        const mapping: Record<string, string> = {
-          transaction_date: '',
-          amount: '',
-          currency: '',
-          communication: '',
-          account_number: '',
-          account_name: '',
-          bank_reference: ''
-        };
-        
-        headers.forEach(header => {
-          const headerLower = header.toLowerCase();
-          
-          if (headerLower.includes('date') && headerLower.includes('transaction')) {
-            mapping.transaction_date = header;
-          } else if (headerLower.includes('value_date')) {
-            mapping.transaction_date = header;
-          } else if (headerLower === 'amount' || headerLower === 'montant') {
-            mapping.amount = header;
-          } else if (headerLower === 'currency' || headerLower === 'devise') {
-            mapping.currency = header;
-          } else if (headerLower === 'communication' || headerLower.includes('message')) {
-            mapping.communication = header;
-          } else if (headerLower.includes('account') && headerLower.includes('number') || headerLower === 'issuer_account') {
-            mapping.account_number = header;
-          } else if (headerLower.includes('account') && headerLower.includes('name') || headerLower === 'issuer_name') {
-            mapping.account_name = header;
-          } else if (headerLower.includes('reference') || headerLower === 'bank_reference') {
-            mapping.bank_reference = header;
-          }
-        });
-        
-        setCsvMapping(mapping);
-      };
-      reader.readAsText(file);
     }
   };
 
@@ -298,153 +235,35 @@ const AdminBankTransactionsPage = () => {
     }
   };
 
-  const handleImportCsv = async () => {
-    if (!selectedCsvFile) {
-      toast.error('Veuillez sélectionner un fichier CSV');
-      return;
-    }
-
-    // Validate that all required fields are mapped
-    const requiredFields = ['transaction_date', 'amount'];
-    const missingFields = requiredFields.filter(field => !csvMapping[field]);
-    
-    if (missingFields.length > 0) {
-      toast.error(`Veuillez mapper les champs obligatoires: ${missingFields.join(', ')}`);
-      return;
-    }
-
-    try {
-      setIsImporting(true);
-      
-      // Read the CSV file
-      const reader = new FileReader();
-      
-      reader.onload = async (event) => {
-        try {
-          const text = event.target?.result as string;
-          const lines = text.split('\n');
-          
-          // Skip header row
-          const dataRows = lines.slice(1).filter(line => line.trim());
-          
-          // Batch ID for this import
-          const batchId = `csv-import-${Date.now()}`;
-          
-          // Process each row
-          const transactions = [];
-          
-          for (const line of dataRows) {
-            const values = line.split(',');
-            const rowData: Record<string, string> = {};
-            
-            // Map CSV columns to our data structure
-            csvHeaders.forEach((header, index) => {
-              if (values[index]) {
-                rowData[header] = values[index].trim();
-              }
-            });
-            
-            // Create transaction object
-            const transaction = {
-              transaction_date: rowData[csvMapping.transaction_date] ? new Date(rowData[csvMapping.transaction_date]) : new Date(),
-              amount: parseFloat(rowData[csvMapping.amount] || '0'),
-              currency: rowData[csvMapping.currency] || 'EUR',
-              communication: rowData[csvMapping.communication] || '',
-              account_number: rowData[csvMapping.account_number] || '',
-              account_name: rowData[csvMapping.account_name] || '',
-              bank_reference: rowData[csvMapping.bank_reference] || '',
-              status: 'unmatched',
-              import_batch_id: batchId
-            };
-            
-            // Extract invoice number from communication if possible
-            const invoiceRegex = /CDV[-\s]?(\d{6})[-\s]?(\d{5})/i;
-            const match = transaction.communication.match(invoiceRegex);
-            
-            if (match) {
-              transaction.extracted_invoice_number = `CDV-${match[1]}-${match[2]}`;
-            }
-            
-            transactions.push(transaction);
-          }
-          
-          // Insert transactions into the database
-          let successCount = 0;
-          let errorCount = 0;
-          
-          for (const transaction of transactions) {
-            try {
-              const { error } = await supabase
-                .from('bank_transactions')
-                .insert([transaction]);
-                
-              if (error) {
-                console.error('Error inserting transaction:', error);
-                errorCount++;
-              } else {
-                successCount++;
-              }
-            } catch (err) {
-              console.error('Error processing transaction:', err);
-              errorCount++;
-            }
-          }
-          
-          // Refresh transactions list and batches
-          fetchTransactions();
-          fetchBatches();
-          
-          setImportResult({
-            success: true,
-            message: `Importation réussie: ${successCount} transactions importées, ${errorCount} erreurs`,
-            batch_id: batchId,
-            transactions: successCount
-          });
-          
-          toast.success(`Importation réussie: ${successCount} transactions importées`);
-          
-          if (errorCount > 0) {
-            toast.error(`${errorCount} transactions n'ont pas pu être importées`);
-          }
-          
-          setIsCsvImportModalOpen(false);
-        } catch (error: any) {
-          console.error('Error processing CSV:', error);
-          toast.error(`Erreur: ${error.message}`);
-        } finally {
-          setIsImporting(false);
-        }
-      };
-      
-      reader.onerror = () => {
-        toast.error('Erreur lors de la lecture du fichier');
-        setIsImporting(false);
-      };
-      
-      reader.readAsText(selectedCsvFile);
-      
-    } catch (error: any) {
-      console.error('Error importing CSV:', error);
-      toast.error(`Erreur: ${error.message}`);
-      setIsImporting(false);
-    }
-  };
-
   const handleViewTransactionDetails = async (transaction: Transaction) => {
     setSelectedTransaction(transaction);
     setTransactionNotes(transaction.notes || '');
     setIsTransactionDetailModalOpen(true);
+    setModalSearchTerm('');
     
     // Find suggested invoices
     try {
       setIsLoadingSuggestions(true);
       
-      // Look for invoices with similar communication or amount
-      const { data, error } = await supabase
+      // Look for invoices with similar communication, amount, or extracted invoice number
+      let query = supabase
         .from('invoices')
         .select('*, user:user_id(prenom, nom, email)')
-        .or(`status.eq.pending,amount.eq.${transaction.amount}`)
-        .limit(5);
+        .eq('status', 'pending');
+      
+      // If we have an extracted invoice number, prioritize that match
+      if (transaction.extracted_invoice_number) {
+        query = query.or(`invoice_number.eq.${transaction.extracted_invoice_number},amount.eq.${transaction.amount}`);
+      } 
+      // Otherwise try to match by amount or communication
+      else {
+        query = query.or(`amount.eq.${transaction.amount},communication.ilike.%${transaction.communication}%,invoice_number.ilike.%${transaction.communication}%`);
+      }
+      
+      // Limit results
+      query = query.limit(10);
+      
+      const { data, error } = await query;
         
       if (error) throw error;
       
@@ -665,6 +484,20 @@ const AdminBankTransactionsPage = () => {
       );
     });
 
+  // Filter suggested invoices based on modal search term
+  const filteredSuggestedInvoices = modalSearchTerm 
+    ? suggestedInvoices.filter(invoice => {
+        const searchLower = modalSearchTerm.toLowerCase();
+        return (
+          invoice.invoice_number.toLowerCase().includes(searchLower) ||
+          invoice.user?.email?.toLowerCase().includes(searchLower) ||
+          invoice.user?.prenom?.toLowerCase().includes(searchLower) ||
+          invoice.user?.nom?.toLowerCase().includes(searchLower) ||
+          invoice.amount.toString().includes(searchLower)
+        );
+      })
+    : suggestedInvoices;
+
   return (
     <div className="space-y-6">
       <Toaster position="top-right" />
@@ -682,13 +515,6 @@ const AdminBankTransactionsPage = () => {
           >
             <Download className="h-4 w-4 mr-2" />
             Exporter CSV
-          </button>
-          <button
-            onClick={() => setIsCsvImportModalOpen(true)}
-            className="btn-outline flex items-center"
-          >
-            <FileText className="h-4 w-4 mr-2" />
-            Importer CSV
           </button>
           <button
             onClick={() => setIsImportModalOpen(true)}
@@ -758,7 +584,7 @@ const AdminBankTransactionsPage = () => {
               <option value="">Tous les lots</option>
               {batches.map(batch => (
                 <option key={batch} value={batch}>
-                  {batch.replace('batch-', 'Lot ').replace('csv-import-', 'CSV ')}
+                  {batch.replace('batch-', 'Lot ')}
                 </option>
               ))}
             </select>
@@ -784,22 +610,13 @@ const AdminBankTransactionsPage = () => {
               ? 'Aucune transaction ne correspond à vos critères.'
               : 'Aucune transaction bancaire trouvée.'}
           </p>
-          <div className="flex justify-center space-x-4">
-            <button
-              onClick={() => setIsImportModalOpen(true)}
-              className="btn-primary inline-flex items-center"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Importer un fichier CODA
-            </button>
-            <button
-              onClick={() => setIsCsvImportModalOpen(true)}
-              className="btn-primary inline-flex items-center"
-            >
-              <FileText className="h-4 w-4 mr-2" />
-              Importer un fichier CSV
-            </button>
-          </div>
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="btn-primary inline-flex items-center"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Importer un fichier CODA
+          </button>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
@@ -1002,234 +819,6 @@ const AdminBankTransactionsPage = () => {
         </div>
       </Dialog>
 
-      {/* Import CSV File Modal */}
-      <Dialog
-        open={isCsvImportModalOpen}
-        onClose={() => setIsCsvImportModalOpen(false)}
-        className="fixed inset-0 z-50 overflow-y-auto"
-      >
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
-
-          <div className="relative bg-white rounded-lg shadow-xl max-w-2xl w-full mx-auto p-6">
-            <Dialog.Title className="text-lg font-semibold mb-4">
-              Importer un fichier CSV
-            </Dialog.Title>
-
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Sélectionnez un fichier CSV contenant les transactions bancaires. Assurez-vous que le fichier contient au moins les colonnes pour la date de transaction et le montant.
-              </p>
-
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleCsvFileChange}
-                  className="hidden"
-                  id="csv-file-input"
-                />
-                <label
-                  htmlFor="csv-file-input"
-                  className="cursor-pointer flex flex-col items-center justify-center"
-                >
-                  <FileText className="h-10 w-10 text-gray-400 mb-2" />
-                  <span className="text-sm font-medium text-gray-700">
-                    {selectedCsvFile ? selectedCsvFile.name : "Cliquez pour sélectionner un fichier CSV"}
-                  </span>
-                  <span className="text-xs text-gray-500 mt-1">
-                    {selectedCsvFile ? `${(selectedCsvFile.size / 1024).toFixed(2)} KB` : "Format .CSV"}
-                  </span>
-                </label>
-              </div>
-
-              {csvHeaders.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="text-md font-medium">Mapper les colonnes CSV</h3>
-                  <p className="text-sm text-gray-600">
-                    Associez les colonnes de votre CSV aux champs requis pour l'importation.
-                  </p>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Date de transaction <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={csvMapping.transaction_date}
-                        onChange={(e) => setCsvMapping({...csvMapping, transaction_date: e.target.value})}
-                        className="form-input w-full"
-                      >
-                        <option value="">Sélectionner une colonne</option>
-                        {csvHeaders.map(header => (
-                          <option key={header} value={header}>{header}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Montant <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={csvMapping.amount}
-                        onChange={(e) => setCsvMapping({...csvMapping, amount: e.target.value})}
-                        className="form-input w-full"
-                      >
-                        <option value="">Sélectionner une colonne</option>
-                        {csvHeaders.map(header => (
-                          <option key={header} value={header}>{header}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Devise
-                      </label>
-                      <select
-                        value={csvMapping.currency}
-                        onChange={(e) => setCsvMapping({...csvMapping, currency: e.target.value})}
-                        className="form-input w-full"
-                      >
-                        <option value="">Sélectionner une colonne</option>
-                        {csvHeaders.map(header => (
-                          <option key={header} value={header}>{header}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Communication
-                      </label>
-                      <select
-                        value={csvMapping.communication}
-                        onChange={(e) => setCsvMapping({...csvMapping, communication: e.target.value})}
-                        className="form-input w-full"
-                      >
-                        <option value="">Sélectionner une colonne</option>
-                        {csvHeaders.map(header => (
-                          <option key={header} value={header}>{header}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Numéro de compte
-                      </label>
-                      <select
-                        value={csvMapping.account_number}
-                        onChange={(e) => setCsvMapping({...csvMapping, account_number: e.target.value})}
-                        className="form-input w-full"
-                      >
-                        <option value="">Sélectionner une colonne</option>
-                        {csvHeaders.map(header => (
-                          <option key={header} value={header}>{header}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Nom du compte
-                      </label>
-                      <select
-                        value={csvMapping.account_name}
-                        onChange={(e) => setCsvMapping({...csvMapping, account_name: e.target.value})}
-                        className="form-input w-full"
-                      >
-                        <option value="">Sélectionner une colonne</option>
-                        {csvHeaders.map(header => (
-                          <option key={header} value={header}>{header}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Référence bancaire
-                      </label>
-                      <select
-                        value={csvMapping.bank_reference}
-                        onChange={(e) => setCsvMapping({...csvMapping, bank_reference: e.target.value})}
-                        className="form-input w-full"
-                      >
-                        <option value="">Sélectionner une colonne</option>
-                        {csvHeaders.map(header => (
-                          <option key={header} value={header}>{header}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-yellow-50 p-4 rounded-lg">
-                    <div className="flex">
-                      <AlertCircle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm text-yellow-700 font-medium">Important</p>
-                        <p className="text-sm text-yellow-600">
-                          Les champs marqués d'un astérisque (*) sont obligatoires. Assurez-vous que le format de date est compatible (YYYY-MM-DD ou DD/MM/YYYY).
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {importResult && (
-                <div className={clsx(
-                  "p-4 rounded-lg text-sm",
-                  importResult.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                )}>
-                  <p className="font-medium">{importResult.success ? "Importation réussie" : "Échec de l'importation"}</p>
-                  <p>{importResult.message}</p>
-                  {importResult.success && (
-                    <p className="mt-1">
-                      Batch ID: {importResult.batch_id}<br />
-                      Transactions: {importResult.transactions}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsCsvImportModalOpen(false)}
-                  className="btn-outline"
-                  disabled={isImporting}
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={handleImportCsv}
-                  disabled={!selectedCsvFile || isImporting || csvHeaders.length === 0}
-                  className={clsx(
-                    "btn-primary",
-                    (!selectedCsvFile || isImporting || csvHeaders.length === 0) && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  {isImporting ? (
-                    <span className="flex items-center">
-                      <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                      Importation...
-                    </span>
-                  ) : (
-                    <span className="flex items-center">
-                      <FileText className="h-4 w-4 mr-2" />
-                      Importer CSV
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Dialog>
-
       {/* Transaction Detail Modal */}
       <Dialog
         open={isTransactionDetailModalOpen}
@@ -1349,21 +938,36 @@ const AdminBankTransactionsPage = () => {
                   <div>
                     <h3 className="text-sm font-medium text-gray-700 mb-2">Factures suggérées</h3>
                     
+                    {/* Search input for invoices */}
+                    <div className="relative mb-4">
+                      <input
+                        type="text"
+                        placeholder="Rechercher une facture..."
+                        value={modalSearchTerm}
+                        onChange={(e) => setModalSearchTerm(e.target.value)}
+                        className="form-input pl-10 w-full"
+                      />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
+                    </div>
+                    
                     {isLoadingSuggestions ? (
                       <div className="flex justify-center py-4">
                         <Loader2 className="h-5 w-5 animate-spin text-primary-600" />
                       </div>
-                    ) : suggestedInvoices.length === 0 ? (
+                    ) : filteredSuggestedInvoices.length === 0 ? (
                       <p className="text-sm text-gray-500 py-2">Aucune suggestion disponible</p>
                     ) : (
                       <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {suggestedInvoices.map(invoice => (
+                        {filteredSuggestedInvoices.map(invoice => (
                           <div key={invoice.id} className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
                             <div className="flex justify-between items-start">
                               <div>
                                 <p className="text-sm font-medium">{invoice.invoice_number}</p>
                                 <p className="text-xs text-gray-500">
                                   {invoice.user?.prenom} {invoice.user?.nom}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {invoice.user?.email}
                                 </p>
                               </div>
                               <div className="text-right">
