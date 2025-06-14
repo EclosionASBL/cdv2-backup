@@ -49,6 +49,7 @@ import AdminInclusionRequestsPage from './pages/admin/AdminInclusionRequestsPage
 import AdminCancellationRequestsPage from './pages/admin/AdminCancellationRequestsPage';
 import AdminNewsletterPage from './pages/admin/AdminNewsletterPage';
 import AdminCreditNotesPage from './pages/admin/AdminCreditNotesPage';
+import AdminRegistrationsByGroupPage from './pages/admin/AdminRegistrationsByGroupPage';
 
 // Components
 import LoadingScreen from './components/common/LoadingScreen';
@@ -159,6 +160,7 @@ function App() {
           <Route path="/admin/inclusion-requests" element={<AdminInclusionRequestsPage />} />
           <Route path="/admin/cancellation-requests" element={<AdminCancellationRequestsPage />} />
           <Route path="/admin/newsletter" element={<AdminNewsletterPage />} />
+          <Route path="/admin/registrations-by-group" element={<AdminRegistrationsByGroupPage />} />
         </Route>
       </Route>
 

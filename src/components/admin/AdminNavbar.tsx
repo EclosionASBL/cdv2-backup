@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { LayoutGrid, LogOut, Building2, Calendar, Clock, Users, CreditCard, MessageSquare, Tag, GraduationCap, School, List as ListWait, FileText, Ban, Database, Mail, Receipt } from 'lucide-react';
+import { LayoutGrid, LogOut, Building2, Calendar, Clock, Users, CreditCard, MessageSquare, Tag, GraduationCap, School, List as ListWait, FileText, Ban, Database, Mail, Receipt, UserCheck } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
 const AdminNavbar = () => {
@@ -35,7 +35,8 @@ const AdminNavbar = () => {
         { label: 'Stages', icon: Calendar, href: '/admin/stages' },
         { label: 'Programmation', icon: Clock, href: '/admin/sessions' },
         { label: 'Liste d\'attente', icon: ListWait, href: '/admin/waiting-list' },
-        { label: 'Demandes d\'annulation', icon: Ban, href: '/admin/cancellation-requests' }
+        { label: 'Demandes d\'annulation', icon: Ban, href: '/admin/cancellation-requests' },
+        { label: 'Inscriptions par groupe', icon: UserCheck, href: '/admin/registrations-by-group' }
       ]
     },
     {
