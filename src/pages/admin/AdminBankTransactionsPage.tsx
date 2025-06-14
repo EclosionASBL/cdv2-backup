@@ -78,11 +78,72 @@ const AdminBankTransactionsPage = () => {
   const [isConfirmLinkModalOpen, setIsConfirmLinkModalOpen] = useState(false);
   const [selectedInvoiceForLink, setSelectedInvoiceForLink] = useState<Invoice | null>(null);
   const [modalSearchTerm, setModalSearchTerm] = useState('');
+  const [isSearchingInvoices, setIsSearchingInvoices] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
     fetchBatches();
   }, []);
+
+  // Effect to handle modal search term changes
+  useEffect(() => {
+    if (!modalSearchTerm || !selectedTransaction) return;
+    
+    const searchInvoices = async () => {
+      setIsSearchingInvoices(true);
+      try {
+        // Search for invoices matching the search term
+        const { data, error } = await supabase
+          .from('invoices')
+          .select('*, user:user_id(prenom, nom, email)')
+          .or(`invoice_number.ilike.%${modalSearchTerm}%,communication.ilike.%${modalSearchTerm}%`)
+          .eq('status', 'pending')
+          .limit(10);
+        
+        if (error) throw error;
+        
+        // If no results by invoice number, try searching by user details
+        if (!data || data.length === 0) {
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('id')
+            .or(`prenom.ilike.%${modalSearchTerm}%,nom.ilike.%${modalSearchTerm}%,email.ilike.%${modalSearchTerm}%`)
+            .limit(10);
+          
+          if (userError) throw userError;
+          
+          if (userData && userData.length > 0) {
+            const userIds = userData.map(u => u.id);
+            const { data: invoicesByUser, error: invoiceError } = await supabase
+              .from('invoices')
+              .select('*, user:user_id(prenom, nom, email)')
+              .in('user_id', userIds)
+              .eq('status', 'pending')
+              .limit(10);
+            
+            if (invoiceError) throw invoiceError;
+            
+            setSuggestedInvoices(invoicesByUser || []);
+          } else {
+            setSuggestedInvoices([]);
+          }
+        } else {
+          setSuggestedInvoices(data);
+        }
+      } catch (error) {
+        console.error('Error searching invoices:', error);
+        toast.error('Erreur lors de la recherche de factures');
+      } finally {
+        setIsSearchingInvoices(false);
+      }
+    };
+    
+    const timeoutId = setTimeout(() => {
+      searchInvoices();
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [modalSearchTerm, selectedTransaction]);
 
   const fetchTransactions = async () => {
     try {
@@ -483,20 +544,6 @@ const AdminBankTransactionsPage = () => {
         tx.invoice?.user?.nom?.toLowerCase().includes(searchLower)
       );
     });
-
-  // Filter suggested invoices based on modal search term
-  const filteredSuggestedInvoices = modalSearchTerm 
-    ? suggestedInvoices.filter(invoice => {
-        const searchLower = modalSearchTerm.toLowerCase();
-        return (
-          invoice.invoice_number.toLowerCase().includes(searchLower) ||
-          invoice.user?.email?.toLowerCase().includes(searchLower) ||
-          invoice.user?.prenom?.toLowerCase().includes(searchLower) ||
-          invoice.user?.nom?.toLowerCase().includes(searchLower) ||
-          invoice.amount.toString().includes(searchLower)
-        );
-      })
-    : suggestedInvoices;
 
   return (
     <div className="space-y-6">
@@ -950,15 +997,15 @@ const AdminBankTransactionsPage = () => {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
                     </div>
                     
-                    {isLoadingSuggestions ? (
+                    {isLoadingSuggestions || isSearchingInvoices ? (
                       <div className="flex justify-center py-4">
                         <Loader2 className="h-5 w-5 animate-spin text-primary-600" />
                       </div>
-                    ) : filteredSuggestedInvoices.length === 0 ? (
+                    ) : suggestedInvoices.length === 0 ? (
                       <p className="text-sm text-gray-500 py-2">Aucune suggestion disponible</p>
                     ) : (
                       <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {filteredSuggestedInvoices.map(invoice => (
+                        {suggestedInvoices.map(invoice => (
                           <div key={invoice.id} className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
                             <div className="flex justify-between items-start">
                               <div>
