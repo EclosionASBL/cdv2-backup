@@ -21,6 +21,7 @@ interface Registration {
   kid_id: string;
   activity_id: string;
   payment_status: string;
+  cancellation_status: string;
   kid: {
     prenom: string;
     nom: string;
@@ -149,6 +150,7 @@ const AdminRegistrationsByGroupPage = () => {
             kid_id,
             activity_id,
             payment_status,
+            cancellation_status,
             kid:kids(prenom, nom, date_naissance)
           )
         `)
@@ -182,6 +184,12 @@ const AdminRegistrationsByGroupPage = () => {
       const processedData = data?.map(session => {
         // Filter registrations by search term if provided
         let filteredRegistrations = session.registrations;
+        
+        // Filter out cancelled registrations
+        filteredRegistrations = filteredRegistrations.filter(reg => 
+          reg.payment_status !== 'cancelled' && 
+          !reg.cancellation_status.startsWith('cancelled_')
+        );
         
         if (searchTerm) {
           const searchLower = searchTerm.toLowerCase();
