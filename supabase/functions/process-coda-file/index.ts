@@ -8,7 +8,7 @@ const corsHeaders = {
   'Content-Type': 'application/json'
 };
 
-interface ProcessCsvRequest {
+interface ProcessCodaRequest {
   filePath: string;
   batchId?: string;
 }
@@ -26,7 +26,7 @@ interface Transaction {
 }
 
 /**
- * Parse and validate a date string from CSV file in DDMMYY format
+ * Parse and validate a date string from CODA file in DDMMYY format
  * @param dateStr - Date string in DDMMYY format
  */
 function parseAndValidateDate(dateStr: string): { 
@@ -43,7 +43,7 @@ function parseAndValidateDate(dateStr: string): {
       };
     }
 
-    // Parse in DDMMYY format (standard for Belgian CSV)
+    // Parse in DDMMYY format (standard for Belgian CODA)
     const day = parseInt(dateStr.substring(0, 2));
     const month = parseInt(dateStr.substring(2, 4));
     const year = 2000 + parseInt(dateStr.substring(4, 6)); // Assuming 21st century
@@ -78,8 +78,10 @@ function parseAndValidateDate(dateStr: string): {
 }
 
 /**
- * Parse amount from CSV file
- * @param amountStr - Amount string from CSV file
+ * Parse amount from CODA file
+ * @param amountStr - Amount string from CODA file (positions 32-47)
+ * First character is 0 for credit, 1 for debit
+ * The rest is the amount in cents (2 decimal places)
  */
 function parseAmount(amountStr: string): {
   amount: number;
@@ -87,7 +89,7 @@ function parseAmount(amountStr: string): {
   notes?: string;
 } {
   try {
-    if (!amountStr) {
+    if (!amountStr || amountStr.length < 2) {
       return {
         amount: 0,
         isValid: false,
@@ -95,13 +97,13 @@ function parseAmount(amountStr: string): {
       };
     }
 
-    // Remove any non-numeric characters except decimal point and minus sign
-    const cleanedStr = amountStr.replace(/[^\d.-]/g, '');
+    // First character indicates sign (0=credit, 1=debit)
+    const isNegative = amountStr.charAt(0) === '1';
     
-    // Parse the amount
-    const amount = parseFloat(cleanedStr);
+    // Rest of string is the amount in cents
+    const amountInCents = parseInt(amountStr.substring(1));
     
-    if (isNaN(amount)) {
+    if (isNaN(amountInCents)) {
       return {
         amount: 0,
         isValid: false,
@@ -109,8 +111,13 @@ function parseAmount(amountStr: string): {
       };
     }
     
+    // Convert cents to euros with proper decimal handling
+    // Divide by 100 to convert cents to euros
+    const amount = amountInCents / 100;
+    
+    // Apply sign based on debit/credit indicator
     return {
-      amount: amount,
+      amount: isNegative ? -amount : amount,
       isValid: true
     };
   } catch (error) {
@@ -152,10 +159,10 @@ function extractInvoiceNumber(communication: string): string | null {
 }
 
 /**
- * Parse a CSV file
- * @param fileContent - Binary content of the CSV file
+ * Parse a CODA file according to the Belgian CODA BC2 format specification
+ * @param fileContent - Binary content of the CODA file
  */
-async function parseCsvFile(fileContent: Uint8Array): Promise<Transaction[]> {
+async function parseCodaFile(fileContent: Uint8Array): Promise<Transaction[]> {
   // Convert the binary data to text using ISO-8859-1 encoding (Latin-1)
   const decoder = new TextDecoder('iso-8859-1');
   const text = decoder.decode(fileContent);
@@ -163,54 +170,135 @@ async function parseCsvFile(fileContent: Uint8Array): Promise<Transaction[]> {
   // Split the file into lines
   const lines = text.split('\n');
   
-  // Skip header line if present
-  const startLine = lines[0].includes('Date') || lines[0].includes('Montant') ? 1 : 0;
-  
   const transactions: Transaction[] = [];
+  let currentTransaction: Transaction | null = null;
   
   // Process each line
-  for (let i = startLine; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
+  for (const line of lines) {
+    if (!line.trim()) continue;
     
-    // Split the line by delimiter (comma or semicolon)
-    const delimiter = line.includes(';') ? ';' : ',';
-    const fields = line.split(delimiter);
+    // Identify record type based on first character
+    const recordType = line.charAt(0);
+    const recordSubtype = line.length > 1 ? line.charAt(1) : '';
     
-    // Skip if we don't have enough fields
-    if (fields.length < 5) continue;
+    // Full record identification (e.g., "21" for movement record)
+    const recordId = recordType + recordSubtype;
     
-    // Parse date (assuming it's in the first column)
-    const dateStr = fields[0].trim();
-    const { date, isValid: isDateValid, notes: dateNotes } = parseAndValidateDate(dateStr);
-    
-    // Parse amount (assuming it's in the second column)
-    const amountStr = fields[1].trim();
-    const { amount, isValid: isAmountValid, notes: amountNotes } = parseAmount(amountStr);
-    
-    // Extract communication (assuming it's in the third column)
-    const communication = fields[2].trim();
-    
-    // Extract invoice number from communication
-    const extractedInvoiceNumber = extractInvoiceNumber(communication);
-    
-    // Create transaction object
-    const transaction: Transaction = {
-      transaction_date: date,
-      amount: amount,
-      currency: 'EUR', // Default currency
-      communication: communication,
-      extracted_invoice_number: extractedInvoiceNumber,
-      account_number: fields[3]?.trim() || '',
-      account_name: fields[4]?.trim() || '',
-      bank_reference: fields[5]?.trim() || '',
-      notes: [dateNotes, amountNotes].filter(Boolean).join('. ')
-    };
-    
-    transactions.push(transaction);
+    switch (recordId) {
+      case '0': // Header record
+        // Process header information if needed
+        console.log('Header record found');
+        break;
+        
+      case '21': // Movement record (2.1) - Start of a new transaction
+        // If we have a current transaction, save it before starting a new one
+        if (currentTransaction) {
+          transactions.push(currentTransaction);
+        }
+        
+        // Parse transaction date (positions 48-53, format DDMMYY)
+        const dateStr = line.substring(47, 53);
+        const { date, isValid: isDateValid, notes: dateNotes } = parseAndValidateDate(dateStr);
+        
+        // Parse amount (positions 32-47)
+        const amountStr = line.substring(31, 47);
+        const { amount, isValid: isAmountValid, notes: amountNotes } = parseAmount(amountStr);
+        
+        // Extract communication (positions 64-115)
+        const communication = line.substring(63, 115).trim();
+        
+        // Extract invoice number from communication
+        const extractedInvoiceNumber = extractInvoiceNumber(communication);
+        
+        // Create new transaction
+        currentTransaction = {
+          transaction_date: date,
+          amount: amount,
+          currency: 'EUR', // Default currency
+          communication: communication,
+          extracted_invoice_number: extractedInvoiceNumber,
+          account_number: '',
+          account_name: '',
+          bank_reference: line.substring(10, 31).trim(),
+          notes: [dateNotes, amountNotes].filter(Boolean).join('. ')
+        };
+        break;
+        
+      case '22': // Movement record (2.2) - Additional details
+        if (currentTransaction) {
+          // Extract additional information if needed
+          // This might include BIC codes, etc.
+        }
+        break;
+        
+      case '23': // Movement record (2.3) - Counterparty details
+        if (currentTransaction) {
+          // Extract counterparty account and name
+          currentTransaction.account_number = line.substring(10, 47).trim();
+          currentTransaction.account_name = line.substring(47).trim();
+        }
+        break;
+        
+      case '31': // Information record (3.1) - Additional communication
+        if (currentTransaction) {
+          // Append to communication
+          const additionalInfo = line.substring(10).trim();
+          if (additionalInfo) {
+            currentTransaction.communication += ' ' + additionalInfo;
+            
+            // Try to extract invoice number again if not already found
+            if (!currentTransaction.extracted_invoice_number) {
+              currentTransaction.extracted_invoice_number = extractInvoiceNumber(additionalInfo);
+            }
+          }
+        }
+        break;
+        
+      case '32': // Information record (3.2) - More communication
+        if (currentTransaction) {
+          // Append to communication
+          const additionalInfo = line.substring(10).trim();
+          if (additionalInfo) {
+            currentTransaction.communication += ' ' + additionalInfo;
+            
+            // Try to extract invoice number again if not already found
+            if (!currentTransaction.extracted_invoice_number) {
+              currentTransaction.extracted_invoice_number = extractInvoiceNumber(additionalInfo);
+            }
+          }
+        }
+        break;
+        
+      case '8': // New balance record
+        // Process new balance if needed
+        break;
+        
+      case '9': // Trailer record
+        // End of file - add the last transaction if it exists
+        if (currentTransaction) {
+          transactions.push(currentTransaction);
+          currentTransaction = null;
+        }
+        break;
+        
+      default:
+        // Log unhandled record types for debugging
+        console.log(`Unhandled record type: ${recordId}`);
+        break;
+    }
   }
   
-  return transactions;
+  // Add the last transaction if it exists
+  if (currentTransaction) {
+    transactions.push(currentTransaction);
+  }
+  
+  // Clean up transactions - trim communication and remove empty notes
+  return transactions.map(tx => ({
+    ...tx,
+    communication: tx.communication.trim(),
+    notes: tx.notes && tx.notes.trim() ? tx.notes.trim() : undefined
+  }));
 }
 
 Deno.serve(async (req) => {
@@ -235,7 +323,7 @@ Deno.serve(async (req) => {
     // Parse request body
     let requestData;
     try {
-      requestData = await req.json() as ProcessCsvRequest;
+      requestData = await req.json() as ProcessCodaRequest;
       console.log('Request data:', JSON.stringify(requestData));
     } catch (parseError) {
       console.error('Error parsing request JSON:', parseError);
@@ -294,11 +382,10 @@ Deno.serve(async (req) => {
     }
 
     // Check if this file has already been processed
-    const { data: existingTransactions, error: checkError } = await supabase
-      .from('bank_transactions')
-      .select('id')
-      .eq('raw_coda_file_path', filePath)
-      .limit(1);
+    const { data: isProcessed, error: checkError } = await supabase.rpc(
+      'check_coda_file_import',
+      { file_path: filePath }
+    );
     
     if (checkError) {
       console.error('Error checking if file has been processed:', checkError);
@@ -308,16 +395,16 @@ Deno.serve(async (req) => {
       );
     }
     
-    if (existingTransactions && existingTransactions.length > 0) {
+    if (isProcessed) {
       return new Response(
         JSON.stringify({ 
-          error: 'Ce fichier CSV a déjà été importé. Veuillez utiliser un fichier différent pour éviter les transactions en double.' 
+          error: 'This CODA file has already been imported. Please use a different file to avoid duplicate transactions.' 
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Download the CSV file from storage
+    // Download the CODA file from storage
     console.log(`Downloading file: ${filePath}`);
     const { data: fileData, error: downloadError } = await supabase.storage
       .from('coda-files')
@@ -327,14 +414,14 @@ Deno.serve(async (req) => {
       console.error('Error downloading file:', downloadError);
       
       // Register the failed import
-      await supabase
-        .from('coda_file_imports')
-        .insert({
+      await supabase.rpc(
+        'register_failed_coda_import',
+        { 
           file_path: filePath,
-          imported_by: user.id,
-          status: 'error',
-          error_message: `Failed to download file: ${downloadError.message}`
-        });
+          error_message: `Failed to download file: ${downloadError.message}`,
+          user_id: user.id
+        }
+      );
       
       return new Response(
         JSON.stringify({ error: `Failed to download file: ${downloadError.message}` }),
@@ -342,9 +429,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Parse the CSV file
-    console.log('Parsing CSV file...');
-    const transactions = await parseCsvFile(new Uint8Array(await fileData.arrayBuffer()));
+    // Parse the CODA file
+    console.log('Parsing CODA file...');
+    const transactions = await parseCodaFile(new Uint8Array(await fileData.arrayBuffer()));
     console.log(`Found ${transactions.length} transactions`);
 
     // Generate a batch ID if not provided
@@ -397,15 +484,15 @@ Deno.serve(async (req) => {
     }
 
     // Register the successful import
-    await supabase
-      .from('coda_file_imports')
-      .insert({
+    await supabase.rpc(
+      'register_coda_file_import',
+      { 
         file_path: filePath,
         batch_id: importBatchId,
         transaction_count: insertedTransactions.length,
-        imported_by: user.id,
-        status: 'success'
-      });
+        user_id: user.id
+      }
+    );
 
     return new Response(
       JSON.stringify({
@@ -417,7 +504,7 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error processing CSV file:', error);
+    console.error('Error processing CODA file:', error);
     return new Response(
       JSON.stringify({ error: error.message || 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
