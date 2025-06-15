@@ -228,28 +228,36 @@ async function parseCsvFile(fileContent: string): Promise<Transaction[]> {
   return transactions;
 }
 
-Deno.serve(async (req) => {
-  // Handle CORS preflight request
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }
-
+Deno.serve(async (req: Request) => {
   try {
+    // Handle CORS preflight request
+    if (req.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders,
+      });
+    }
+
+    // Only allow POST method
+    if (req.method !== 'POST') {
+      return new Response(
+        JSON.stringify({ error: 'Method not allowed' }),
+        { status: 405, headers: corsHeaders }
+      );
+    }
+
     // Get the authorization header from the incoming request
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       console.error('Missing Authorization header');
       return new Response(
         JSON.stringify({ error: 'Missing Authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: corsHeaders }
       );
     }
 
     // Parse request body
-    let requestData;
+    let requestData: ProcessCsvRequest;
     try {
       requestData = await req.json() as ProcessCsvRequest;
       console.log('Request data:', JSON.stringify(requestData));
@@ -257,7 +265,7 @@ Deno.serve(async (req) => {
       console.error('Error parsing request JSON:', parseError);
       return new Response(
         JSON.stringify({ error: 'Invalid JSON in request body' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: 400, headers: corsHeaders },
       );
     }
 
@@ -266,7 +274,7 @@ Deno.serve(async (req) => {
     if (!filePath) {
       return new Response(
         JSON.stringify({ error: 'Missing required parameter: filePath' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -277,7 +285,7 @@ Deno.serve(async (req) => {
     if (!supabaseUrl || !supabaseKey) {
       return new Response(
         JSON.stringify({ error: 'Server configuration error' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: corsHeaders }
       );
     }
 
@@ -292,7 +300,7 @@ Deno.serve(async (req) => {
       console.error('Auth error:', authError);
       return new Response(
         JSON.stringify({ error: 'Authorization failed' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: corsHeaders }
       );
     }
 
@@ -307,7 +315,7 @@ Deno.serve(async (req) => {
       console.error('Error fetching user role:', userError);
       return new Response(
         JSON.stringify({ error: 'Error verifying admin status' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: corsHeaders }
       );
     }
 
@@ -315,7 +323,7 @@ Deno.serve(async (req) => {
       console.error('User is not an admin:', user.id);
       return new Response(
         JSON.stringify({ error: 'Unauthorized: Admin access required' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 403, headers: corsHeaders }
       );
     }
 
@@ -333,7 +341,7 @@ Deno.serve(async (req) => {
         JSON.stringify({ 
           error: 'This CSV file has already been imported. Please use a different file to avoid duplicate transactions.' 
         }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -347,7 +355,7 @@ Deno.serve(async (req) => {
       console.error('Error downloading file:', downloadError);
       return new Response(
         JSON.stringify({ error: `Failed to download file: ${downloadError.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: corsHeaders }
       );
     }
 
@@ -411,14 +419,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Register the import in coda_file_imports table (reused for CSV)
+    // Register the import in csv_file_imports table
     try {
-      await supabase.rpc('register_file_import', {
-        file_path: filePath,
-        batch_id: importBatchId,
-        transaction_count: insertedTransactions.length,
-        user_id: user.id
-      });
+      const { error: registerError } = await supabase
+        .from('csv_file_imports')
+        .insert({
+          file_path: filePath,
+          batch_id: importBatchId,
+          transaction_count: insertedTransactions.length,
+          imported_by: user.id,
+          status: 'success'
+        });
+
+      if (registerError) {
+        console.error('Error registering file import:', registerError);
+        // Continue despite this error
+      }
     } catch (registerError) {
       console.error('Error registering file import:', registerError);
       // Continue despite this error
@@ -431,13 +447,13 @@ Deno.serve(async (req) => {
         batch_id: importBatchId,
         transactions: insertedTransactions.length
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 200, headers: corsHeaders }
     );
   } catch (error: any) {
     console.error('Error processing CSV file:', error);
     return new Response(
       JSON.stringify({ error: error.message || 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: corsHeaders }
     );
   }
 });
