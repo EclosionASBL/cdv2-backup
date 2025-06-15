@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { 
   Loader2, AlertCircle, Filter, Search, CheckCircle, Clock, 
   Download, RefreshCw, Upload, Database, Link2, X, 
-  FileText, ExternalLink
+  FileText, ExternalLink, Info
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -58,15 +58,15 @@ interface ImportResult {
   transactions: number;
 }
 
-interface CodaImport {
+interface ImportRecord {
   id: string;
   file_path: string;
   imported_at: string;
   imported_by: string;
-  batch_id: string;
+  batch_id: string | null;
   transaction_count: number;
-  status: 'success' | 'error';
-  error_message?: string;
+  status: string;
+  error_message: string | null;
 }
 
 const AdminBankTransactionsPage = () => {
@@ -76,6 +76,7 @@ const AdminBankTransactionsPage = () => {
   const [filter, setFilter] = useState<'all' | 'unmatched' | 'matched' | 'partially_matched' | 'ignored'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isImportHistoryModalOpen, setIsImportHistoryModalOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -90,14 +91,12 @@ const AdminBankTransactionsPage = () => {
   const [selectedInvoiceForLink, setSelectedInvoiceForLink] = useState<Invoice | null>(null);
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [isSearchingInvoices, setIsSearchingInvoices] = useState(false);
-  const [previousImports, setPreviousImports] = useState<CodaImport[]>([]);
-  const [isImportHistoryModalOpen, setIsImportHistoryModalOpen] = useState(false);
+  const [importHistory, setImportHistory] = useState<ImportRecord[]>([]);
   const [isLoadingImportHistory, setIsLoadingImportHistory] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
     fetchBatches();
-    fetchImportHistory();
   }, []);
 
   // Effect to handle modal search term changes
@@ -243,6 +242,7 @@ const AdminBankTransactionsPage = () => {
   const fetchImportHistory = async () => {
     try {
       setIsLoadingImportHistory(true);
+      
       const { data, error } = await supabase
         .from('coda_file_imports')
         .select('*')
@@ -250,9 +250,10 @@ const AdminBankTransactionsPage = () => {
         
       if (error) throw error;
       
-      setPreviousImports(data || []);
+      setImportHistory(data || []);
     } catch (err) {
       console.error('Error fetching import history:', err);
+      toast.error('Erreur lors du chargement de l\'historique d\'importation');
     } finally {
       setIsLoadingImportHistory(false);
     }
@@ -274,15 +275,7 @@ const AdminBankTransactionsPage = () => {
       setIsImporting(true);
       setImportResult(null);
 
-      // 1. Check file extension
-      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
-      if (fileExtension !== 'bc2') {
-        toast.error('Format de fichier invalide. Seuls les fichiers .BC2 sont acceptés.');
-        setIsImporting(false);
-        return;
-      }
-
-      // 2. Upload the file to Supabase Storage
+      // 1. Upload the file to Supabase Storage
       const fileName = `${Date.now()}_${selectedFile.name}`;
       const filePath = `imports/${fileName}`;
       
@@ -294,7 +287,7 @@ const AdminBankTransactionsPage = () => {
         throw new Error(`Erreur lors du téléversement: ${uploadError.message}`);
       }
       
-      // 3. Call the Edge Function to process the file
+      // 2. Call the Edge Function to process the file
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
@@ -327,7 +320,6 @@ const AdminBankTransactionsPage = () => {
       // Refresh transactions list and batches
       fetchTransactions();
       fetchBatches();
-      fetchImportHistory();
       
       toast.success(`Importation réussie: ${result.message}`);
     } catch (error: any) {
@@ -434,12 +426,12 @@ const AdminBankTransactionsPage = () => {
     try {
       const { error } = await supabase
         .from('bank_transactions')
-        .update({
+        .update({ 
           status,
           notes: transactionNotes
         })
         .eq('id', selectedTransaction.id);
-
+        
       if (error) throw error;
       
       // Refresh transactions
@@ -606,18 +598,25 @@ const AdminBankTransactionsPage = () => {
             Exporter CSV
           </button>
           <button
-            onClick={() => setIsImportModalOpen(true)}
+            onClick={() => {
+              setIsImportModalOpen(true);
+              setSelectedFile(null);
+              setImportResult(null);
+            }}
             className="btn-outline flex items-center"
           >
             <Upload className="h-4 w-4 mr-2" />
-            Importer CODA
+            Importer CSV
           </button>
           <button
-            onClick={() => setIsImportHistoryModalOpen(true)}
+            onClick={() => {
+              setIsImportHistoryModalOpen(true);
+              fetchImportHistory();
+            }}
             className="btn-outline flex items-center"
           >
             <Database className="h-4 w-4 mr-2" />
-            Historique imports
+            Historique d'imports
           </button>
           <button
             onClick={handleRunAutoMatch}
@@ -711,7 +710,7 @@ const AdminBankTransactionsPage = () => {
             className="btn-primary inline-flex items-center"
           >
             <Upload className="h-4 w-4 mr-2" />
-            Importer un fichier CODA
+            Importer un fichier CSV
           </button>
         </div>
       ) : (
@@ -822,7 +821,7 @@ const AdminBankTransactionsPage = () => {
         </div>
       )}
 
-      {/* Import CODA File Modal */}
+      {/* Import CSV File Modal */}
       <Dialog
         open={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
@@ -833,24 +832,24 @@ const AdminBankTransactionsPage = () => {
 
           <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
             <Dialog.Title className="text-lg font-semibold mb-4">
-              Importer un fichier CODA
+              Importer un fichier CSV
             </Dialog.Title>
 
             <div className="space-y-4">
               <p className="text-sm text-gray-600">
-                Sélectionnez un fichier CODA (.BC2) à importer. Le système tentera d'associer automatiquement les transactions aux factures.
+                Sélectionnez un fichier CSV à importer. Le système tentera d'associer automatiquement les transactions aux factures.
               </p>
 
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                 <input
                   type="file"
-                  accept=".BC2,.bc2"
+                  accept=".csv"
                   onChange={handleFileChange}
                   className="hidden"
-                  id="coda-file-input"
+                  id="csv-file-input"
                 />
                 <label
-                  htmlFor="coda-file-input"
+                  htmlFor="csv-file-input"
                   className="cursor-pointer flex flex-col items-center justify-center"
                 >
                   <Upload className="h-10 w-10 text-gray-400 mb-2" />
@@ -858,7 +857,7 @@ const AdminBankTransactionsPage = () => {
                     {selectedFile ? selectedFile.name : "Cliquez pour sélectionner un fichier"}
                   </span>
                   <span className="text-xs text-gray-500 mt-1">
-                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(2)} KB` : "Format .BC2"}
+                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(2)} KB` : "Format .CSV"}
                   </span>
                 </label>
               </div>
@@ -925,23 +924,16 @@ const AdminBankTransactionsPage = () => {
           <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
 
           <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full mx-auto p-6">
-            <div className="flex justify-between items-center mb-4">
-              <Dialog.Title className="text-lg font-semibold">
-                Historique des importations CODA
-              </Dialog.Title>
-              <button
-                onClick={() => setIsImportHistoryModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+            <Dialog.Title className="text-lg font-semibold mb-4 flex items-center">
+              <Database className="h-5 w-5 text-primary-600 mr-2" />
+              Historique des importations
+            </Dialog.Title>
 
             {isLoadingImportHistory ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
               </div>
-            ) : previousImports.length === 0 ? (
+            ) : importHistory.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-600">Aucun historique d'importation trouvé.</p>
               </div>
@@ -957,7 +949,7 @@ const AdminBankTransactionsPage = () => {
                         Fichier
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Lot
+                        Batch ID
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Transactions
@@ -968,29 +960,36 @@ const AdminBankTransactionsPage = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {previousImports.map((importItem) => (
-                      <tr key={importItem.id} className="hover:bg-gray-50">
+                    {importHistory.map((record) => (
+                      <tr key={record.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(importItem.imported_at).toLocaleString('fr-FR')}
+                          {new Date(record.imported_at).toLocaleString('fr-FR')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {importItem.file_path.split('/').pop()}
+                          {record.file_path.split('/').pop()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {importItem.batch_id?.replace('batch-', 'Lot ') || '-'}
+                          {record.batch_id || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {importItem.transaction_count}
+                          {record.transaction_count}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={clsx(
                             "px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full",
-                            importItem.status === 'success' ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                            record.status === 'success' ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
                           )}>
-                            {importItem.status === 'success' ? 'Succès' : 'Erreur'}
+                            {record.status === 'success' ? (
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                            ) : (
+                              <AlertCircle className="h-4 w-4 mr-1" />
+                            )}
+                            {record.status === 'success' ? 'Succès' : 'Erreur'}
                           </span>
-                          {importItem.status === 'error' && importItem.error_message && (
-                            <p className="text-xs text-red-600 mt-1">{importItem.error_message}</p>
+                          {record.status !== 'success' && record.error_message && (
+                            <div className="mt-1 text-xs text-red-600">
+                              {record.error_message}
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -1002,6 +1001,7 @@ const AdminBankTransactionsPage = () => {
 
             <div className="flex justify-end mt-6">
               <button
+                type="button"
                 onClick={() => setIsImportHistoryModalOpen(false)}
                 className="btn-primary"
               >
