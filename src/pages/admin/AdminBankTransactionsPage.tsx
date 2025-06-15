@@ -2,9 +2,20 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Loader2, AlertCircle, Filter, Search, CheckCircle, Clock, 
-  Download, RefreshCw, Upload, Database, Link2, X, 
-  FileText, ExternalLink
+  Loader2, 
+  AlertCircle, 
+  Filter, 
+  Search, 
+  RefreshCw, 
+  Download, 
+  Upload, 
+  Database, 
+  Link2, 
+  X, 
+  FileText, 
+  ExternalLink,
+  CreditCard,
+  Receipt
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -49,7 +60,7 @@ interface Invoice {
   amount: number;
   status: string;
   user_id: string;
-  user: {
+  user?: {
     prenom: string;
     nom: string;
     email: string;
@@ -84,6 +95,8 @@ const AdminBankTransactionsPage = () => {
   const [selectedInvoiceForLink, setSelectedInvoiceForLink] = useState<Invoice | null>(null);
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [isSearchingInvoices, setIsSearchingInvoices] = useState(false);
+  const [linkedTransactions, setLinkedTransactions] = useState<Transaction[]>([]);
+  const [isLoadingLinkedTransactions, setIsLoadingLinkedTransactions] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
@@ -230,6 +243,27 @@ const AdminBankTransactionsPage = () => {
     }
   };
 
+  const fetchLinkedTransactions = async (invoiceId: string) => {
+    if (!invoiceId) return;
+    
+    setIsLoadingLinkedTransactions(true);
+    try {
+      const { data, error } = await supabase
+        .from('bank_transactions')
+        .select('*')
+        .eq('invoice_id', invoiceId)
+        .order('transaction_date', { ascending: false });
+        
+      if (error) throw error;
+      
+      setLinkedTransactions(data || []);
+    } catch (err) {
+      console.error('Error fetching linked transactions:', err);
+    } finally {
+      setIsLoadingLinkedTransactions(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
@@ -310,6 +344,12 @@ const AdminBankTransactionsPage = () => {
     setTransactionNotes(transaction.notes || '');
     setIsTransactionDetailModalOpen(true);
     setModalSearchTerm('');
+    setLinkedTransactions([]);
+    
+    // If transaction is linked to an invoice, fetch all transactions linked to that invoice
+    if (transaction.invoice_id) {
+      fetchLinkedTransactions(transaction.invoice_id);
+    }
     
     // Find suggested invoices
     try {
@@ -354,7 +394,8 @@ const AdminBankTransactionsPage = () => {
     if (!selectedTransaction || !selectedInvoiceForLink) return;
     
     try {
-      // First update the transaction to link it to the invoice
+      // Update the transaction to link it to the invoice
+      // The database trigger will handle the rest (updating invoice status, etc.)
       const { error: updateError } = await supabase
         .from('bank_transactions')
         .update({ 
@@ -365,25 +406,6 @@ const AdminBankTransactionsPage = () => {
         .eq('id', selectedTransaction.id);
 
       if (updateError) throw updateError;
-      
-      // Then update the invoice status to paid
-      const { error: invoiceError } = await supabase
-        .from('invoices')
-        .update({ 
-          status: 'paid',
-          paid_at: new Date().toISOString()
-        })
-        .eq('id', selectedInvoiceForLink.id);
-
-      if (invoiceError) throw invoiceError;
-      
-      // Finally update all registrations linked to this invoice
-      const { error: registrationError } = await supabase
-        .from('registrations')
-        .update({ payment_status: 'paid' })
-        .eq('invoice_id', selectedInvoiceForLink.invoice_number);
-
-      if (registrationError) throw registrationError;
       
       toast.success('Transaction liée à la facture avec succès');
       setIsConfirmLinkModalOpen(false);
@@ -562,6 +584,11 @@ const AdminBankTransactionsPage = () => {
         tx.invoice?.user?.nom?.toLowerCase().includes(searchLower)
       );
     });
+
+  // Calculate total for linked transactions
+  const calculateLinkedTransactionsTotal = () => {
+    return linkedTransactions.reduce((sum, tx) => sum + tx.amount, 0);
+  };
 
   return (
     <div className="space-y-6">
@@ -1032,6 +1059,63 @@ const AdminBankTransactionsPage = () => {
                         </p>
                       </div>
                     </div>
+                    
+                    {/* Show all linked transactions for this invoice */}
+                    {linkedTransactions.length > 0 && (
+                      <div className="mt-4">
+                        <h4 className="text-xs font-medium text-gray-500 mb-2">Paiements associés à cette facture</h4>
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {linkedTransactions.map(tx => (
+                            <div key={tx.id} className={clsx(
+                              "p-2 rounded-lg text-sm",
+                              tx.id === selectedTransaction.id ? "bg-primary-50 border border-primary-200" : "bg-gray-50"
+                            )}>
+                              <div className="flex justify-between">
+                                <div>
+                                  <p className="font-medium">{new Date(tx.transaction_date).toLocaleDateString('fr-FR')}</p>
+                                  <p className="text-xs text-gray-500">{tx.movement_number}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className={clsx(
+                                    "font-medium",
+                                    tx.amount >= 0 ? "text-green-600" : "text-red-600"
+                                  )}>
+                                    {tx.amount} {tx.currency}
+                                  </p>
+                                  <p className="text-xs">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                                      getTransactionStatusColor(tx.status)
+                                    }`}>
+                                      {getTransactionStatusText(tx.status)}
+                                    </span>
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Payment summary */}
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="text-sm font-medium text-blue-800">Total des paiements</p>
+                              <p className="text-xs text-blue-600">{linkedTransactions.length} transaction(s)</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-medium text-blue-800">{calculateLinkedTransactionsTotal()} €</p>
+                              {selectedTransaction.invoice && (
+                                <p className="text-xs text-blue-600">
+                                  {calculateLinkedTransactionsTotal() >= selectedTransaction.invoice.amount 
+                                    ? `Payé (${(calculateLinkedTransactionsTotal() - selectedTransaction.invoice.amount).toFixed(2)} € en trop)` 
+                                    : `Reste ${(selectedTransaction.invoice.amount - calculateLinkedTransactionsTotal()).toFixed(2)} €`}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1198,14 +1282,48 @@ const AdminBankTransactionsPage = () => {
                   </div>
                 </div>
                 
-                <div className="bg-yellow-50 p-4 rounded-lg">
+                <div className={clsx(
+                  "p-4 rounded-lg",
+                  selectedTransaction.amount < selectedInvoiceForLink.amount 
+                    ? "bg-yellow-50" 
+                    : selectedTransaction.amount > selectedInvoiceForLink.amount 
+                    ? "bg-blue-50" 
+                    : "bg-green-50"
+                )}>
                   <div className="flex items-start">
-                    <AlertCircle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
+                    <AlertCircle className={clsx(
+                      "h-5 w-5 mr-2 flex-shrink-0 mt-0.5",
+                      selectedTransaction.amount < selectedInvoiceForLink.amount 
+                        ? "text-yellow-500" 
+                        : selectedTransaction.amount > selectedInvoiceForLink.amount 
+                        ? "text-blue-500" 
+                        : "text-green-500"
+                    )} />
                     <div>
-                      <p className="text-sm text-yellow-700 font-medium">Important</p>
-                      <p className="text-sm text-yellow-600">
-                        Cette action marquera la facture comme payée et mettra à jour toutes les inscriptions associées.
-                      </p>
+                      {selectedTransaction.amount < selectedInvoiceForLink.amount ? (
+                        <>
+                          <p className="text-sm text-yellow-700 font-medium">Paiement partiel</p>
+                          <p className="text-sm text-yellow-600">
+                            Cette transaction ne couvre que {((selectedTransaction.amount / selectedInvoiceForLink.amount) * 100).toFixed(0)}% du montant de la facture.
+                            La facture restera en attente jusqu'à ce que le montant total soit payé.
+                          </p>
+                        </>
+                      ) : selectedTransaction.amount > selectedInvoiceForLink.amount ? (
+                        <>
+                          <p className="text-sm text-blue-700 font-medium">Surpaiement détecté</p>
+                          <p className="text-sm text-blue-600">
+                            Cette transaction dépasse le montant de la facture de {(selectedTransaction.amount - selectedInvoiceForLink.amount).toFixed(2)} €.
+                            Une note de crédit sera automatiquement créée pour ce montant.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm text-green-700 font-medium">Montant exact</p>
+                          <p className="text-sm text-green-600">
+                            Le montant de la transaction correspond exactement au montant de la facture.
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

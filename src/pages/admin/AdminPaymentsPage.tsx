@@ -14,10 +14,13 @@ import {
   ArrowLeft, 
   ArrowRight,
   CreditCard,
-  Receipt
+  Receipt,
+  ExternalLink
 } from 'lucide-react';
+import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
 import clsx from 'clsx';
+import InvoicePaymentSummary from './components/InvoicePaymentSummary';
 
 interface Invoice {
   id: string;
@@ -83,6 +86,10 @@ const AdminPaymentsPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 10;
+
+  // Payment summary modal
+  const [isPaymentSummaryModalOpen, setIsPaymentSummaryModalOpen] = useState(false);
+  const [selectedInvoiceNumber, setSelectedInvoiceNumber] = useState<string | null>(null);
 
   // Debounced search effect
   useEffect(() => {
@@ -315,6 +322,31 @@ const AdminPaymentsPage = () => {
     }
   };
 
+  const handleReconcileAllInvoices = async () => {
+    try {
+      setIsLoading(true);
+      
+      const { data, error } = await supabase.rpc('reconcile_all_pending_invoices');
+      
+      if (error) throw error;
+      
+      toast.success(`Réconciliation terminée: ${data.success_count} factures traitées, ${data.error_count} erreurs`);
+      
+      // Refresh the invoices list
+      fetchInvoices();
+    } catch (err: any) {
+      console.error('Error reconciling invoices:', err);
+      toast.error(`Erreur: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleViewPaymentSummary = (invoiceNumber: string) => {
+    setSelectedInvoiceNumber(invoiceNumber);
+    setIsPaymentSummaryModalOpen(true);
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('fr-FR');
@@ -341,6 +373,14 @@ const AdminPaymentsPage = () => {
           >
             <Download className="h-4 w-4 mr-2" />
             Exporter CSV
+          </button>
+          <button
+            onClick={handleReconcileAllInvoices}
+            disabled={isLoading}
+            className="btn-outline flex items-center"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Réconcilier tout
           </button>
           <button
             onClick={fetchInvoices}
@@ -520,6 +560,14 @@ const AdminPaymentsPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end space-x-2">
+                          <button
+                            onClick={() => handleViewPaymentSummary(invoice.invoice_number)}
+                            className="text-primary-600 hover:text-primary-900"
+                            title="Voir les paiements"
+                          >
+                            <CreditCard className="h-5 w-5" />
+                          </button>
+                          
                           {invoice.pdf_url && (
                             <a 
                               href={invoice.pdf_url}
@@ -531,6 +579,7 @@ const AdminPaymentsPage = () => {
                               <FileText className="h-5 w-5" />
                             </a>
                           )}
+                          
                           <Link
                             to={`/admin/credit-notes?invoice=${invoice.id}`}
                             className="text-blue-600 hover:text-blue-900"
@@ -538,18 +587,6 @@ const AdminPaymentsPage = () => {
                           >
                             <Receipt className="h-5 w-5" />
                           </Link>
-                          {invoice.status === 'pending' && (
-                            <button
-                              onClick={() => {
-                                // Implement mark as paid functionality
-                                toast.success('Fonctionnalité à implémenter');
-                              }}
-                              className="text-green-600 hover:text-green-900"
-                              title="Marquer comme payée"
-                            >
-                              <CreditCard className="h-5 w-5" />
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -658,6 +695,47 @@ const AdminPaymentsPage = () => {
           )}
         </div>
       )}
+
+      {/* Payment Summary Modal */}
+      <Dialog
+        open={isPaymentSummaryModalOpen}
+        onClose={() => setIsPaymentSummaryModalOpen(false)}
+        className="fixed inset-0 z-50 overflow-y-auto"
+      >
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
+
+          <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full mx-auto p-6">
+            <div className="flex justify-between items-center mb-6">
+              <Dialog.Title className="text-lg font-semibold">
+                Détails des paiements
+              </Dialog.Title>
+              <button
+                onClick={() => setIsPaymentSummaryModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {selectedInvoiceNumber && (
+              <InvoicePaymentSummary 
+                invoiceNumber={selectedInvoiceNumber}
+                onClose={() => setIsPaymentSummaryModalOpen(false)}
+              />
+            )}
+
+            <div className="flex justify-end mt-6 pt-4 border-t">
+              <button
+                onClick={() => setIsPaymentSummaryModalOpen(false)}
+                className="btn-outline"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 };
