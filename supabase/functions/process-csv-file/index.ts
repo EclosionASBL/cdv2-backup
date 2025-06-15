@@ -61,21 +61,30 @@ function extractInvoiceNumber(communication: string): string | null {
  * @returns Extracted communication
  */
 function extractCommunication(libelles: string, details: string): string {
+  // Initialize with empty string
   let communication = '';
   
-  // Try to extract from Libellés first
+  // First try to extract from Libellés
   if (libelles) {
-    const commMatch = libelles.match(/Communication\s*:\s*([^\n]+)/i);
-    if (commMatch && commMatch[1]) {
-      communication = commMatch[1].trim();
+    // Look for "Communication:" followed by text up to "Info personnelle:" or end of string
+    const commRegex = /Communication\s*:\s*([^:]+?)(?:\s*Info personnelle:|$)/i;
+    const match = libelles.match(commRegex);
+    
+    if (match && match[1]) {
+      communication = match[1].trim();
+      return communication;
     }
   }
   
   // If not found in Libellés, try Détails du mouvement
-  if (!communication && details) {
-    const commMatch = details.match(/Communication\s*:?\s*([^\n]+)/i);
-    if (commMatch && commMatch[1]) {
-      communication = commMatch[1].trim();
+  if (details) {
+    // Look for "Communication :" followed by text up to "Info personnelle:" or end of string
+    const commRegex = /Communication\s*:?\s*([^:]+?)(?:\s*Info personnelle:|$)/i;
+    const match = details.match(commRegex);
+    
+    if (match && match[1]) {
+      communication = match[1].trim();
+      return communication;
     }
   }
   
