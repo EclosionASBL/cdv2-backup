@@ -20,9 +20,11 @@ interface Transaction {
   extracted_invoice_number: string | null;
   account_number: string;
   account_name: string;
+  movement_number: string;
+  counterparty_address: string;
   status: 'unmatched' | 'matched' | 'partially_matched' | 'overpaid' | 'ignored';
   invoice_id: string | null;
-  raw_coda_file_path: string | null;
+  raw_file_path: string | null;
   import_batch_id: string | null;
   notes?: string;
   invoice?: {
@@ -246,7 +248,7 @@ const AdminBankTransactionsPage = () => {
       const filePath = `imports/${fileName}`;
       
       const { error: uploadError } = await supabase.storage
-        .from('coda-files')
+        .from('csv-files')
         .upload(filePath, selectedFile);
         
       if (uploadError) {
@@ -261,7 +263,7 @@ const AdminBankTransactionsPage = () => {
       }
       
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-coda-file`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-csv-file`,
         {
           method: 'POST',
           headers: {
@@ -447,8 +449,10 @@ const AdminBankTransactionsPage = () => {
         'Devise',
         'Communication',
         'Numéro de facture',
+        'Numéro de mouvement',
         'Compte',
         'Nom du compte',
+        'Adresse contrepartie',
         'Référence',
         'Statut',
         'Facture liée',
@@ -461,8 +465,10 @@ const AdminBankTransactionsPage = () => {
         tx.currency,
         `"${tx.communication?.replace(/"/g, '""') || ''}"`,
         `"${tx.extracted_invoice_number?.replace(/"/g, '""') || ''}"`,
+        `"${tx.movement_number?.replace(/"/g, '""') || ''}"`,
         `"${tx.account_number?.replace(/"/g, '""') || ''}"`,
         `"${tx.account_name?.replace(/"/g, '""') || ''}"`,
+        `"${tx.counterparty_address?.replace(/"/g, '""') || ''}"`,
         `"${tx.bank_reference?.replace(/"/g, '""') || ''}"`,
         tx.status,
         tx.invoice?.invoice_number || '',
@@ -537,6 +543,8 @@ const AdminBankTransactionsPage = () => {
         tx.account_name?.toLowerCase().includes(searchLower) ||
         tx.account_number?.toLowerCase().includes(searchLower) ||
         tx.bank_reference?.toLowerCase().includes(searchLower) ||
+        tx.movement_number?.toLowerCase().includes(searchLower) ||
+        tx.counterparty_address?.toLowerCase().includes(searchLower) ||
         tx.amount.toString().includes(searchLower) ||
         tx.invoice?.invoice_number?.toLowerCase().includes(searchLower) ||
         tx.invoice?.user?.email?.toLowerCase().includes(searchLower) ||
@@ -568,7 +576,7 @@ const AdminBankTransactionsPage = () => {
             className="btn-outline flex items-center"
           >
             <Upload className="h-4 w-4 mr-2" />
-            Importer CODA
+            Importer CSV
           </button>
           <button
             onClick={handleRunAutoMatch}
@@ -662,7 +670,7 @@ const AdminBankTransactionsPage = () => {
             className="btn-primary inline-flex items-center"
           >
             <Upload className="h-4 w-4 mr-2" />
-            Importer un fichier CODA
+            Importer un fichier CSV
           </button>
         </div>
       ) : (
@@ -682,6 +690,9 @@ const AdminBankTransactionsPage = () => {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Communication
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Numéro de mouvement
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Compte
@@ -727,6 +738,11 @@ const AdminBankTransactionsPage = () => {
                         {transaction.communication || <span className="text-gray-400 italic">Aucune communication</span>}
                       </div>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {transaction.movement_number || <span className="text-gray-400 italic">-</span>}
+                      </div>
+                    </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
                         {transaction.account_name || <span className="text-gray-400 italic">Inconnu</span>}
@@ -734,6 +750,11 @@ const AdminBankTransactionsPage = () => {
                       <div className="text-xs text-gray-500">
                         {transaction.account_number}
                       </div>
+                      {transaction.counterparty_address && (
+                        <div className="text-xs text-gray-500 truncate max-w-xs" title={transaction.counterparty_address}>
+                          {transaction.counterparty_address}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -773,7 +794,7 @@ const AdminBankTransactionsPage = () => {
         </div>
       )}
 
-      {/* Import CODA File Modal */}
+      {/* Import CSV File Modal */}
       <Dialog
         open={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
@@ -784,24 +805,24 @@ const AdminBankTransactionsPage = () => {
 
           <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
             <Dialog.Title className="text-lg font-semibold mb-4">
-              Importer un fichier CODA
+              Importer un fichier CSV
             </Dialog.Title>
 
             <div className="space-y-4">
               <p className="text-sm text-gray-600">
-                Sélectionnez un fichier CODA (.BC2) à importer. Le système tentera d'associer automatiquement les transactions aux factures.
+                Sélectionnez un fichier CSV à importer. Le système tentera d'associer automatiquement les transactions aux factures.
               </p>
 
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                 <input
                   type="file"
-                  accept=".BC2,.bc2"
+                  accept=".csv"
                   onChange={handleFileChange}
                   className="hidden"
-                  id="coda-file-input"
+                  id="csv-file-input"
                 />
                 <label
-                  htmlFor="coda-file-input"
+                  htmlFor="csv-file-input"
                   className="cursor-pointer flex flex-col items-center justify-center"
                 >
                   <Upload className="h-10 w-10 text-gray-400 mb-2" />
@@ -809,7 +830,7 @@ const AdminBankTransactionsPage = () => {
                     {selectedFile ? selectedFile.name : "Cliquez pour sélectionner un fichier"}
                   </span>
                   <span className="text-xs text-gray-500 mt-1">
-                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(2)} KB` : "Format .BC2"}
+                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(2)} KB` : "Format .CSV"}
                   </span>
                 </label>
               </div>
@@ -912,12 +933,24 @@ const AdminBankTransactionsPage = () => {
                     </p>
                   </div>
                   <div>
+                    <h3 className="text-sm font-medium text-gray-500">Numéro de mouvement</h3>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {selectedTransaction.movement_number || <span className="italic text-gray-400">Non renseigné</span>}
+                    </p>
+                  </div>
+                  <div>
                     <h3 className="text-sm font-medium text-gray-500">Compte</h3>
                     <p className="mt-1 text-sm text-gray-900">
                       {selectedTransaction.account_name || <span className="italic text-gray-400">Nom inconnu</span>}
                     </p>
                     <p className="text-xs text-gray-500">
                       {selectedTransaction.account_number || <span className="italic">Numéro inconnu</span>}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Adresse contrepartie</h3>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {selectedTransaction.counterparty_address || <span className="italic text-gray-400">Non renseignée</span>}
                     </p>
                   </div>
                   <div>
