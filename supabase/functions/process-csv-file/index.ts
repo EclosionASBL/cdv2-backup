@@ -23,6 +23,7 @@ interface Transaction {
   bank_reference: string;
   movement_number: string;
   counterparty_address: string;
+  counterparty_name: string | null;
   notes?: string;
 }
 
@@ -89,6 +90,43 @@ function extractCommunication(libelles: string, details: string): string {
   }
   
   return communication;
+}
+
+/**
+ * Extract counterparty name from text fields
+ * @param libelles - Libellés field from CSV
+ * @param details - Détails du mouvement field from CSV
+ * @returns Extracted counterparty name or null if not found
+ */
+function extractCounterpartyName(libelles: string, details: string): string | null {
+  // Initialize with null
+  let counterpartyName = null;
+  
+  // First try to extract from Libellés
+  if (libelles) {
+    // Look for "De:" followed by text up to another field or end of string
+    const nameRegex = /De\s*:\s*([^:]+?)(?:\s*Communication:|$)/i;
+    const match = libelles.match(nameRegex);
+    
+    if (match && match[1]) {
+      counterpartyName = match[1].trim();
+      return counterpartyName;
+    }
+  }
+  
+  // If not found in Libellés, try Détails du mouvement
+  if (details) {
+    // Look for "De:" followed by text up to another field or end of string
+    const nameRegex = /De\s*:\s*([^:]+?)(?:\s*Communication:|$)/i;
+    const match = details.match(nameRegex);
+    
+    if (match && match[1]) {
+      counterpartyName = match[1].trim();
+      return counterpartyName;
+    }
+  }
+  
+  return counterpartyName;
 }
 
 /**
@@ -162,6 +200,9 @@ async function parseCsvFile(fileContent: string): Promise<Transaction[]> {
       // Extract invoice number from communication
       const extractedInvoiceNumber = extractInvoiceNumber(communication);
       
+      // Extract counterparty name
+      const counterpartyName = extractCounterpartyName(libelles, details);
+      
       // Create transaction object
       const transaction: Transaction = {
         transaction_date: transactionDate,
@@ -173,7 +214,8 @@ async function parseCsvFile(fileContent: string): Promise<Transaction[]> {
         account_name: accountName,
         bank_reference: message,
         movement_number: movementNumber,
-        counterparty_address: counterpartyAddress
+        counterparty_address: counterpartyAddress,
+        counterparty_name: counterpartyName
       };
       
       transactions.push(transaction);
@@ -347,6 +389,7 @@ Deno.serve(async (req) => {
             bank_reference: transaction.bank_reference,
             movement_number: transaction.movement_number,
             counterparty_address: transaction.counterparty_address,
+            counterparty_name: transaction.counterparty_name,
             status: 'unmatched',
             raw_file_path: filePath,
             import_batch_id: importBatchId,

@@ -22,6 +22,7 @@ interface Transaction {
   account_name: string;
   movement_number: string;
   counterparty_address: string;
+  counterparty_name: string | null;
   status: 'unmatched' | 'matched' | 'partially_matched' | 'overpaid' | 'ignored';
   invoice_id: string | null;
   raw_file_path: string | null;
@@ -289,7 +290,11 @@ const AdminBankTransactionsPage = () => {
       fetchTransactions();
       fetchBatches();
       
-      toast.success(`Importation réussie: ${result.message}`);
+      // Close the modal automatically after successful import
+      setIsImportModalOpen(false);
+      
+      // Show success toast with transaction count
+      toast.success(`Importation réussie: ${result.transactions} transactions importées`);
     } catch (error: any) {
       console.error('Error importing file:', error);
       toast.error(`Erreur: ${error.message}`);
@@ -452,6 +457,7 @@ const AdminBankTransactionsPage = () => {
         'Numéro de mouvement',
         'Compte',
         'Nom du compte',
+        'Contrepartie',
         'Adresse contrepartie',
         'Référence',
         'Statut',
@@ -468,6 +474,7 @@ const AdminBankTransactionsPage = () => {
         `"${tx.movement_number?.replace(/"/g, '""') || ''}"`,
         `"${tx.account_number?.replace(/"/g, '""') || ''}"`,
         `"${tx.account_name?.replace(/"/g, '""') || ''}"`,
+        `"${tx.counterparty_name?.replace(/"/g, '""') || ''}"`,
         `"${tx.counterparty_address?.replace(/"/g, '""') || ''}"`,
         `"${tx.bank_reference?.replace(/"/g, '""') || ''}"`,
         tx.status,
@@ -541,6 +548,7 @@ const AdminBankTransactionsPage = () => {
         tx.communication?.toLowerCase().includes(searchLower) ||
         tx.extracted_invoice_number?.toLowerCase().includes(searchLower) ||
         tx.account_name?.toLowerCase().includes(searchLower) ||
+        tx.counterparty_name?.toLowerCase().includes(searchLower) ||
         tx.account_number?.toLowerCase().includes(searchLower) ||
         tx.bank_reference?.toLowerCase().includes(searchLower) ||
         tx.movement_number?.toLowerCase().includes(searchLower) ||
@@ -745,7 +753,10 @@ const AdminBankTransactionsPage = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
-                        {transaction.counterparty_address || <span className="text-gray-400 italic">Inconnu</span>}
+                        {transaction.counterparty_name || <span className="text-gray-400 italic">Inconnu</span>}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {transaction.counterparty_address || <span className="text-gray-400 italic">-</span>}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -943,6 +954,12 @@ const AdminBankTransactionsPage = () => {
                     <h3 className="text-sm font-medium text-gray-500">Compte contrepartie</h3>
                     <p className="mt-1 text-sm text-gray-900">
                       {selectedTransaction.counterparty_address || <span className="italic text-gray-400">Non renseignée</span>}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Contrepartie</h3>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {selectedTransaction.counterparty_name || <span className="italic text-gray-400">Non renseigné</span>}
                     </p>
                   </div>
                   <div>
