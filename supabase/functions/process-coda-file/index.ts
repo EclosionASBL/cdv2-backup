@@ -355,47 +355,16 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user information from auth header
-    const { data: { user }, error: userError } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
-
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Authentication error' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check if user is admin
-    const { data: userData, error: roleError } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (roleError || userData?.role !== 'admin') {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized: Admin access required' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Check if this file has already been processed
-    const { data: isProcessed, error: checkError } = await supabase.rpc(
-      'check_coda_file_import',
-      { file_path: filePath }
-    );
-    
+    const { data: existingImports, error: checkError } = await supabase
+      .from('bank_transactions')
+      .select('id')
+      .eq('raw_coda_file_path', filePath)
+      .limit(1);
+      
     if (checkError) {
-      console.error('Error checking if file has been processed:', checkError);
-      return new Response(
-        JSON.stringify({ error: `Error checking file status: ${checkError.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    if (isProcessed) {
+      console.error('Error checking for existing imports:', checkError);
+    } else if (existingImports && existingImports.length > 0) {
       return new Response(
         JSON.stringify({ 
           error: 'This CODA file has already been imported. Please use a different file to avoid duplicate transactions.' 
@@ -412,17 +381,6 @@ Deno.serve(async (req) => {
 
     if (downloadError) {
       console.error('Error downloading file:', downloadError);
-      
-      // Register the failed import
-      await supabase.rpc(
-        'register_failed_coda_import',
-        { 
-          file_path: filePath,
-          error_message: `Failed to download file: ${downloadError.message}`,
-          user_id: user.id
-        }
-      );
-      
       return new Response(
         JSON.stringify({ error: `Failed to download file: ${downloadError.message}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -482,17 +440,6 @@ Deno.serve(async (req) => {
         errorCount++;
       }
     }
-
-    // Register the successful import
-    await supabase.rpc(
-      'register_coda_file_import',
-      { 
-        file_path: filePath,
-        batch_id: importBatchId,
-        transaction_count: insertedTransactions.length,
-        user_id: user.id
-      }
-    );
 
     return new Response(
       JSON.stringify({
