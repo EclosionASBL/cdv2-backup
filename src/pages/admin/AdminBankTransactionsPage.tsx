@@ -58,6 +58,17 @@ interface ImportResult {
   transactions: number;
 }
 
+interface CodaImport {
+  id: string;
+  file_path: string;
+  imported_at: string;
+  imported_by: string;
+  batch_id: string;
+  transaction_count: number;
+  status: 'success' | 'error';
+  error_message?: string;
+}
+
 const AdminBankTransactionsPage = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,10 +90,14 @@ const AdminBankTransactionsPage = () => {
   const [selectedInvoiceForLink, setSelectedInvoiceForLink] = useState<Invoice | null>(null);
   const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [isSearchingInvoices, setIsSearchingInvoices] = useState(false);
+  const [previousImports, setPreviousImports] = useState<CodaImport[]>([]);
+  const [isImportHistoryModalOpen, setIsImportHistoryModalOpen] = useState(false);
+  const [isLoadingImportHistory, setIsLoadingImportHistory] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
     fetchBatches();
+    fetchImportHistory();
   }, []);
 
   // Effect to handle modal search term changes
@@ -225,6 +240,24 @@ const AdminBankTransactionsPage = () => {
     }
   };
 
+  const fetchImportHistory = async () => {
+    try {
+      setIsLoadingImportHistory(true);
+      const { data, error } = await supabase
+        .from('coda_file_imports')
+        .select('*')
+        .order('imported_at', { ascending: false });
+        
+      if (error) throw error;
+      
+      setPreviousImports(data || []);
+    } catch (err) {
+      console.error('Error fetching import history:', err);
+    } finally {
+      setIsLoadingImportHistory(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
@@ -241,7 +274,15 @@ const AdminBankTransactionsPage = () => {
       setIsImporting(true);
       setImportResult(null);
 
-      // 1. Upload the file to Supabase Storage
+      // 1. Check file extension
+      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
+      if (fileExtension !== 'bc2') {
+        toast.error('Format de fichier invalide. Seuls les fichiers .BC2 sont acceptés.');
+        setIsImporting(false);
+        return;
+      }
+
+      // 2. Upload the file to Supabase Storage
       const fileName = `${Date.now()}_${selectedFile.name}`;
       const filePath = `imports/${fileName}`;
       
@@ -253,7 +294,7 @@ const AdminBankTransactionsPage = () => {
         throw new Error(`Erreur lors du téléversement: ${uploadError.message}`);
       }
       
-      // 2. Call the Edge Function to process the file
+      // 3. Call the Edge Function to process the file
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
@@ -286,6 +327,7 @@ const AdminBankTransactionsPage = () => {
       // Refresh transactions list and batches
       fetchTransactions();
       fetchBatches();
+      fetchImportHistory();
       
       toast.success(`Importation réussie: ${result.message}`);
     } catch (error: any) {
@@ -392,12 +434,12 @@ const AdminBankTransactionsPage = () => {
     try {
       const { error } = await supabase
         .from('bank_transactions')
-        .update({ 
+        .update({
           status,
           notes: transactionNotes
         })
         .eq('id', selectedTransaction.id);
-        
+
       if (error) throw error;
       
       // Refresh transactions
@@ -551,8 +593,8 @@ const AdminBankTransactionsPage = () => {
       
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Transactions bancaires</h1>
-          <p className="text-gray-600">Gérez les transactions bancaires et associez-les aux factures</p>
+          <h1 className="text-2xl font-bold text-gray-900">Transactions bancaires</h1>
+          <p className="text-gray-600 mt-1">Gérez les transactions bancaires et associez-les aux factures</p>
         </div>
         
         <div className="flex space-x-3">
@@ -569,6 +611,13 @@ const AdminBankTransactionsPage = () => {
           >
             <Upload className="h-4 w-4 mr-2" />
             Importer CODA
+          </button>
+          <button
+            onClick={() => setIsImportHistoryModalOpen(true)}
+            className="btn-outline flex items-center"
+          >
+            <Database className="h-4 w-4 mr-2" />
+            Historique imports
           </button>
           <button
             onClick={handleRunAutoMatch}
@@ -866,6 +915,103 @@ const AdminBankTransactionsPage = () => {
         </div>
       </Dialog>
 
+      {/* Import History Modal */}
+      <Dialog
+        open={isImportHistoryModalOpen}
+        onClose={() => setIsImportHistoryModalOpen(false)}
+        className="fixed inset-0 z-50 overflow-y-auto"
+      >
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
+
+          <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full mx-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <Dialog.Title className="text-lg font-semibold">
+                Historique des importations CODA
+              </Dialog.Title>
+              <button
+                onClick={() => setIsImportHistoryModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {isLoadingImportHistory ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+              </div>
+            ) : previousImports.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">Aucun historique d'importation trouvé.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date d'import
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Fichier
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Lot
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Transactions
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Statut
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {previousImports.map((importItem) => (
+                      <tr key={importItem.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(importItem.imported_at).toLocaleString('fr-FR')}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {importItem.file_path.split('/').pop()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {importItem.batch_id?.replace('batch-', 'Lot ') || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {importItem.transaction_count}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={clsx(
+                            "px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full",
+                            importItem.status === 'success' ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                          )}>
+                            {importItem.status === 'success' ? 'Succès' : 'Erreur'}
+                          </span>
+                          {importItem.status === 'error' && importItem.error_message && (
+                            <p className="text-xs text-red-600 mt-1">{importItem.error_message}</p>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setIsImportHistoryModalOpen(false)}
+                className="btn-primary"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      </Dialog>
+
       {/* Transaction Detail Modal */}
       <Dialog
         open={isTransactionDetailModalOpen}
@@ -934,6 +1080,14 @@ const AdminBankTransactionsPage = () => {
                       }`}>
                         {getTransactionStatusText(selectedTransaction.status)}
                       </span>
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Fichier source</h3>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {selectedTransaction.raw_coda_file_path ? 
+                        selectedTransaction.raw_coda_file_path.split('/').pop() : 
+                        <span className="italic text-gray-400">Inconnu</span>}
                     </p>
                   </div>
                 </div>
