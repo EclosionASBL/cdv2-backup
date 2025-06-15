@@ -25,6 +25,8 @@ interface Transaction {
   counterparty_address: string;
   counterparty_name: string | null;
   notes?: string;
+  raw_libelles: string;
+  raw_details_mouvement: string;
 }
 
 /**
@@ -215,7 +217,9 @@ async function parseCsvFile(fileContent: string): Promise<Transaction[]> {
         bank_reference: message,
         movement_number: movementNumber,
         counterparty_address: counterpartyAddress,
-        counterparty_name: counterpartyName
+        counterparty_name: counterpartyName,
+        raw_libelles: libelles,
+        raw_details_mouvement: details
       };
       
       transactions.push(transaction);
@@ -401,7 +405,9 @@ Deno.serve(async (req: Request) => {
             status: 'unmatched',
             raw_file_path: filePath,
             import_batch_id: importBatchId,
-            notes: transaction.notes
+            notes: transaction.notes,
+            raw_libelles: transaction.raw_libelles,
+            raw_details_mouvement: transaction.raw_details_mouvement
           })
           .select()
           .single();

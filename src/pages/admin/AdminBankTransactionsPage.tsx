@@ -28,6 +28,8 @@ interface Transaction {
   raw_file_path: string | null;
   import_batch_id: string | null;
   notes?: string;
+  raw_libelles?: string;
+  raw_details_mouvement?: string;
   invoice?: {
     invoice_number: string;
     amount: number;
@@ -979,6 +981,31 @@ const AdminBankTransactionsPage = () => {
                     </p>
                   </div>
                 </div>
+
+                {/* Raw transaction data */}
+                {(selectedTransaction.raw_libelles || selectedTransaction.raw_details_mouvement) && (
+                  <div className="mt-6 border-t pt-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">Données brutes de la transaction</h3>
+                    
+                    {selectedTransaction.raw_libelles && (
+                      <div className="mb-4">
+                        <h4 className="text-xs font-medium text-gray-500">Libellés</h4>
+                        <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm text-gray-800 whitespace-pre-wrap">
+                          {selectedTransaction.raw_libelles}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {selectedTransaction.raw_details_mouvement && (
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-500">Détails du mouvement</h4>
+                        <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm text-gray-800 whitespace-pre-wrap">
+                          {selectedTransaction.raw_details_mouvement}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Linked invoice */}
                 {selectedTransaction.invoice && (
