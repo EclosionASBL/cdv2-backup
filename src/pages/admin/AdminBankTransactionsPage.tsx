@@ -695,7 +695,7 @@ const AdminBankTransactionsPage = () => {
                     Numéro de mouvement
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Compte
+                    Compte contrepartie
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Statut
@@ -745,16 +745,8 @@ const AdminBankTransactionsPage = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
-                        {transaction.account_name || <span className="text-gray-400 italic">Inconnu</span>}
+                        {transaction.counterparty_address || <span className="text-gray-400 italic">Inconnu</span>}
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {transaction.account_number}
-                      </div>
-                      {transaction.counterparty_address && (
-                        <div className="text-xs text-gray-500 truncate max-w-xs" title={transaction.counterparty_address}>
-                          {transaction.counterparty_address}
-                        </div>
-                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -939,7 +931,7 @@ const AdminBankTransactionsPage = () => {
                     </p>
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500">Compte</h3>
+                    <h3 className="text-sm font-medium text-gray-500">Notre compte</h3>
                     <p className="mt-1 text-sm text-gray-900">
                       {selectedTransaction.account_name || <span className="italic text-gray-400">Nom inconnu</span>}
                     </p>
@@ -948,7 +940,7 @@ const AdminBankTransactionsPage = () => {
                     </p>
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500">Adresse contrepartie</h3>
+                    <h3 className="text-sm font-medium text-gray-500">Compte contrepartie</h3>
                     <p className="mt-1 text-sm text-gray-900">
                       {selectedTransaction.counterparty_address || <span className="italic text-gray-400">Non renseignée</span>}
                     </p>
