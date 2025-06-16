@@ -404,12 +404,12 @@ const AdminBankTransactionsPage = () => {
         duration: 30000 // 30 seconds timeout
       });
       
-      // Update the transaction to link it to the invoice
+      // Update the transaction to link it to the invoice using the UUID id
       // The database trigger will handle the rest (updating invoice status, etc.)
       const { error: updateError } = await supabase
         .from('bank_transactions')
         .update({ 
-          invoice_id: selectedInvoiceForLink.id,
+          invoice_id: selectedInvoiceForLink.id, // Use the UUID id, not the invoice_number
           status: 'matched',
           notes: transactionNotes || 'Manually linked by admin'
         })
