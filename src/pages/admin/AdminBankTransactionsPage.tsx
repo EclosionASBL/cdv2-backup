@@ -15,7 +15,8 @@ import {
   FileText, 
   ExternalLink,
   CreditCard,
-  Receipt
+  Receipt,
+  Clock
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -97,6 +98,8 @@ const AdminBankTransactionsPage = () => {
   const [isSearchingInvoices, setIsSearchingInvoices] = useState(false);
   const [linkedTransactions, setLinkedTransactions] = useState<Transaction[]>([]);
   const [isLoadingLinkedTransactions, setIsLoadingLinkedTransactions] = useState(false);
+  const [isLinkingTransaction, setIsLinkingTransaction] = useState(false);
+  const [isRunningAutoMatch, setIsRunningAutoMatch] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
@@ -394,6 +397,13 @@ const AdminBankTransactionsPage = () => {
     if (!selectedTransaction || !selectedInvoiceForLink) return;
     
     try {
+      setIsLinkingTransaction(true);
+      
+      // Show a loading toast for long operations
+      const loadingToast = toast.loading('Association de la transaction en cours...', {
+        duration: 30000 // 30 seconds timeout
+      });
+      
       // Update the transaction to link it to the invoice
       // The database trigger will handle the rest (updating invoice status, etc.)
       const { error: updateError } = await supabase
@@ -405,7 +415,15 @@ const AdminBankTransactionsPage = () => {
         })
         .eq('id', selectedTransaction.id);
 
-      if (updateError) throw updateError;
+      toast.dismiss(loadingToast);
+
+      if (updateError) {
+        // Handle specific database timeout errors
+        if (updateError.code === '57014') {
+          throw new Error('L\'opération a pris trop de temps. Cela peut être dû à une charge importante sur la base de données. Veuillez réessayer dans quelques minutes.');
+        }
+        throw updateError;
+      }
       
       toast.success('Transaction liée à la facture avec succès');
       setIsConfirmLinkModalOpen(false);
@@ -413,7 +431,17 @@ const AdminBankTransactionsPage = () => {
       fetchTransactions();
     } catch (error: any) {
       console.error('Error linking transaction to invoice:', error);
-      toast.error(`Erreur: ${error.message}`);
+      
+      // Provide specific error messages for common database issues
+      if (error.message.includes('statement timeout') || error.code === '57014') {
+        toast.error('L\'opération a pris trop de temps. La base de données est peut-être surchargée. Veuillez réessayer dans quelques minutes.');
+      } else if (error.message.includes('stack depth limit') || error.code === '54001') {
+        toast.error('Opération trop complexe. Veuillez contacter l\'administrateur système.');
+      } else {
+        toast.error(`Erreur: ${error.message}`);
+      }
+    } finally {
+      setIsLinkingTransaction(false);
     }
   };
 
@@ -444,22 +472,45 @@ const AdminBankTransactionsPage = () => {
 
   const handleRunAutoMatch = async () => {
     try {
-      setIsLoading(true);
+      setIsRunningAutoMatch(true);
+      
+      // Show a warning toast about potential long operation
+      const warningToast = toast.loading('Association automatique en cours... Cette opération peut prendre plusieurs minutes.', {
+        duration: 60000 // 1 minute timeout for the toast
+      });
       
       // Call the function to match all unmatched transactions
       const { data, error } = await supabase.rpc('match_all_unmatched_transactions');
       
-      if (error) throw error;
+      toast.dismiss(warningToast);
+      
+      if (error) {
+        // Handle specific database errors
+        if (error.code === '54001') {
+          throw new Error('L\'opération est trop complexe pour être exécutée automatiquement. Veuillez traiter les transactions par petits lots ou contacter l\'administrateur système pour augmenter les limites de la base de données.');
+        } else if (error.code === '57014') {
+          throw new Error('L\'opération a pris trop de temps. La base de données contient peut-être trop de transactions. Veuillez traiter les transactions par petits lots.');
+        }
+        throw error;
+      }
       
       // Refresh data
       fetchTransactions();
       
-      toast.success(`${data} transactions ont été automatiquement associées`);
+      toast.success(`${data || 0} transactions ont été automatiquement associées`);
     } catch (err: any) {
       console.error('Error running auto-match:', err);
-      toast.error(`Erreur: ${err.message}`);
+      
+      // Provide specific error messages for common database issues
+      if (err.message.includes('stack depth limit') || err.code === '54001') {
+        toast.error('L\'association automatique ne peut pas traiter autant de données en une fois. Veuillez filtrer par lot ou traiter les transactions manuellement.');
+      } else if (err.message.includes('statement timeout') || err.code === '57014') {
+        toast.error('L\'opération a pris trop de temps. Essayez de filtrer par lot pour traiter moins de transactions à la fois.');
+      } else {
+        toast.error(`Erreur: ${err.message}`);
+      }
     } finally {
-      setIsLoading(false);
+      setIsRunningAutoMatch(false);
     }
   };
 
@@ -617,11 +668,13 @@ const AdminBankTransactionsPage = () => {
           </button>
           <button
             onClick={handleRunAutoMatch}
-            disabled={isLoading}
+            disabled={isLoading || isRunningAutoMatch}
             className="btn-outline flex items-center"
+            title="Attention: Cette opération peut prendre plusieurs minutes pour de gros volumes de données"
           >
-            <Link2 className="h-4 w-4 mr-2" />
+            <Link2 className={`h-4 w-4 mr-2 ${isRunningAutoMatch ? 'animate-spin' : ''}`} />
             Association auto
+            {isRunningAutoMatch && <Clock className="h-4 w-4 ml-1 text-yellow-500" />}
           </button>
           <button
             onClick={fetchTransactions}
@@ -633,6 +686,22 @@ const AdminBankTransactionsPage = () => {
           </button>
         </div>
       </div>
+
+      {/* Warning message for large datasets */}
+      {transactions.length > 1000 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex">
+            <AlertCircle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0" />
+            <div>
+              <p className="text-yellow-800 font-medium">Volume important de données détecté</p>
+              <p className="text-yellow-700 text-sm mt-1">
+                Avec {transactions.length} transactions, l'association automatique peut prendre plusieurs minutes. 
+                Considérez filtrer par lot pour de meilleures performances.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
         <div className="relative flex-grow">
@@ -1175,8 +1244,9 @@ const AdminBankTransactionsPage = () => {
                                 <button
                                   onClick={() => handleConfirmLinkToInvoice(invoice)}
                                   className="text-xs text-primary-600 hover:text-primary-800"
+                                  disabled={isLinkingTransaction}
                                 >
-                                  Associer
+                                  {isLinkingTransaction ? 'Association...' : 'Associer'}
                                 </button>
                               </div>
                             </div>
@@ -1192,6 +1262,7 @@ const AdminBankTransactionsPage = () => {
                     type="button"
                     onClick={() => setIsTransactionDetailModalOpen(false)}
                     className="btn-outline"
+                    disabled={isLinkingTransaction}
                   >
                     Fermer
                   </button>
@@ -1201,6 +1272,7 @@ const AdminBankTransactionsPage = () => {
                       type="button"
                       onClick={() => handleUpdateTransactionStatus('ignored')}
                       className="btn-outline text-gray-600"
+                      disabled={isLinkingTransaction}
                     >
                       Ignorer
                     </button>
@@ -1211,6 +1283,7 @@ const AdminBankTransactionsPage = () => {
                       type="button"
                       onClick={() => handleUpdateTransactionStatus('unmatched')}
                       className="btn-outline text-yellow-600"
+                      disabled={isLinkingTransaction}
                     >
                       Marquer comme non associé
                     </button>
@@ -1235,8 +1308,16 @@ const AdminBankTransactionsPage = () => {
                         });
                     }}
                     className="btn-primary"
+                    disabled={isLinkingTransaction}
                   >
-                    Enregistrer
+                    {isLinkingTransaction ? (
+                      <span className="flex items-center">
+                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                        Enregistrement...
+                      </span>
+                    ) : (
+                      'Enregistrer'
+                    )}
                   </button>
                 </div>
               </div>
@@ -1248,7 +1329,7 @@ const AdminBankTransactionsPage = () => {
       {/* Confirm Link Modal */}
       <Dialog
         open={isConfirmLinkModalOpen}
-        onClose={() => setIsConfirmLinkModalOpen(false)}
+        onClose={() => !isLinkingTransaction && setIsConfirmLinkModalOpen(false)}
         className="fixed inset-0 z-50 overflow-y-auto"
       >
         <div className="flex min-h-screen items-center justify-center p-4">
@@ -1328,11 +1409,25 @@ const AdminBankTransactionsPage = () => {
                   </div>
                 </div>
 
+                {/* Warning for potential timeout */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div className="flex">
+                    <Clock className="h-4 w-4 text-amber-500 mr-2 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-amber-800 font-medium">Opération en cours</p>
+                      <p className="text-sm text-amber-700">
+                        Cette opération peut prendre quelques secondes. Veuillez patienter...
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
                     onClick={() => setIsConfirmLinkModalOpen(false)}
                     className="btn-outline"
+                    disabled={isLinkingTransaction}
                   >
                     Annuler
                   </button>
@@ -1340,8 +1435,16 @@ const AdminBankTransactionsPage = () => {
                     type="button"
                     onClick={handleLinkToInvoice}
                     className="btn-primary"
+                    disabled={isLinkingTransaction}
                   >
-                    Confirmer l'association
+                    {isLinkingTransaction ? (
+                      <span className="flex items-center">
+                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                        Association en cours...
+                      </span>
+                    ) : (
+                      'Confirmer l\'association'
+                    )}
                   </button>
                 </div>
               </div>
