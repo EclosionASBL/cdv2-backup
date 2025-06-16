@@ -199,12 +199,12 @@ const InvoicesPage = () => {
               userBalance.net_balance > 0 ? "bg-yellow-50" : "bg-green-50"
             )}>
               <div>
-                <p className="text-sm text-gray-700 mb-1">Solde à payer</p>
+                <p className="text-sm text-gray-700 mb-1">{userBalance.net_balance < 0 ? 'Votre crédit' : 'Solde à payer'}</p>
                 <p className={clsx(
                   "text-2xl font-bold",
                   userBalance.net_balance > 0 ? "text-yellow-700" : "text-green-700"
                 )}>
-                  {formatCurrency(userBalance.net_balance)}
+                  {formatCurrency(Math.abs(userBalance.net_balance))}
                 </p>
               </div>
               
