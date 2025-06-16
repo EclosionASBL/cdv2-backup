@@ -68,13 +68,61 @@ Deno.serve(async (req) => {
       );
     }
 
-    // If invoice_id is provided, use it directly
-    let targetInvoiceId = invoice_id;
-    let invoiceData;
+    // If invoice_id is provided, we need to determine if it's a UUID or an invoice number
+    let targetInvoiceId = null;
+    let invoiceData = null;
 
-    // If no invoice_id is provided, try to find a matching invoice
-    if (!targetInvoiceId) {
-      // Try to find a matching invoice by extracted_invoice_number or communication
+    if (invoice_id) {
+      // Check if the provided invoice_id is a valid UUID
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isUuid = uuidPattern.test(invoice_id);
+
+      if (isUuid) {
+        // If it's a UUID, use it directly
+        targetInvoiceId = invoice_id;
+        
+        // Get the invoice data
+        const { data: invoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .select('*')
+          .eq('id', targetInvoiceId)
+          .single();
+
+        if (invoiceError) {
+          return new Response(
+            JSON.stringify({ error: `Failed to fetch invoice by ID: ${invoiceError.message}` }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        invoiceData = invoice;
+      } else {
+        // If it's not a UUID, assume it's an invoice number and look up the corresponding UUID
+        const { data: invoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .select('*')
+          .eq('invoice_number', invoice_id)
+          .single();
+
+        if (invoiceError) {
+          return new Response(
+            JSON.stringify({ error: `Failed to fetch invoice by number: ${invoiceError.message}` }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        if (!invoice) {
+          return new Response(
+            JSON.stringify({ error: `Invoice with number ${invoice_id} not found` }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        targetInvoiceId = invoice.id;
+        invoiceData = invoice;
+      }
+    } else {
+      // If no invoice_id is provided, try to find a matching invoice by extracted_invoice_number or communication
       const { data: matchingInvoices, error: matchError } = await supabase
         .from('invoices')
         .select('*')
@@ -99,22 +147,6 @@ Deno.serve(async (req) => {
       // Use the first matching invoice
       invoiceData = matchingInvoices[0];
       targetInvoiceId = invoiceData.id;
-    } else {
-      // Get the invoice data if invoice_id was provided
-      const { data: invoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('id', targetInvoiceId)
-        .single();
-
-      if (invoiceError) {
-        return new Response(
-          JSON.stringify({ error: `Failed to fetch invoice: ${invoiceError.message}` }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      invoiceData = invoice;
     }
 
     // Determine match status based on amount comparison
