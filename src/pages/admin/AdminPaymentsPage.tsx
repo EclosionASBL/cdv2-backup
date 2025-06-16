@@ -15,7 +15,8 @@ import {
   ArrowRight,
   CreditCard,
   Receipt,
-  ExternalLink
+  ExternalLink,
+  X
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
