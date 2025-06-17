@@ -1,4 +1,3 @@
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
 
 const corsHeaders = {
@@ -112,200 +111,30 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get the cancellation request details using admin client
-    const { data: cancellationRequest, error: requestError } = await supabaseAdmin
-      .from('cancellation_requests')
-      .select(`
-        *,
-        registration:registrations!cancellation_requests_registration_id_fkey(
-          id,
-          user_id,
-          kid_id,
-          activity_id,
-          amount_paid,
-          payment_status,
-          invoice_id
-        )
-      `)
-      .eq('id', requestId)
-      .single();
-
-    if (requestError) {
-      console.error('Error fetching cancellation request:', requestError);
-      return new Response(
-        JSON.stringify({ error: 'Cancellation request not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    if (!cancellationRequest.registration) {
-      console.error('Registration not found for cancellation request:', requestId);
-      return new Response(
-        JSON.stringify({ error: 'Associated registration not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // Get invoice details if available
-    let invoiceId = null;
-    let invoiceNumber = null;
-    
-    if (cancellationRequest.registration.invoice_id) {
-      try {
-        const { data: invoice, error: invoiceError } = await supabaseAdmin
-          .from('invoices')
-          .select('id, invoice_number')
-          .eq('invoice_number', cancellationRequest.registration.invoice_id)
-          .single();
-          
-        if (!invoiceError && invoice) {
-          invoiceId = invoice.id;
-          invoiceNumber = invoice.invoice_number;
-          console.log('Found invoice:', invoiceId, invoiceNumber);
-        } else {
-          console.error('Error fetching invoice:', invoiceError);
-        }
-      } catch (invoiceError) {
-        console.error('Error fetching invoice details:', invoiceError);
+    // Call the database function to process the cancellation
+    const { data: result, error: functionError } = await supabaseAdmin.rpc(
+      'process_cancellation_approval',
+      {
+        p_request_id: requestId,
+        p_refund_type: refundType,
+        p_admin_notes: adminNotes || null
       }
-    }
+    );
 
-    // Calculate refund amount based on refund type
-    let refundAmount = 0;
-    if (refundType === 'full') {
-      refundAmount = cancellationRequest.registration.amount_paid;
-    } else if (refundType === 'partial') {
-      // For partial refunds, refund 50% of the amount
-      refundAmount = cancellationRequest.registration.amount_paid * 0.5;
-    }
-
-    // Generate credit note number using the database function
-    let creditNoteNumber = null;
-    let creditNoteId = null;
-    
-    if (refundType === 'full' || refundType === 'partial') {
-      try {
-        // Get current year for the sequence
-        const currentYear = new Date().getFullYear();
-        
-        // Call the database function to get the next credit note number
-        const { data: sequenceData, error: sequenceError } = await supabaseAdmin.rpc(
-          'get_next_credit_note_sequence',
-          { p_year: currentYear }
-        );
-        
-        if (sequenceError) {
-          console.error('Error generating credit note number:', sequenceError);
-          throw new Error('Failed to generate credit note number');
-        }
-        
-        // The function now returns the complete formatted number, no need to add "NC-" prefix
-        creditNoteNumber = sequenceData;
-        console.log('Generated credit note number:', creditNoteNumber);
-        
-        // Create credit note record
-        const { data: creditNote, error: creditNoteError } = await supabaseAdmin
-          .from('credit_notes')
-          .insert({
-            user_id: cancellationRequest.registration.user_id,
-            registration_id: cancellationRequest.registration_id,
-            cancellation_request_id: cancellationRequest.id,
-            credit_note_number: creditNoteNumber,
-            amount: refundAmount,
-            status: 'issued',
-            invoice_id: invoiceId,
-            invoice_number: invoiceNumber
-          })
-          .select('id')
-          .single();
-          
-        if (creditNoteError) {
-          console.error('Error creating credit note record:', creditNoteError);
-          throw new Error('Failed to create credit note record');
-        }
-        
-        creditNoteId = creditNote.id;
-        console.log('Created credit note with ID:', creditNoteId);
-        
-      } catch (creditNoteError: any) {
-        console.error('Error handling credit note creation:', creditNoteError);
-        // Continue with the process even if credit note creation fails
-      }
-    }
-
-    // Update the cancellation request using admin client
-    const { error: updateRequestError } = await supabaseAdmin
-      .from('cancellation_requests')
-      .update({
-        status: 'approved',
-        admin_notes: adminNotes,
-        refund_type: refundType,
-        credit_note_id: creditNoteNumber // Store the credit note number (not the UUID)
-      })
-      .eq('id', requestId);
-
-    if (updateRequestError) {
-      console.error('Error updating cancellation request:', updateRequestError);
+    if (functionError) {
+      console.error('Error calling process_cancellation_approval:', functionError);
       return new Response(
-        JSON.stringify({ error: 'Failed to update cancellation request' }),
+        JSON.stringify({ error: `Database function error: ${functionError.message}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    // Update the registration status using admin client
-    const cancellationStatus = refundType === 'full' 
-      ? 'cancelled_full_refund' 
-      : refundType === 'partial' 
-        ? 'cancelled_partial_refund' 
-        : 'cancelled_no_refund';
+    console.log('Function result:', result);
 
-    const { error: updateRegistrationError } = await supabaseAdmin
-      .from('registrations')
-      .update({
-        payment_status: 'cancelled',
-        cancellation_status: cancellationStatus
-      })
-      .eq('id', cancellationRequest.registration_id);
-
-    if (updateRegistrationError) {
-      console.error('Error updating registration:', updateRegistrationError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to update registration' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // Update the session's current_registrations count using admin client
-    try {
-      // Get the current count
-      const { data: sessionData, error: sessionError } = await supabaseAdmin
-        .from('sessions')
-        .select('current_registrations')
-        .eq('id', cancellationRequest.registration.activity_id)
-        .single();
-      
-      if (sessionError) {
-        console.error('Error fetching session:', sessionError);
-      } else if (sessionData && sessionData.current_registrations > 0) {
-        // Decrement the count
-        const { error: updateSessionError } = await supabaseAdmin
-          .from('sessions')
-          .update({ current_registrations: sessionData.current_registrations - 1 })
-          .eq('id', cancellationRequest.registration.activity_id);
-        
-        if (updateSessionError) {
-          console.error('Error updating session registration count:', updateSessionError);
-        }
-      }
-    } catch (sessionError) {
-      console.error('Error updating session registration count:', sessionError);
-      // Continue despite this error
-    }
-
-    // Generate PDF for the credit note if it was created
-    if (creditNoteId && (refundType === 'full' || refundType === 'partial')) {
+    // If a credit note was created, generate the PDF
+    if (result.credit_note_id) {
       try {
-        console.log('Generating PDF for credit note:', creditNoteId);
+        console.log('Generating PDF for credit note:', result.credit_note_id);
         
         const pdfResponse = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
           method: 'POST',
@@ -314,7 +143,7 @@ Deno.serve(async (req) => {
             'Authorization': `Bearer ${supabaseServiceKey}`,
           },
           body: JSON.stringify({
-            credit_note_id: creditNoteId,
+            credit_note_id: result.credit_note_id,
             api_key: Deno.env.get('UPDATE_INVOICE_API_KEY') || ''
           }),
         });
@@ -328,8 +157,35 @@ Deno.serve(async (req) => {
         const pdfData = await pdfResponse.json();
         console.log('Credit note PDF generated:', pdfData);
         
+        // Update the credit note with the PDF URL
+        if (pdfData.pdf_url) {
+          const { error: updateError } = await supabaseAdmin
+            .from('credit_notes')
+            .update({ pdf_url: pdfData.pdf_url })
+            .eq('id', result.credit_note_id);
+            
+          if (updateError) {
+            console.error('Error updating credit note with PDF URL:', updateError);
+          } else {
+            console.log('Credit note updated with PDF URL');
+            
+            // Update the cancellation request with the credit note URL
+            const { error: updateRequestError } = await supabaseAdmin
+              .from('cancellation_requests')
+              .update({ credit_note_url: pdfData.pdf_url })
+              .eq('id', requestId);
+              
+            if (updateRequestError) {
+              console.error('Error updating cancellation request with credit note URL:', updateRequestError);
+            }
+          }
+          
+          // Add the PDF URL to the result
+          result.pdf_url = pdfData.pdf_url;
+        }
+        
         // Send email with credit note
-        console.log('Sending credit note email for:', creditNoteId);
+        console.log('Sending credit note email for:', result.credit_note_id);
         
         const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-credit-note-email`, {
           method: 'POST',
@@ -338,7 +194,7 @@ Deno.serve(async (req) => {
             'Authorization': `Bearer ${supabaseServiceKey}`,
           },
           body: JSON.stringify({
-            credit_note_id: creditNoteId
+            credit_note_id: result.credit_note_id
           }),
         });
         
@@ -356,16 +212,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log('Cancellation request processed successfully:', requestId);
-    console.log('Generated credit note ID:', creditNoteId);
-    console.log('Generated credit note number:', creditNoteNumber);
-
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Cancellation request approved successfully',
-        creditNoteNumber: creditNoteNumber,
-        creditNoteId: creditNoteId
+        result
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );

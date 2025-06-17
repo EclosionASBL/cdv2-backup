@@ -334,12 +334,12 @@ const DashboardPage = () => {
               
               <div className="border-t pt-3">
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold">Solde à payer:</span>
+                  <span className="font-semibold">{userBalance.net_balance < 0 ? 'Votre crédit:' : 'Solde à payer:'}</span>
                   <span className={clsx(
                     "font-bold text-lg",
                     userBalance.net_balance > 0 ? "text-yellow-600" : "text-green-600"
                   )}>
-                    {formatCurrency(userBalance.net_balance)}
+                    {formatCurrency(Math.abs(userBalance.net_balance))}
                   </span>
                 </div>
               </div>
@@ -510,13 +510,14 @@ const DashboardPage = () => {
                     )}
                   </div>
                   <div className="flex flex-col items-end">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                    <span className={clsx(
+                      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
                       invoice.status === 'paid' 
                         ? 'bg-green-100 text-green-800' 
                         : invoice.status === 'cancelled'
                         ? 'bg-red-100 text-red-800'
                         : 'bg-yellow-100 text-yellow-800'
-                    }`}>
+                    )}>
                       {invoice.status === 'paid' ? (
                         <><CheckCircle className="h-3 w-3 mr-1" /> Payé</>
                       ) : invoice.status === 'cancelled' ? (

@@ -492,6 +492,12 @@ const CancellationRequestModal = ({
               <span className="text-gray-500">Payment Status:</span>
               <div className="font-medium">{request.registration.payment_status}</div>
             </div>
+            {request.registration.invoice_id && (
+              <div className="col-span-2">
+                <span className="text-gray-500">Invoice:</span>
+                <div className="font-medium">{request.registration.invoice_id}</div>
+              </div>
+            )}
           </div>
         </div>
 
