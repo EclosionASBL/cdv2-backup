@@ -131,6 +131,87 @@ Deno.serve(async (req) => {
 
     console.log('Function result:', result);
 
+    // If a credit note was created, generate the PDF
+    if (result.credit_note_id) {
+      try {
+        console.log('Generating PDF for credit note:', result.credit_note_id);
+        
+        const pdfResponse = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            credit_note_id: result.credit_note_id,
+            api_key: Deno.env.get('UPDATE_INVOICE_API_KEY') || ''
+          }),
+        });
+        
+        if (!pdfResponse.ok) {
+          const errorText = await pdfResponse.text();
+          console.error('Error generating credit note PDF:', errorText);
+          throw new Error(`Failed to generate credit note PDF: ${errorText}`);
+        }
+        
+        const pdfData = await pdfResponse.json();
+        console.log('Credit note PDF generated:', pdfData);
+        
+        // Update the credit note with the PDF URL
+        if (pdfData.pdf_url) {
+          const { error: updateError } = await supabaseAdmin
+            .from('credit_notes')
+            .update({ pdf_url: pdfData.pdf_url })
+            .eq('id', result.credit_note_id);
+            
+          if (updateError) {
+            console.error('Error updating credit note with PDF URL:', updateError);
+          } else {
+            console.log('Credit note updated with PDF URL');
+            
+            // Update the cancellation request with the credit note URL
+            const { error: updateRequestError } = await supabaseAdmin
+              .from('cancellation_requests')
+              .update({ credit_note_url: pdfData.pdf_url })
+              .eq('id', requestId);
+              
+            if (updateRequestError) {
+              console.error('Error updating cancellation request with credit note URL:', updateRequestError);
+            }
+          }
+          
+          // Add the PDF URL to the result
+          result.pdf_url = pdfData.pdf_url;
+        }
+        
+        // Send email with credit note
+        console.log('Sending credit note email for:', result.credit_note_id);
+        
+        const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-credit-note-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            credit_note_id: result.credit_note_id
+          }),
+        });
+        
+        if (!emailResponse.ok) {
+          const errorText = await emailResponse.text();
+          console.error('Error sending credit note email:', errorText);
+          // Continue despite email error
+        } else {
+          console.log('Credit note email sent successfully');
+        }
+        
+      } catch (pdfError) {
+        console.error('Error in PDF generation or email sending:', pdfError);
+        // Continue despite PDF/email errors
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
