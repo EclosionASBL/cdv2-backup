@@ -132,9 +132,9 @@ const AdminCancellationRequestsPage = () => {
       await fetchRequests();
       setIsModalOpen(false);
       setSelectedRequest(null);
-    } catch (err: any) {
-      console.error('Error approving cancellation:', err);
-      toast.error(err.message || 'Failed to approve cancellation request');
+    } catch (error) {
+      console.error('Error approving cancellation:', error);
+      toast.error(error.message || 'Failed to approve cancellation request');
     } finally {
       setProcessing(false);
     }
@@ -386,13 +386,13 @@ const AdminCancellationRequestsPage = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {waitingListCounts[request.activity_id] ? (
-                        <Link 
-                          to={`/admin/waiting-list?activity=${request.activity_id}`}
+                        <button 
+                          onClick={() => handleOpenWaitingListModal(request.activity_id)}
                           className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200"
                         >
                           <Users className="h-3 w-3 mr-1" />
                           {waitingListCounts[request.activity_id]} {waitingListCounts[request.activity_id] === 1 ? 'enfant' : 'enfants'}
-                        </Link>
+                        </button>
                       ) : (
                         <span className="text-gray-400 text-xs">Aucune attente</span>
                       )}
