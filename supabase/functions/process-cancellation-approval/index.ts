@@ -1,11 +1,12 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-client-info, apikey',
+};
 
-interface RequestBody {
+interface ProcessCancellationRequest {
   requestId: string;
   refundType: 'full' | 'partial' | 'none';
   adminNotes?: string;
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
     // Parse request body
     let requestData;
     try {
-      requestData = await req.json() as RequestBody;
+      requestData = await req.json() as ProcessCancellationRequest;
       console.log('Request data:', JSON.stringify(requestData));
     } catch (parseError) {
       console.error('Error parsing request JSON:', parseError);
@@ -70,6 +71,45 @@ Deno.serve(async (req) => {
 
     // Create admin client with service role key
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Create client for user authentication
+    const supabaseAuth = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '');
+
+    // Verify the user is authenticated and is an admin
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(
+      authHeader.replace('Bearer ', '')
+    );
+
+    if (authError || !user) {
+      console.error('Auth error:', authError);
+      return new Response(
+        JSON.stringify({ error: 'Authorization failed' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Check if user is admin using admin client
+    const { data: userData, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (userError) {
+      console.error('Error fetching user role:', userError);
+      return new Response(
+        JSON.stringify({ error: 'Error verifying admin status' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (userData.role !== 'admin') {
+      console.error('User is not an admin:', user.id);
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Admin access required' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // Call the database function to process the cancellation
     const { data: result, error: functionError } = await supabaseAdmin.rpc(
