@@ -6,6 +6,7 @@ import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
+import WaitingListModal from '../../components/admin/WaitingListModal';
 
 interface CancellationRequest {
   id: string;
@@ -59,6 +60,8 @@ const AdminCancellationRequestsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const { entries: waitingListEntries, fetchWaitingList, isLoading: isWaitingListLoading } = useWaitingListStore();
   const [waitingListCounts, setWaitingListCounts] = useState<Record<string, number>>({});
+  const [isWaitingListModalOpen, setIsWaitingListModalOpen] = useState(false);
+  const [selectedActivityForWaitingList, setSelectedActivityForWaitingList] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRequests();
@@ -161,6 +164,11 @@ const AdminCancellationRequestsPage = () => {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleOpenWaitingListModal = (activityId: string) => {
+    setSelectedActivityForWaitingList(activityId);
+    setIsWaitingListModalOpen(true);
   };
 
   const filteredRequests = requests.filter(request => {
@@ -435,11 +443,25 @@ const AdminCancellationRequestsPage = () => {
                 processing={processing}
                 waitingListCount={waitingListCounts[selectedRequest.activity_id] || 0}
                 activityId={selectedRequest.activity_id}
+                onViewWaitingList={() => {
+                  setIsModalOpen(false);
+                  setSelectedActivityForWaitingList(selectedRequest.activity_id);
+                  setIsWaitingListModalOpen(true);
+                }}
               />
             )}
           </Dialog.Panel>
         </div>
       </Dialog>
+
+      {/* Waiting List Modal */}
+      {selectedActivityForWaitingList && (
+        <WaitingListModal
+          isOpen={isWaitingListModalOpen}
+          onClose={() => setIsWaitingListModalOpen(false)}
+          activityId={selectedActivityForWaitingList}
+        />
+      )}
     </div>
   );
 };
@@ -452,7 +474,8 @@ const CancellationRequestModal = ({
   onClose,
   processing,
   waitingListCount,
-  activityId
+  activityId,
+  onViewWaitingList
 }: {
   request: CancellationRequest;
   onApprove: (request: CancellationRequest, refundType: 'full' | 'partial' | 'none', adminNotes?: string) => void;
@@ -461,35 +484,10 @@ const CancellationRequestModal = ({
   processing: boolean;
   waitingListCount: number;
   activityId: string;
+  onViewWaitingList: () => void;
 }) => {
   const [adminNotes, setAdminNotes] = useState(request.admin_notes || '');
   const [refundType, setRefundType] = useState<'full' | 'partial' | 'none'>('full');
-  const [showWaitingList, setShowWaitingList] = useState(false);
-  const { entries: waitingListEntries, isLoading: isWaitingListLoading, offerSeat } = useWaitingListStore();
-  const [processingEntry, setProcessingEntry] = useState<string | null>(null);
-
-  // Filter waiting list entries for this activity
-  const activityWaitingList = waitingListEntries.filter(
-    entry => entry.activity_id === activityId && (entry.status === 'waiting' || entry.status === 'invited')
-  ).sort((a, b) => {
-    // Sort by status (waiting first, then invited) and then by created_at
-    if (a.status === 'waiting' && b.status !== 'waiting') return -1;
-    if (a.status !== 'waiting' && b.status === 'waiting') return 1;
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  });
-
-  const handleOfferSeat = async (id: string) => {
-    try {
-      setProcessingEntry(id);
-      await offerSeat(id);
-      toast.success('Place offerte avec succès');
-    } catch (error) {
-      console.error('Error offering seat:', error);
-      toast.error('Une erreur est survenue');
-    } finally {
-      setProcessingEntry(null);
-    }
-  };
 
   // Calculate days until start date
   const daysUntilStart = Math.ceil(
@@ -497,14 +495,6 @@ const CancellationRequestModal = ({
   );
 
   const isLessThan10Days = daysUntilStart < 10;
-
-  // Unwrap arrays for kid and parent if needed
-  const unwrapEntry = (entry: any) => {
-    const kid = Array.isArray(entry.kid) ? entry.kid[0] : entry.kid;
-    const parent = Array.isArray(entry.parent) ? entry.parent[0] : entry.parent;
-    const session = Array.isArray(entry.session) ? entry.session[0] : entry.session;
-    return { ...entry, kid, parent, session };
-  };
 
   return (
     <div className="p-6">
@@ -585,121 +575,22 @@ const CancellationRequestModal = ({
         {/* Waiting List Info */}
         {waitingListCount > 0 && (
           <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-            <div className="flex justify-between items-center mb-3">
+            <div className="flex justify-between items-center mb-2">
               <h3 className="font-medium text-amber-800 flex items-center">
                 <Users className="h-4 w-4 mr-2" />
                 Liste d'attente: {waitingListCount} {waitingListCount === 1 ? 'enfant' : 'enfants'}
               </h3>
               <button
-                onClick={() => setShowWaitingList(!showWaitingList)}
-                className="text-amber-700 hover:text-amber-900 text-sm font-medium"
+                onClick={onViewWaitingList}
+                className="text-amber-700 hover:text-amber-900 text-sm font-medium flex items-center"
               >
-                {showWaitingList ? 'Masquer' : 'Afficher'}
+                <LinkIcon className="h-3 w-3 mr-1" />
+                Voir la liste
               </button>
             </div>
             <p className="text-sm text-amber-700">
               Il y a des enfants en liste d'attente pour cette activité. Veuillez considérer d'offrir la place à l'un d'entre eux avant d'approuver l'annulation.
             </p>
-            
-            {showWaitingList && (
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-amber-800 mb-2">Enfants en attente:</h4>
-                {isWaitingListLoading ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
-                  </div>
-                ) : activityWaitingList.length === 0 ? (
-                  <p className="text-sm text-amber-700">Aucun enfant en liste d'attente pour cette activité.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-amber-200 text-sm">
-                      <thead className="bg-amber-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Position</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Enfant</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Parent</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Email</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Téléphone</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Date d'ajout</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Statut</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-amber-100">
-                        {activityWaitingList.map((entry, index) => {
-                          // Unwrap nested objects
-                          const unwrappedEntry = unwrapEntry(entry);
-                          
-                          return (
-                            <tr key={unwrappedEntry.id} className={clsx(
-                              "hover:bg-amber-50",
-                              unwrappedEntry.status === 'invited' && "bg-blue-50"
-                            )}>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                #{index + 1}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                {unwrappedEntry.kid?.prenom} {unwrappedEntry.kid?.nom}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                {unwrappedEntry.parent?.prenom} {unwrappedEntry.parent?.nom}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                {unwrappedEntry.parent?.email}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                {unwrappedEntry.parent?.telephone || '-'}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                {new Date(unwrappedEntry.created_at).toLocaleDateString('fr-FR')}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                <span className={clsx(
-                                  "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                                  unwrappedEntry.status === 'waiting' ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                                )}>
-                                  {unwrappedEntry.status === 'waiting' ? 'En attente' : 'Invité'}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                {unwrappedEntry.status === 'waiting' ? (
-                                  <button
-                                    onClick={() => handleOfferSeat(unwrappedEntry.id)}
-                                    disabled={processingEntry === unwrappedEntry.id}
-                                    className="text-blue-600 hover:text-blue-900 text-xs font-medium"
-                                  >
-                                    {processingEntry === unwrappedEntry.id ? (
-                                      <span className="flex items-center">
-                                        <Loader2 className="animate-spin h-3 w-3 mr-1" />
-                                        Envoi...
-                                      </span>
-                                    ) : (
-                                      "Offrir la place"
-                                    )}
-                                  </button>
-                                ) : (
-                                  <span className="text-gray-400 text-xs">Déjà invité</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                
-                <div className="mt-4 flex justify-end">
-                  <Link
-                    to={`/admin/waiting-list?activity=${activityId}`}
-                    className="text-amber-700 hover:text-amber-900 text-sm font-medium flex items-center"
-                  >
-                    <LinkIcon className="h-3 w-3 mr-1" />
-                    Voir la liste d'attente complète
-                  </Link>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
