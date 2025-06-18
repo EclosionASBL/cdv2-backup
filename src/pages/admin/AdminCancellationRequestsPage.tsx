@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, AlertCircle, Filter, Search, CheckCircle, XCircle, RefreshCw, FileText, Clock, ExternalLink, Download } from 'lucide-react';
+import { useWaitingListStore } from '../../stores/waitingListStore';
+import { Loader2, AlertCircle, Filter, Search, CheckCircle, XCircle, RefreshCw, FileText, Clock, ExternalLink, Download, Users, Link as LinkIcon } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
 import clsx from 'clsx';
+import { Link } from 'react-router-dom';
 
 interface CancellationRequest {
   id: string;
@@ -55,10 +57,26 @@ const AdminCancellationRequestsPage = () => {
   const [processing, setProcessing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const { entries: waitingListEntries, fetchWaitingList, isLoading: isWaitingListLoading } = useWaitingListStore();
+  const [waitingListCounts, setWaitingListCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetchRequests();
+    fetchWaitingList();
   }, []);
+
+  useEffect(() => {
+    // Calculate waiting list counts for each activity
+    if (waitingListEntries.length > 0) {
+      const counts: Record<string, number> = {};
+      waitingListEntries.forEach(entry => {
+        if (entry.status === 'waiting' || entry.status === 'invited') {
+          counts[entry.activity_id] = (counts[entry.activity_id] || 0) + 1;
+        }
+      });
+      setWaitingListCounts(counts);
+    }
+  }, [waitingListEntries]);
 
   const fetchRequests = async () => {
     try {
@@ -137,8 +155,8 @@ const AdminCancellationRequestsPage = () => {
       await fetchRequests();
       setIsModalOpen(false);
       setSelectedRequest(null);
-    } catch (err) {
-      console.error('Error rejecting cancellation:', err);
+    } catch (error) {
+      console.error('Error rejecting cancellation:', error);
       toast.error('Failed to reject cancellation request');
     } finally {
       setProcessing(false);
@@ -286,6 +304,9 @@ const AdminCancellationRequestsPage = () => {
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Waiting List
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -355,6 +376,19 @@ const AdminCancellationRequestsPage = () => {
                         </div>
                       )}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {waitingListCounts[request.activity_id] ? (
+                        <Link 
+                          to={`/admin/waiting-list?activity=${request.activity_id}`}
+                          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200"
+                        >
+                          <Users className="h-3 w-3 mr-1" />
+                          {waitingListCounts[request.activity_id]} {waitingListCounts[request.activity_id] === 1 ? 'enfant' : 'enfants'}
+                        </Link>
+                      ) : (
+                        <span className="text-gray-400 text-xs">Aucune attente</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center gap-2">
                         <button
@@ -399,6 +433,8 @@ const AdminCancellationRequestsPage = () => {
                 onReject={handleReject}
                 onClose={() => setIsModalOpen(false)}
                 processing={processing}
+                waitingListCount={waitingListCounts[selectedRequest.activity_id] || 0}
+                activityId={selectedRequest.activity_id}
               />
             )}
           </Dialog.Panel>
@@ -414,16 +450,61 @@ const CancellationRequestModal = ({
   onApprove,
   onReject,
   onClose,
-  processing
+  processing,
+  waitingListCount,
+  activityId
 }: {
   request: CancellationRequest;
   onApprove: (request: CancellationRequest, refundType: 'full' | 'partial' | 'none', adminNotes?: string) => void;
   onReject: (request: CancellationRequest, adminNotes: string) => void;
   onClose: () => void;
   processing: boolean;
+  waitingListCount: number;
+  activityId: string;
 }) => {
   const [adminNotes, setAdminNotes] = useState(request.admin_notes || '');
   const [refundType, setRefundType] = useState<'full' | 'partial' | 'none'>('full');
+  const [showWaitingList, setShowWaitingList] = useState(false);
+  const { entries: waitingListEntries, isLoading: isWaitingListLoading, offerSeat } = useWaitingListStore();
+  const [processingEntry, setProcessingEntry] = useState<string | null>(null);
+
+  // Filter waiting list entries for this activity
+  const activityWaitingList = waitingListEntries.filter(
+    entry => entry.activity_id === activityId && (entry.status === 'waiting' || entry.status === 'invited')
+  ).sort((a, b) => {
+    // Sort by status (waiting first, then invited) and then by created_at
+    if (a.status === 'waiting' && b.status !== 'waiting') return -1;
+    if (a.status !== 'waiting' && b.status === 'waiting') return 1;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+
+  const handleOfferSeat = async (id: string) => {
+    try {
+      setProcessingEntry(id);
+      await offerSeat(id);
+      toast.success('Place offerte avec succès');
+    } catch (error) {
+      console.error('Error offering seat:', error);
+      toast.error('Une erreur est survenue');
+    } finally {
+      setProcessingEntry(null);
+    }
+  };
+
+  // Calculate days until start date
+  const daysUntilStart = Math.ceil(
+    (new Date(request.session.start_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  const isLessThan10Days = daysUntilStart < 10;
+
+  // Unwrap arrays for kid and parent if needed
+  const unwrapEntry = (entry: any) => {
+    const kid = Array.isArray(entry.kid) ? entry.kid[0] : entry.kid;
+    const parent = Array.isArray(entry.parent) ? entry.parent[0] : entry.parent;
+    const session = Array.isArray(entry.session) ? entry.session[0] : entry.session;
+    return { ...entry, kid, parent, session };
+  };
 
   return (
     <div className="p-6">
@@ -501,29 +582,152 @@ const CancellationRequestModal = ({
           </div>
         </div>
 
+        {/* Waiting List Info */}
+        {waitingListCount > 0 && (
+          <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-medium text-amber-800 flex items-center">
+                <Users className="h-4 w-4 mr-2" />
+                Liste d'attente: {waitingListCount} {waitingListCount === 1 ? 'enfant' : 'enfants'}
+              </h3>
+              <button
+                onClick={() => setShowWaitingList(!showWaitingList)}
+                className="text-amber-700 hover:text-amber-900 text-sm font-medium"
+              >
+                {showWaitingList ? 'Masquer' : 'Afficher'}
+              </button>
+            </div>
+            <p className="text-sm text-amber-700">
+              Il y a des enfants en liste d'attente pour cette activité. Veuillez considérer d'offrir la place à l'un d'entre eux avant d'approuver l'annulation.
+            </p>
+            
+            {showWaitingList && (
+              <div className="mt-4">
+                <h4 className="text-sm font-medium text-amber-800 mb-2">Enfants en attente:</h4>
+                {isWaitingListLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
+                  </div>
+                ) : activityWaitingList.length === 0 ? (
+                  <p className="text-sm text-amber-700">Aucun enfant en liste d'attente pour cette activité.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-amber-200 text-sm">
+                      <thead className="bg-amber-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Position</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Enfant</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Parent</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Email</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Téléphone</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Date d'ajout</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Statut</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-amber-800 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-amber-100">
+                        {activityWaitingList.map((entry, index) => {
+                          // Unwrap nested objects
+                          const unwrappedEntry = unwrapEntry(entry);
+                          
+                          return (
+                            <tr key={unwrappedEntry.id} className={clsx(
+                              "hover:bg-amber-50",
+                              unwrappedEntry.status === 'invited' && "bg-blue-50"
+                            )}>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                #{index + 1}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {unwrappedEntry.kid?.prenom} {unwrappedEntry.kid?.nom}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {unwrappedEntry.parent?.prenom} {unwrappedEntry.parent?.nom}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {unwrappedEntry.parent?.email}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {unwrappedEntry.parent?.telephone || '-'}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {new Date(unwrappedEntry.created_at).toLocaleDateString('fr-FR')}
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <span className={clsx(
+                                  "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
+                                  unwrappedEntry.status === 'waiting' ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                                )}>
+                                  {unwrappedEntry.status === 'waiting' ? 'En attente' : 'Invité'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {unwrappedEntry.status === 'waiting' ? (
+                                  <button
+                                    onClick={() => handleOfferSeat(unwrappedEntry.id)}
+                                    disabled={processingEntry === unwrappedEntry.id}
+                                    className="text-blue-600 hover:text-blue-900 text-xs font-medium"
+                                  >
+                                    {processingEntry === unwrappedEntry.id ? (
+                                      <span className="flex items-center">
+                                        <Loader2 className="animate-spin h-3 w-3 mr-1" />
+                                        Envoi...
+                                      </span>
+                                    ) : (
+                                      "Offrir la place"
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">Déjà invité</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                
+                <div className="mt-4 flex justify-end">
+                  <Link
+                    to={`/admin/waiting-list?activity=${activityId}`}
+                    className="text-amber-700 hover:text-amber-900 text-sm font-medium flex items-center"
+                  >
+                    <LinkIcon className="h-3 w-3 mr-1" />
+                    Voir la liste d'attente complète
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Parent Notes */}
         {request.parent_notes && (
-          <div className="bg-blue-50 rounded-lg p-4">
-            <h3 className="font-medium text-gray-900 mb-2">Parent's Reason</h3>
-            <p className="text-sm text-gray-700">{request.parent_notes}</p>
+          <div className="bg-blue-50 p-4 rounded-lg mb-4">
+            <h3 className="font-medium text-gray-700 mb-2">Parent's Reason</h3>
+            <p className="text-sm text-gray-600">{request.parent_notes}</p>
           </div>
         )}
 
         {/* Admin Notes */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="adminNotes" className="block text-sm font-medium text-gray-700 mb-1">
             Admin Notes
           </label>
           <textarea
+            id="adminNotes"
             value={adminNotes}
             onChange={(e) => setAdminNotes(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             rows={3}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Add notes about this cancellation request..."
+            disabled={processing}
           />
         </div>
 
-        {/* Refund Type (only for approval) */}
+        {/* Refund Type Section */}
         {request.status === 'pending' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -533,6 +737,7 @@ const CancellationRequestModal = ({
               value={refundType}
               onChange={(e) => setRefundType(e.target.value as 'full' | 'partial' | 'none')}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={processing}
             >
               <option value="full">Full Refund</option>
               <option value="partial">Partial Refund</option>
@@ -548,7 +753,7 @@ const CancellationRequestModal = ({
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-700">Credit Note ID: {request.credit_note_id}</span>
               {request.credit_note_url && (
-                <a
+                <a 
                   href={request.credit_note_url}
                   target="_blank"
                   rel="noopener noreferrer"
