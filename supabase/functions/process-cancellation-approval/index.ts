@@ -7,70 +7,102 @@ const corsHeaders = {
 
 interface RequestBody {
   requestId: string;
-  action: 'approve' | 'reject';
+  refundType: 'full' | 'partial' | 'none';
   adminNotes?: string;
-  refundType?: 'full' | 'partial' | 'none';
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  // Handle CORS preflight request
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
-    const { requestId, action, adminNotes, refundType }: RequestBody = await req.json()
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(requestId)) {
+    console.log('Starting process-cancellation-approval function');
+    
+    // Get the authorization header from the incoming request
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error('Missing Authorization header');
       return new Response(
-        JSON.stringify({ error: 'Invalid request ID format' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+        JSON.stringify({ error: 'Missing Authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Call the database function with proper UUID casting
-    const { data, error } = await supabaseClient.rpc('process_cancellation_approval', {
-      p_request_id: requestId, // This will be properly cast to UUID in the database function
-      p_action: action,
-      p_admin_notes: adminNotes || null,
-      p_refund_type: refundType || null
-    })
-
-    if (error) {
-      console.error('Database function error:', error)
+    // Parse request body
+    let requestData;
+    try {
+      requestData = await req.json() as RequestBody;
+      console.log('Request data:', JSON.stringify(requestData));
+    } catch (parseError) {
+      console.error('Error parsing request JSON:', parseError);
       return new Response(
-        JSON.stringify({ error: `Database function error: ${error.message}` }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    return new Response(
-      JSON.stringify({ success: true, data }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    )
+    const { requestId, refundType, adminNotes } = requestData;
 
-  } catch (error) {
-    console.error('Edge function error:', error)
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    if (!requestId || !refundType) {
+      console.error('Missing required parameters:', { requestId, refundType });
+      return new Response(
+        JSON.stringify({ error: 'Missing required parameters' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Initialize Supabase client with service role key
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing Supabase environment variables');
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Create admin client with service role key
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Call the database function to process the cancellation
+    const { data: result, error: functionError } = await supabaseAdmin.rpc(
+      'process_cancellation_approval',
+      {
+        p_request_id: requestId,
+        p_refund_type: refundType,
+        p_admin_notes: adminNotes || null
       }
-    )
+    );
+
+    if (functionError) {
+      console.error('Error calling process_cancellation_approval:', functionError);
+      return new Response(
+        JSON.stringify({ error: `Database function error: ${functionError.message}` }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    console.log('Function result:', result);
+
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        result
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  } catch (error: any) {
+    console.error('Error processing cancellation approval:', error);
+    return new Response(
+      JSON.stringify({ error: error.message || 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
-})
+});
