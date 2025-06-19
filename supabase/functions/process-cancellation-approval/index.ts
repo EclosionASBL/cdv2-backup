@@ -117,105 +117,101 @@ Deno.serve(async (req) => {
       {
         p_request_id: requestId,
         p_refund_type: refundType,
-        p_admin_notes: adminNotes || null
+        p_admin_notes: adminNotes
       }
     );
 
     if (functionError) {
-      console.error('Error calling process_cancellation_approval:', functionError);
+      console.error('Error calling process_cancellation_approval function:', functionError);
       return new Response(
-        JSON.stringify({ error: `Database function error: ${functionError.message}` }),
+        JSON.stringify({ error: functionError.message || 'Error processing cancellation' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    console.log('Function result:', result);
-
-    // If a credit note was created, generate the PDF
-    if (result.credit_note_id) {
+    // Generate PDF for credit note if one was created
+    if (result && result.credit_note_id) {
       try {
         console.log('Generating PDF for credit note:', result.credit_note_id);
         
-        const pdfResponse = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
+        const pdfRes = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
           method: 'POST',
-          headers: {
+          headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Authorization': `Bearer ${supabaseServiceKey}`
           },
           body: JSON.stringify({
             credit_note_id: result.credit_note_id,
-            api_key: Deno.env.get('UPDATE_INVOICE_API_KEY') || ''
-          }),
+            api_key: Deno.env.get('UPDATE_INVOICE_API_KEY')
+          })
         });
         
-        if (!pdfResponse.ok) {
-          const errorText = await pdfResponse.text();
-          console.error('Error generating credit note PDF:', errorText);
-          throw new Error(`Failed to generate credit note PDF: ${errorText}`);
-        }
-        
-        const pdfData = await pdfResponse.json();
-        console.log('Credit note PDF generated:', pdfData);
-        
-        // Update the credit note with the PDF URL
-        if (pdfData.pdf_url) {
-          const { error: updateError } = await supabaseAdmin
-            .from('credit_notes')
-            .update({ pdf_url: pdfData.pdf_url })
-            .eq('id', result.credit_note_id);
-            
-          if (updateError) {
-            console.error('Error updating credit note with PDF URL:', updateError);
-          } else {
-            console.log('Credit note updated with PDF URL');
-            
-            // Update the cancellation request with the credit note URL
-            const { error: updateRequestError } = await supabaseAdmin
-              .from('cancellation_requests')
-              .update({ credit_note_url: pdfData.pdf_url })
-              .eq('id', requestId);
+        if (!pdfRes.ok) {
+          console.error('Error generating credit note PDF:', await pdfRes.text());
+          // Continue despite PDF generation error
+        } else {
+          const pdfData = await pdfRes.json();
+          console.log('PDF generation successful:', pdfData);
+          
+          // Update credit note with PDF URL
+          if (pdfData.pdf_url) {
+            const { error: updateError } = await supabaseAdmin
+              .from('credit_notes')
+              .update({ pdf_url: pdfData.pdf_url })
+              .eq('id', result.credit_note_id);
               
-            if (updateRequestError) {
-              console.error('Error updating cancellation request with credit note URL:', updateRequestError);
+            if (updateError) {
+              console.error('Error updating credit note with PDF URL:', updateError);
+            } else {
+              console.log('Credit note updated with PDF URL');
+              
+              // Update cancellation request with credit note URL
+              const { error: updateRequestError } = await supabaseAdmin
+                .from('cancellation_requests')
+                .update({ credit_note_url: pdfData.pdf_url })
+                .eq('id', requestId);
+                
+              if (updateRequestError) {
+                console.error('Error updating cancellation request with credit note URL:', updateRequestError);
+              }
             }
           }
-          
-          // Add the PDF URL to the result
-          result.pdf_url = pdfData.pdf_url;
         }
         
         // Send email with credit note
-        console.log('Sending credit note email for:', result.credit_note_id);
-        
-        const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-credit-note-email`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({
-            credit_note_id: result.credit_note_id
-          }),
-        });
-        
-        if (!emailResponse.ok) {
-          const errorText = await emailResponse.text();
-          console.error('Error sending credit note email:', errorText);
-          // Continue despite email error
-        } else {
-          console.log('Credit note email sent successfully');
+        try {
+          console.log('Sending credit note email');
+          
+          const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-credit-note-email`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({
+              credit_note_id: result.credit_note_id
+            })
+          });
+          
+          if (!emailRes.ok) {
+            console.error('Error sending credit note email:', await emailRes.text());
+          } else {
+            console.log('Credit note email sent successfully');
+          }
+        } catch (emailError) {
+          console.error('Error calling send-credit-note-email function:', emailError);
         }
-        
       } catch (pdfError) {
-        console.error('Error in PDF generation or email sending:', pdfError);
-        // Continue despite PDF/email errors
+        console.error('Error generating credit note PDF:', pdfError);
+        // Continue despite PDF generation error
       }
     }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        result
+        message: 'Cancellation request processed successfully',
+        result 
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
