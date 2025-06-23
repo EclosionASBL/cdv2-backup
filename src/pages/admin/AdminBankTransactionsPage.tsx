@@ -19,7 +19,8 @@ import {
   Upload,
   Link as LinkIcon,
   Calendar,
-  ArrowUpDown
+  ArrowUpDown,
+  Info
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
