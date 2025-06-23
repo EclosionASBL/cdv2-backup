@@ -80,6 +80,8 @@ const AdminBankTransactionsPage = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [sortField, setSortField] = useState<string>('transaction_date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [modalInvoiceSearchTerm, setModalInvoiceSearchTerm] = useState('');
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -187,10 +189,7 @@ const AdminBankTransactionsPage = () => {
     setIsModalOpen(true);
   };
 
-  const handleMatchTransaction = async (transaction: BankTransaction) => {
-    setSelectedTransaction(transaction);
-    setIsMatchModalOpen(true);
-    
+  const fetchModalInvoices = async (transaction: BankTransaction, searchTerm: string = '') => {
     try {
       setIsLoadingInvoices(true);
       
@@ -213,12 +212,65 @@ const AdminBankTransactionsPage = () => {
         
       if (error) throw error;
       
-      setInvoices(data || []);
+      let invoicesData = data || [];
+      
+      // Filter by search term if provided
+      if (searchTerm) {
+        invoicesData = invoicesData.filter(invoice => 
+          invoice.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.user.prenom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.user.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.user.email.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      }
+      
+      // Sort invoices by relevance:
+      // 1. Exact amount match first
+      // 2. Then by creation date (newest first)
+      invoicesData.sort((a, b) => {
+        const aExactMatch = Math.abs(a.amount - transaction.amount) < 0.01;
+        const bExactMatch = Math.abs(b.amount - transaction.amount) < 0.01;
+        
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+        
+        // If both match or both don't match, sort by date (assuming created_at is available)
+        return 0; // Default to the original order
+      });
+      
+      setInvoices(invoicesData);
+      setFilteredInvoices(invoicesData);
     } catch (err: any) {
       console.error('Error fetching invoices:', err);
       toast.error('Erreur lors du chargement des factures');
     } finally {
       setIsLoadingInvoices(false);
+    }
+  };
+
+  const handleMatchTransaction = async (transaction: BankTransaction) => {
+    setSelectedTransaction(transaction);
+    setIsMatchModalOpen(true);
+    setModalInvoiceSearchTerm('');
+    
+    // Fetch invoices with the transaction amount
+    await fetchModalInvoices(transaction);
+  };
+
+  const handleModalInvoiceSearch = (searchTerm: string) => {
+    setModalInvoiceSearchTerm(searchTerm);
+    
+    // Filter the already fetched invoices
+    if (searchTerm.trim() === '') {
+      setFilteredInvoices(invoices);
+    } else {
+      const filtered = invoices.filter(invoice => 
+        invoice.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.user.prenom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.user.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.user.email.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredInvoices(filtered);
     }
   };
 
@@ -935,47 +987,77 @@ const AdminBankTransactionsPage = () => {
                 <div className="mb-6">
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Sélectionner une facture</h3>
                   
+                  {/* Search bar for invoices */}
+                  <div className="relative mb-4">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Rechercher une facture par numéro, client..."
+                      value={modalInvoiceSearchTerm}
+                      onChange={(e) => handleModalInvoiceSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  
                   {isLoadingInvoices ? (
                     <div className="flex justify-center py-8">
                       <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
                     </div>
-                  ) : invoices.length === 0 ? (
+                  ) : filteredInvoices.length === 0 ? (
                     <div className="text-center py-8 bg-gray-50 rounded-lg">
                       <p className="text-gray-600">Aucune facture en attente trouvée</p>
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {invoices.map((invoice) => (
-                        <div
-                          key={invoice.id}
-                          className={clsx(
-                            "border rounded-lg p-3 cursor-pointer",
-                            selectedInvoice === invoice.id
-                              ? "border-primary-500 bg-primary-50"
-                              : "border-gray-200 hover:border-gray-300"
-                          )}
-                          onClick={() => setSelectedInvoice(invoice.id)}
-                        >
-                          <div className="flex justify-between">
-                            <div>
-                              <p className="font-medium">{invoice.invoice_number}</p>
-                              <p className="text-sm text-gray-600">
-                                {invoice.user.prenom} {invoice.user.nom}
-                              </p>
-                              <p className="text-xs text-gray-500">{invoice.user.email}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-medium">{formatCurrency(invoice.amount)}</p>
-                              <div className="mt-1">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  En attente
-                                </span>
+                      {filteredInvoices.map((invoice) => {
+                        // Check if this invoice amount matches the transaction amount
+                        const isExactMatch = Math.abs(invoice.amount - selectedTransaction.amount) < 0.01;
+                        
+                        return (
+                          <div
+                            key={invoice.id}
+                            className={clsx(
+                              "border rounded-lg p-3 cursor-pointer",
+                              selectedInvoice === invoice.id
+                                ? "border-primary-500 bg-primary-50"
+                                : isExactMatch
+                                  ? "border-green-300 bg-green-50 hover:border-green-400"
+                                  : "border-gray-200 hover:border-gray-300"
+                            )}
+                            onClick={() => setSelectedInvoice(invoice.id)}
+                          >
+                            <div className="flex justify-between">
+                              <div>
+                                <p className="font-medium">{invoice.invoice_number}</p>
+                                <p className="text-sm text-gray-600">
+                                  {invoice.user.prenom} {invoice.user.nom}
+                                </p>
+                                <p className="text-xs text-gray-500">{invoice.user.email}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className={clsx(
+                                  "font-medium",
+                                  isExactMatch ? "text-green-600" : ""
+                                )}>
+                                  {formatCurrency(invoice.amount)}
+                                  {isExactMatch && (
+                                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      <CheckCircle className="h-3 w-3 mr-1" />
+                                      Montant exact
+                                    </span>
+                                  )}
+                                </p>
+                                <div className="mt-1">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    En attente
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
