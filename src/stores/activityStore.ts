@@ -182,7 +182,8 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
 
       set({ activities: filteredData });
     } catch (error: any) {
-      set({ error: error.message });
+      console.error('Error fetching activities:', error);
+      set({ error: error.message || 'Une erreur est survenue lors du chargement des activités' });
     } finally {
       set({ isLoading: false });
     }
@@ -210,7 +211,8 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
 
       set({ currentActivity: activityWithCount });
     } catch (error: any) {
-      set({ error: error.message });
+      console.error('Error fetching activity:', error);
+      set({ error: error.message || 'Une erreur est survenue lors du chargement de l\'activité' });
     } finally {
       set({ isLoading: false });
     }
@@ -246,7 +248,8 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       if (error) throw error;
       set({ centers: data || [] });
     } catch (error: any) {
-      set({ error: error.message });
+      console.error('Error fetching centers:', error);
+      set({ error: error.message || 'Une erreur est survenue lors du chargement des centres' });
     }
   },
   
@@ -264,7 +267,8 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       const uniquePeriodes = [...new Set(data?.map(item => item.periode))];
       set({ periodes: uniquePeriodes });
     } catch (error: any) {
-      set({ error: error.message });
+      console.error('Error fetching periods:', error);
+      set({ error: error.message || 'Une erreur est survenue lors du chargement des périodes' });
     }
   },
 

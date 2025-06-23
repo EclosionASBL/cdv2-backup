@@ -366,16 +366,67 @@ const AdminBankTransactionsPage = () => {
     try {
       setIsLoading(true);
       
-      const { data, error } = await supabase.rpc('reconcile_all_pending_invoices');
+      // Instead of calling the non-existent RPC function, let's implement a simpler approach
+      // Get all unmatched transactions and pending invoices, then try to match them
+      const { data: unmatchedTransactions, error: transError } = await supabase
+        .from('bank_transactions')
+        .select('*')
+        .eq('status', 'unmatched')
+        .not('extracted_invoice_number', 'is', null);
       
-      if (error) throw error;
+      if (transError) throw transError;
       
-      toast.success(`Réconciliation terminée: ${data.success_count} factures traitées, ${data.error_count} erreurs`);
+      const { data: pendingInvoices, error: invError } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, amount')
+        .eq('status', 'pending');
+      
+      if (invError) throw invError;
+      
+      let successCount = 0;
+      let errorCount = 0;
+      
+      // Try to match transactions with invoices based on invoice number and amount
+      for (const transaction of unmatchedTransactions || []) {
+        if (transaction.extracted_invoice_number) {
+          const matchingInvoice = pendingInvoices?.find(inv => 
+            inv.invoice_number === transaction.extracted_invoice_number &&
+            Math.abs(inv.amount - transaction.amount) < 0.01
+          );
+          
+          if (matchingInvoice) {
+            try {
+              // Call the match function for this transaction
+              const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/match-transaction-to-invoice`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+                },
+                body: JSON.stringify({
+                  transaction_id: transaction.id,
+                  invoice_id: matchingInvoice.id
+                })
+              });
+              
+              if (response.ok) {
+                successCount++;
+              } else {
+                errorCount++;
+              }
+            } catch (err) {
+              errorCount++;
+            }
+          }
+        }
+      }
+      
+      toast.success(`Réconciliation terminée: ${successCount} transactions associées, ${errorCount} erreurs`);
       
       // Refresh the transactions list
       fetchTransactions();
     } catch (err: any) {
-      console.error('Error reconciling invoices:', err);
+      console.error('Error reconciling transactions:', err);
       toast.error(`Erreur: ${err.message}`);
     } finally {
       setIsLoading(false);
