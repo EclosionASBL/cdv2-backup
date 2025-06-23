@@ -50,6 +50,7 @@ import AdminCancellationRequestsPage from './pages/admin/AdminCancellationReques
 import AdminNewsletterPage from './pages/admin/AdminNewsletterPage';
 import AdminCreditNotesPage from './pages/admin/AdminCreditNotesPage';
 import AdminRegistrationsByGroupPage from './pages/admin/AdminRegistrationsByGroupPage';
+import AdminFinancialOverviewPage from './pages/admin/AdminFinancialOverviewPage';
 
 // Components
 import LoadingScreen from './components/common/LoadingScreen';
@@ -149,6 +150,7 @@ function App() {
           <Route path="/admin/sessions" element={<AdminSessionsPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/admin/payments" element={<AdminPaymentsPage />} />
+          <Route path="/admin/financial-overview" element={<AdminFinancialOverviewPage />} />
           <Route path="/admin/credit-notes" element={<AdminCreditNotesPage />} />
           <Route path="/admin/bank-transactions" element={<AdminBankTransactionsPage />} />
           <Route path="/admin/messaging" element={<AdminMessagingPage />} />
