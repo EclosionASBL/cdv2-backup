@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
   Loader2, 
@@ -8,51 +7,45 @@ import {
   Search, 
   RefreshCw, 
   Download, 
-  Upload, 
-  Database, 
-  Link2, 
-  X, 
   FileText, 
-  ExternalLink,
+  CheckCircle, 
+  Clock, 
+  ArrowLeft, 
+  ArrowRight,
   CreditCard,
   Receipt,
-  Clock
+  ExternalLink,
+  X,
+  Upload,
+  Link as LinkIcon,
+  Calendar,
+  ArrowUpDown,
+  Info
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
 import clsx from 'clsx';
 
-interface Transaction {
+interface BankTransaction {
   id: string;
   transaction_date: string;
   amount: number;
   currency: string;
-  bank_reference: string;
   communication: string;
-  extracted_invoice_number: string | null;
   account_number: string;
   account_name: string;
-  movement_number: string;
-  counterparty_address: string;
-  counterparty_name: string | null;
-  status: 'unmatched' | 'matched' | 'partially_matched' | 'overpaid' | 'ignored';
+  bank_reference: string;
+  status: string;
   invoice_id: string | null;
   raw_file_path: string | null;
   import_batch_id: string | null;
-  notes?: string;
-  raw_libelles?: string;
-  raw_details_mouvement?: string;
-  invoice?: {
-    invoice_number: string;
-    amount: number;
-    status: string;
-    user_id: string;
-    user?: {
-      prenom: string;
-      nom: string;
-      email: string;
-    };
-  };
+  notes: string | null;
+  extracted_invoice_number: string | null;
+  movement_number: string | null;
+  counterparty_address: string | null;
+  counterparty_name: string | null;
+  raw_libelles: string | null;
+  raw_details_mouvement: string | null;
 }
 
 interface Invoice {
@@ -60,585 +53,476 @@ interface Invoice {
   invoice_number: string;
   amount: number;
   status: string;
-  user_id: string;
-  user?: {
+  user: {
     prenom: string;
     nom: string;
     email: string;
   };
 }
 
-interface ImportResult {
-  success: boolean;
-  message: string;
-  batch_id: string;
-  transactions: number;
-}
-
 const AdminBankTransactionsPage = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<BankTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'unmatched' | 'matched' | 'partially_matched' | 'ignored'>('all');
+  const [filter, setFilter] = useState<'all' | 'unmatched' | 'matched' | 'partially_matched' | 'overpaid' | 'ignored'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [isTransactionDetailModalOpen, setIsTransactionDetailModalOpen] = useState(false);
-  const [suggestedInvoices, setSuggestedInvoices] = useState<Invoice[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [transactionNotes, setTransactionNotes] = useState('');
-  const [batches, setBatches] = useState<string[]>([]);
-  const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
-  const [isConfirmLinkModalOpen, setIsConfirmLinkModalOpen] = useState(false);
-  const [selectedInvoiceForLink, setSelectedInvoiceForLink] = useState<Invoice | null>(null);
-  const [modalSearchTerm, setModalSearchTerm] = useState('');
-  const [isSearchingInvoices, setIsSearchingInvoices] = useState(false);
-  const [linkedTransactions, setLinkedTransactions] = useState<Transaction[]>([]);
-  const [isLoadingLinkedTransactions, setIsLoadingLinkedTransactions] = useState(false);
-  const [isLinkingTransaction, setIsLinkingTransaction] = useState(false);
-  const [isRunningAutoMatch, setIsRunningAutoMatch] = useState(false);
+  const [dateFilter, setDateFilter] = useState<{start?: string, end?: string}>({});
+  const [amountFilter, setAmountFilter] = useState<{min?: number, max?: number}>({});
+  const [selectedTransaction, setSelectedTransaction] = useState<BankTransaction | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [isProcessingTransaction, setIsProcessingTransaction] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [sortField, setSortField] = useState<string>('transaction_date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [modalInvoiceSearchTerm, setModalInvoiceSearchTerm] = useState('');
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     fetchTransactions();
-    fetchBatches();
-  }, []);
-
-  // Effect to handle modal search term changes
-  useEffect(() => {
-    if (!modalSearchTerm || !selectedTransaction) return;
-    
-    const searchInvoices = async () => {
-      setIsSearchingInvoices(true);
-      try {
-        // Search for invoices matching the search term
-        const { data, error } = await supabase
-          .from('invoices')
-          .select('*, user:user_id(prenom, nom, email)')
-          .or(`invoice_number.ilike.%${modalSearchTerm}%,communication.ilike.%${modalSearchTerm}%`)
-          .eq('status', 'pending')
-          .limit(10);
-        
-        if (error) throw error;
-        
-        // If no results by invoice number, try searching by user details
-        if (!data || data.length === 0) {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('id')
-            .or(`prenom.ilike.%${modalSearchTerm}%,nom.ilike.%${modalSearchTerm}%,email.ilike.%${modalSearchTerm}%`)
-            .limit(10);
-          
-          if (userError) throw userError;
-          
-          if (userData && userData.length > 0) {
-            const userIds = userData.map(u => u.id);
-            const { data: invoicesByUser, error: invoiceError } = await supabase
-              .from('invoices')
-              .select('*, user:user_id(prenom, nom, email)')
-              .in('user_id', userIds)
-              .eq('status', 'pending')
-              .limit(10);
-            
-            if (invoiceError) throw invoiceError;
-            
-            setSuggestedInvoices(invoicesByUser || []);
-          } else {
-            setSuggestedInvoices([]);
-          }
-        } else {
-          setSuggestedInvoices(data);
-        }
-      } catch (error) {
-        console.error('Error searching invoices:', error);
-        toast.error('Erreur lors de la recherche de factures');
-      } finally {
-        setIsSearchingInvoices(false);
-      }
-    };
-    
-    const timeoutId = setTimeout(() => {
-      searchInvoices();
-    }, 300);
-    
-    return () => clearTimeout(timeoutId);
-  }, [modalSearchTerm, selectedTransaction]);
+  }, [filter, currentPage, sortField, sortDirection]);
 
   const fetchTransactions = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
+      // Build the base query with pagination
       let query = supabase
         .from('bank_transactions')
-        .select(`
-          *,
-          invoice:invoice_id(
-            invoice_number,
-            amount,
-            status,
-            user_id
-          )
-        `)
-        .order('transaction_date', { ascending: false });
-        
-      // Apply batch filter if selected
-      if (selectedBatch) {
-        query = query.eq('import_batch_id', selectedBatch);
+        .select('*', { count: 'exact' });
+      
+      // Apply status filter
+      if (filter !== 'all') {
+        query = query.eq('status', filter);
       }
-        
-      const { data, error } = await query;
-        
+      
+      // Apply search filter if provided
+      if (searchTerm) {
+        query = query.or(
+          `communication.ilike.%${searchTerm}%,account_name.ilike.%${searchTerm}%,counterparty_name.ilike.%${searchTerm}%,extracted_invoice_number.ilike.%${searchTerm}%,movement_number.ilike.%${searchTerm}%`
+        );
+      }
+      
+      // Apply date filters if provided
+      if (dateFilter.start) {
+        query = query.gte('transaction_date', dateFilter.start);
+      }
+      if (dateFilter.end) {
+        query = query.lte('transaction_date', dateFilter.end);
+      }
+      
+      // Apply amount filters if provided
+      if (amountFilter.min !== undefined) {
+        query = query.gte('amount', amountFilter.min);
+      }
+      if (amountFilter.max !== undefined) {
+        query = query.lte('amount', amountFilter.max);
+      }
+      
+      // Apply sorting
+      query = query.order(sortField, { ascending: sortDirection === 'asc' });
+      
+      // Apply pagination
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      query = query.range(from, to);
+      
+      const { data, error, count } = await query;
+      
       if (error) throw error;
       
-      // For each transaction with an invoice, fetch the user details separately
-      const transactionsWithUserDetails = await Promise.all((data || []).map(async (transaction) => {
-        if (transaction.invoice && transaction.invoice.user_id) {
-          try {
-            const { data: userData, error: userError } = await supabase
-              .from('users')
-              .select('prenom, nom, email')
-              .eq('id', transaction.invoice.user_id)
-              .single();
-              
-            if (!userError && userData) {
-              return {
-                ...transaction,
-                invoice: {
-                  ...transaction.invoice,
-                  user: userData
-                }
-              };
-            }
-          } catch (err) {
-            console.error('Error fetching user details:', err);
-          }
-        }
-        return transaction;
-      }));
-      
-      setTransactions(transactionsWithUserDetails);
+      setTransactions(data || []);
+      setTotalCount(count || 0);
+      setTotalPages(Math.ceil((count || 0) / itemsPerPage));
     } catch (err: any) {
-      console.error('Error fetching bank transactions:', err);
-      setError(err.message || 'Une erreur est survenue lors du chargement des transactions.');
+      console.error('Error fetching transactions:', err);
+      setError(err.message || 'Une erreur est survenue lors du chargement des transactions');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchBatches = async () => {
+  const handleSearch = () => {
+    setCurrentPage(1); // Reset to first page when searching
+    fetchTransactions();
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      // Toggle direction if same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field and default to ascending
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const handleFilter = () => {
+    setCurrentPage(1); // Reset to first page when filtering
+    fetchTransactions();
+  };
+
+  const handleResetFilters = () => {
+    setFilter('all');
+    setSearchTerm('');
+    setDateFilter({});
+    setAmountFilter({});
+    setCurrentPage(1);
+    fetchTransactions();
+  };
+
+  const handleViewTransaction = (transaction: BankTransaction) => {
+    setSelectedTransaction(transaction);
+    setIsModalOpen(true);
+  };
+
+  const fetchModalInvoices = async (transaction: BankTransaction, searchTerm: string = '') => {
     try {
+      setIsLoadingInvoices(true);
+      
+      // Fetch pending invoices
       const { data, error } = await supabase
-        .from('bank_transactions')
-        .select('import_batch_id')
-        .not('import_batch_id', 'is', null)
+        .from('invoices')
+        .select(`
+          id,
+          invoice_number,
+          amount,
+          status,
+          user:user_id(
+            prenom,
+            nom,
+            email
+          )
+        `)
+        .eq('status', 'pending')
         .order('created_at', { ascending: false });
         
       if (error) throw error;
       
-      // Get unique batch IDs
-      const uniqueBatches = [...new Set(data?.map(tx => tx.import_batch_id).filter(Boolean))];
-      setBatches(uniqueBatches as string[]);
-    } catch (err) {
-      console.error('Error fetching batches:', err);
-    }
-  };
-
-  const fetchLinkedTransactions = async (invoiceId: string) => {
-    if (!invoiceId) return;
-    
-    setIsLoadingLinkedTransactions(true);
-    try {
-      const { data, error } = await supabase
-        .from('bank_transactions')
-        .select('*')
-        .eq('invoice_id', invoiceId)
-        .order('transaction_date', { ascending: false });
-        
-      if (error) throw error;
+      let invoicesData = data || [];
       
-      setLinkedTransactions(data || []);
-    } catch (err) {
-      console.error('Error fetching linked transactions:', err);
+      // Filter by search term if provided
+      if (searchTerm) {
+        invoicesData = invoicesData.filter(invoice => 
+          invoice.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.user.prenom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.user.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.user.email.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      }
+      
+      // Sort invoices by relevance:
+      // 1. Exact amount match first
+      // 2. Then by creation date (newest first)
+      invoicesData.sort((a, b) => {
+        const aExactMatch = Math.abs(a.amount - transaction.amount) < 0.01;
+        const bExactMatch = Math.abs(b.amount - transaction.amount) < 0.01;
+        
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+        
+        // If both match or both don't match, sort by date (assuming created_at is available)
+        return 0; // Default to the original order
+      });
+      
+      setInvoices(invoicesData);
+      setFilteredInvoices(invoicesData);
+    } catch (err: any) {
+      console.error('Error fetching invoices:', err);
+      toast.error('Erreur lors du chargement des factures');
     } finally {
-      setIsLoadingLinkedTransactions(false);
+      setIsLoadingInvoices(false);
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setSelectedFile(e.target.files[0]);
+  const handleMatchTransaction = async (transaction: BankTransaction) => {
+    setSelectedTransaction(transaction);
+    setIsMatchModalOpen(true);
+    setModalInvoiceSearchTerm('');
+    
+    // Fetch invoices with the transaction amount
+    await fetchModalInvoices(transaction);
+  };
+
+  const handleModalInvoiceSearch = (searchTerm: string) => {
+    setModalInvoiceSearchTerm(searchTerm);
+    
+    // Filter the already fetched invoices
+    if (searchTerm.trim() === '') {
+      setFilteredInvoices(invoices);
+    } else {
+      const filtered = invoices.filter(invoice => 
+        invoice.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.user.prenom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.user.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.user.email.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredInvoices(filtered);
     }
   };
 
-  const handleImportFile = async () => {
-    if (!selectedFile) {
+  const handleConfirmMatch = async () => {
+    if (!selectedTransaction || !selectedInvoice) return;
+    
+    try {
+      setIsProcessingTransaction(true);
+      
+      // Call the match-transaction-to-invoice edge function
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/match-transaction-to-invoice`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({
+          transaction_id: selectedTransaction.id,
+          invoice_id: selectedInvoice
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to match transaction');
+      }
+      
+      const result = await response.json();
+      
+      toast.success('Transaction associée avec succès');
+      setIsMatchModalOpen(false);
+      fetchTransactions();
+    } catch (err: any) {
+      console.error('Error matching transaction:', err);
+      toast.error(err.message || 'Erreur lors de l\'association de la transaction');
+    } finally {
+      setIsProcessingTransaction(false);
+    }
+  };
+
+  const handleUploadCSV = async () => {
+    if (!uploadFile) {
       toast.error('Veuillez sélectionner un fichier');
       return;
     }
-
+    
     try {
-      setIsImporting(true);
-      setImportResult(null);
-
-      // 1. Upload the file to Supabase Storage
-      const fileName = `${Date.now()}_${selectedFile.name}`;
+      setIsUploading(true);
+      
+      // First upload the file to storage
+      const fileName = `${Date.now()}_${uploadFile.name}`;
       const filePath = `imports/${fileName}`;
       
       const { error: uploadError } = await supabase.storage
         .from('csv-files')
-        .upload(filePath, selectedFile);
+        .upload(filePath, uploadFile);
         
-      if (uploadError) {
-        throw new Error(`Erreur lors du téléversement: ${uploadError.message}`);
-      }
+      if (uploadError) throw uploadError;
       
-      // 2. Call the Edge Function to process the file
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-csv-file`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            filePath,
-            batchId: `batch-${Date.now()}`
-          }),
-        }
-      );
+      // Then call the process-csv-file edge function
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-csv-file`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({
+          filePath,
+          batchId: `batch-${Date.now()}`
+        })
+      });
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Erreur lors du traitement du fichier');
+        throw new Error(errorData.error || 'Failed to process CSV file');
       }
       
       const result = await response.json();
-      setImportResult(result);
       
-      // Refresh transactions list and batches
+      toast.success(`${result.transactions} transactions importées avec succès`);
+      setIsUploadModalOpen(false);
+      setUploadFile(null);
       fetchTransactions();
-      fetchBatches();
-      
-      // Close the modal automatically after successful import
-      setIsImportModalOpen(false);
-      
-      // Show success toast with transaction count
-      toast.success(`Importation réussie: ${result.transactions} transactions importées`);
-    } catch (error: any) {
-      console.error('Error importing file:', error);
-      toast.error(`Erreur: ${error.message}`);
+    } catch (err: any) {
+      console.error('Error uploading CSV:', err);
+      toast.error(err.message || 'Erreur lors de l\'importation du fichier CSV');
     } finally {
-      setIsImporting(false);
+      setIsUploading(false);
     }
   };
 
-  const handleViewTransactionDetails = async (transaction: Transaction) => {
-    setSelectedTransaction(transaction);
-    setTransactionNotes(transaction.notes || '');
-    setIsTransactionDetailModalOpen(true);
-    setModalSearchTerm('');
-    setLinkedTransactions([]);
-    
-    // If transaction is linked to an invoice, fetch all transactions linked to that invoice
-    if (transaction.invoice_id) {
-      fetchLinkedTransactions(transaction.invoice_id);
-    }
-    
-    // Find suggested invoices
+  const handleReconcileAll = async () => {
     try {
-      setIsLoadingSuggestions(true);
+      setIsLoading(true);
       
-      // Look for invoices with similar communication, amount, or extracted invoice number
-      let query = supabase
+      // Instead of calling the non-existent RPC function, let's implement a simpler approach
+      // Get all unmatched transactions and pending invoices, then try to match them
+      const { data: unmatchedTransactions, error: transError } = await supabase
+        .from('bank_transactions')
+        .select('*')
+        .eq('status', 'unmatched')
+        .not('extracted_invoice_number', 'is', null);
+      
+      if (transError) throw transError;
+      
+      const { data: pendingInvoices, error: invError } = await supabase
         .from('invoices')
-        .select('*, user:user_id(prenom, nom, email)')
+        .select('id, invoice_number, amount')
         .eq('status', 'pending');
       
-      // If we have an extracted invoice number, prioritize that match
-      if (transaction.extracted_invoice_number) {
-        query = query.or(`invoice_number.eq.${transaction.extracted_invoice_number},amount.eq.${transaction.amount}`);
-      } 
-      // Otherwise try to match by amount or communication
-      else {
-        query = query.or(`amount.eq.${transaction.amount},communication.ilike.%${transaction.communication}%,invoice_number.ilike.%${transaction.communication}%`);
-      }
+      if (invError) throw invError;
       
-      // Limit results
-      query = query.limit(10);
+      let successCount = 0;
+      let errorCount = 0;
       
-      const { data, error } = await query;
-        
-      if (error) throw error;
-      
-      setSuggestedInvoices(data || []);
-    } catch (err) {
-      console.error('Error fetching suggested invoices:', err);
-    } finally {
-      setIsLoadingSuggestions(false);
-    }
-  };
-
-  const handleConfirmLinkToInvoice = (invoice: Invoice) => {
-    setSelectedInvoiceForLink(invoice);
-    setIsConfirmLinkModalOpen(true);
-  };
-
-  const handleLinkToInvoice = async () => {
-    if (!selectedTransaction || !selectedInvoiceForLink) return;
-    
-    try {
-      setIsLinkingTransaction(true);
-      
-      // Show a loading toast for long operations
-      const loadingToast = toast.loading('Association de la transaction en cours...', {
-        duration: 30000 // 30 seconds timeout
-      });
-      
-      // Update the transaction to link it to the invoice using the UUID id
-      // The database trigger will handle the rest (updating invoice status, etc.)
-      const { error: updateError } = await supabase
-        .from('bank_transactions')
-        .update({ 
-          invoice_id: selectedInvoiceForLink.id, // Use the UUID id, not the invoice_number
-          status: 'matched',
-          notes: transactionNotes || 'Manually linked by admin'
-        })
-        .eq('id', selectedTransaction.id);
-
-      toast.dismiss(loadingToast);
-
-      if (updateError) {
-        // Handle specific database timeout errors
-        if (updateError.code === '57014') {
-          throw new Error('L\'opération a pris trop de temps. Cela peut être dû à une charge importante sur la base de données. Veuillez réessayer dans quelques minutes.');
+      // Try to match transactions with invoices based on invoice number and amount
+      for (const transaction of unmatchedTransactions || []) {
+        if (transaction.extracted_invoice_number) {
+          const matchingInvoice = pendingInvoices?.find(inv => 
+            inv.invoice_number === transaction.extracted_invoice_number &&
+            Math.abs(inv.amount - transaction.amount) < 0.01
+          );
+          
+          if (matchingInvoice) {
+            try {
+              // Call the match function for this transaction
+              const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/match-transaction-to-invoice`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+                },
+                body: JSON.stringify({
+                  transaction_id: transaction.id,
+                  invoice_id: matchingInvoice.id
+                })
+              });
+              
+              if (response.ok) {
+                successCount++;
+              } else {
+                errorCount++;
+              }
+            } catch (err) {
+              errorCount++;
+            }
+          }
         }
-        throw updateError;
       }
       
-      toast.success('Transaction liée à la facture avec succès');
-      setIsConfirmLinkModalOpen(false);
-      setIsTransactionDetailModalOpen(false);
+      toast.success(`Réconciliation terminée: ${successCount} transactions associées, ${errorCount} erreurs`);
+      
+      // Refresh the transactions list
       fetchTransactions();
-    } catch (error: any) {
-      console.error('Error linking transaction to invoice:', error);
-      
-      // Provide specific error messages for common database issues
-      if (error.message.includes('statement timeout') || error.code === '57014') {
-        toast.error('L\'opération a pris trop de temps. La base de données est peut-être surchargée. Veuillez réessayer dans quelques minutes.');
-      } else if (error.message.includes('stack depth limit') || error.code === '54001') {
-        toast.error('Opération trop complexe. Veuillez contacter l\'administrateur système.');
-      } else {
-        toast.error(`Erreur: ${error.message}`);
-      }
-    } finally {
-      setIsLinkingTransaction(false);
-    }
-  };
-
-  const handleUpdateTransactionStatus = async (status: 'ignored' | 'unmatched') => {
-    if (!selectedTransaction) return;
-    
-    try {
-      const { error } = await supabase
-        .from('bank_transactions')
-        .update({ 
-          status,
-          notes: transactionNotes
-        })
-        .eq('id', selectedTransaction.id);
-        
-      if (error) throw error;
-      
-      // Refresh transactions
-      fetchTransactions();
-      
-      toast.success(`Statut mis à jour: ${status}`);
-      setIsTransactionDetailModalOpen(false);
     } catch (err: any) {
-      console.error('Error updating transaction status:', err);
+      console.error('Error reconciling transactions:', err);
       toast.error(`Erreur: ${err.message}`);
-    }
-  };
-
-  const handleRunAutoMatch = async () => {
-    try {
-      setIsRunningAutoMatch(true);
-      
-      // Show a warning toast about potential long operation
-      const warningToast = toast.loading('Association automatique en cours... Cette opération peut prendre plusieurs minutes.', {
-        duration: 60000 // 1 minute timeout for the toast
-      });
-      
-      // Call the function to match all unmatched transactions
-      const { data, error } = await supabase.rpc('match_all_unmatched_transactions');
-      
-      toast.dismiss(warningToast);
-      
-      if (error) {
-        // Handle specific database errors
-        if (error.code === '54001') {
-          throw new Error('L\'opération est trop complexe pour être exécutée automatiquement. Veuillez traiter les transactions par petits lots ou contacter l\'administrateur système pour augmenter les limites de la base de données.');
-        } else if (error.code === '57014') {
-          throw new Error('L\'opération a pris trop de temps. La base de données contient peut-être trop de transactions. Veuillez traiter les transactions par petits lots.');
-        }
-        throw error;
-      }
-      
-      // Refresh data
-      fetchTransactions();
-      
-      toast.success(`${data || 0} transactions ont été automatiquement associées`);
-    } catch (err: any) {
-      console.error('Error running auto-match:', err);
-      
-      // Provide specific error messages for common database issues
-      if (err.message.includes('stack depth limit') || err.code === '54001') {
-        toast.error('L\'association automatique ne peut pas traiter autant de données en une fois. Veuillez filtrer par lot ou traiter les transactions manuellement.');
-      } else if (err.message.includes('statement timeout') || err.code === '57014') {
-        toast.error('L\'opération a pris trop de temps. Essayez de filtrer par lot pour traiter moins de transactions à la fois.');
-      } else {
-        toast.error(`Erreur: ${err.message}`);
-      }
     } finally {
-      setIsRunningAutoMatch(false);
+      setIsLoading(false);
     }
   };
 
-  const handleExportCSV = () => {
-    try {
-      // Filter transactions based on current filter
-      const filteredData = transactions.filter(tx => {
-        if (filter === 'all') return true;
-        return tx.status === filter;
-      });
-      
-      // Create CSV content
-      const headers = [
-        'Date',
-        'Montant',
-        'Devise',
-        'Communication',
-        'Numéro de facture',
-        'Numéro de mouvement',
-        'Compte',
-        'Nom du compte',
-        'Contrepartie',
-        'Adresse contrepartie',
-        'Référence',
-        'Statut',
-        'Facture liée',
-        'Notes'
-      ];
-      
-      const rows = filteredData.map(tx => [
-        new Date(tx.transaction_date).toLocaleDateString('fr-FR'),
-        tx.amount,
-        tx.currency,
-        `"${tx.communication?.replace(/"/g, '""') || ''}"`,
-        `"${tx.extracted_invoice_number?.replace(/"/g, '""') || ''}"`,
-        `"${tx.movement_number?.replace(/"/g, '""') || ''}"`,
-        `"${tx.account_number?.replace(/"/g, '""') || ''}"`,
-        `"${tx.account_name?.replace(/"/g, '""') || ''}"`,
-        `"${tx.counterparty_name?.replace(/"/g, '""') || ''}"`,
-        `"${tx.counterparty_address?.replace(/"/g, '""') || ''}"`,
-        `"${tx.bank_reference?.replace(/"/g, '""') || ''}"`,
-        tx.status,
-        tx.invoice?.invoice_number || '',
-        `"${tx.notes?.replace(/"/g, '""') || ''}"`
-      ]);
-      
-      // Combine headers and rows
-      const csvContent = [
-        headers.join(','),
-        ...rows.map(row => row.join(','))
-      ].join('\n');
-      
-      // Create and download the file
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `transactions_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      toast.success('Export CSV réussi');
-    } catch (err: any) {
-      console.error('Error exporting CSV:', err);
-      toast.error('Erreur lors de l\'export CSV');
-    }
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('fr-FR');
   };
 
-  const getTransactionStatusColor = (status: string) => {
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(amount);
+  };
+
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case 'matched':
-        return 'bg-green-100 text-green-800';
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Associée
+          </span>
+        );
       case 'partially_matched':
-        return 'bg-yellow-100 text-yellow-800';
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            <Clock className="w-3 h-3 mr-1" />
+            Partielle
+          </span>
+        );
       case 'overpaid':
-        return 'bg-blue-100 text-blue-800';
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Surpayée
+          </span>
+        );
       case 'ignored':
-        return 'bg-gray-100 text-gray-800';
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+            <X className="w-3 h-3 mr-1" />
+            Ignorée
+          </span>
+        );
       default:
-        return 'bg-red-100 text-red-800';
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Non associée
+          </span>
+        );
     }
   };
 
-  const getTransactionStatusText = (status: string) => {
-    switch (status) {
-      case 'matched':
-        return 'Associée';
-      case 'partially_matched':
-        return 'Partiellement associée';
-      case 'overpaid':
-        return 'Surpayée';
-      case 'ignored':
-        return 'Ignorée';
-      default:
-        return 'Non associée';
-    }
-  };
-
-  // Filter and search transactions
-  const filteredTransactions = transactions
-    .filter(tx => {
-      if (filter === 'all') return true;
-      return tx.status === filter;
-    })
-    .filter(tx => {
-      if (!searchTerm) return true;
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        tx.communication?.toLowerCase().includes(searchLower) ||
-        tx.extracted_invoice_number?.toLowerCase().includes(searchLower) ||
-        tx.account_name?.toLowerCase().includes(searchLower) ||
-        tx.counterparty_name?.toLowerCase().includes(searchLower) ||
-        tx.account_number?.toLowerCase().includes(searchLower) ||
-        tx.bank_reference?.toLowerCase().includes(searchLower) ||
-        tx.movement_number?.toLowerCase().includes(searchLower) ||
-        tx.counterparty_address?.toLowerCase().includes(searchLower) ||
-        tx.amount.toString().includes(searchLower) ||
-        tx.invoice?.invoice_number?.toLowerCase().includes(searchLower) ||
-        tx.invoice?.user?.email?.toLowerCase().includes(searchLower) ||
-        tx.invoice?.user?.prenom?.toLowerCase().includes(searchLower) ||
-        tx.invoice?.user?.nom?.toLowerCase().includes(searchLower)
-      );
-    });
-
-  // Calculate total for linked transactions
-  const calculateLinkedTransactionsTotal = () => {
-    return linkedTransactions.reduce((sum, tx) => sum + tx.amount, 0);
+  const exportCSV = () => {
+    // Create CSV content
+    const headers = [
+      'Date',
+      'Montant',
+      'Devise',
+      'Communication',
+      'Numéro de compte',
+      'Nom du compte',
+      'Référence bancaire',
+      'Statut',
+      'Numéro de mouvement',
+      'Contrepartie'
+    ];
+    
+    const rows = transactions.map(t => [
+      formatDate(t.transaction_date),
+      t.amount,
+      t.currency,
+      t.communication || '',
+      t.account_number || '',
+      t.account_name || '',
+      t.bank_reference || '',
+      t.status,
+      t.movement_number || '',
+      t.counterparty_name || ''
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    // Create and download the file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `transactions_bancaires_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -653,28 +537,26 @@ const AdminBankTransactionsPage = () => {
         
         <div className="flex space-x-3">
           <button
-            onClick={handleExportCSV}
-            className="btn-outline flex items-center"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Exporter CSV
-          </button>
-          <button
-            onClick={() => setIsImportModalOpen(true)}
+            onClick={() => setIsUploadModalOpen(true)}
             className="btn-outline flex items-center"
           >
             <Upload className="h-4 w-4 mr-2" />
             Importer CSV
           </button>
           <button
-            onClick={handleRunAutoMatch}
-            disabled={isLoading || isRunningAutoMatch}
+            onClick={exportCSV}
             className="btn-outline flex items-center"
-            title="Attention: Cette opération peut prendre plusieurs minutes pour de gros volumes de données"
           >
-            <Link2 className={`h-4 w-4 mr-2 ${isRunningAutoMatch ? 'animate-spin' : ''}`} />
-            Association auto
-            {isRunningAutoMatch && <Clock className="h-4 w-4 ml-1 text-yellow-500" />}
+            <Download className="h-4 w-4 mr-2" />
+            Exporter CSV
+          </button>
+          <button
+            onClick={handleReconcileAll}
+            disabled={isLoading}
+            className="btn-outline flex items-center"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Réconcilier tout
           </button>
           <button
             onClick={fetchTransactions}
@@ -687,769 +569,653 @@ const AdminBankTransactionsPage = () => {
         </div>
       </div>
 
-      {/* Warning message for large datasets */}
-      {transactions.length > 1000 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex">
-            <AlertCircle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0" />
-            <div>
-              <p className="text-yellow-800 font-medium">Volume important de données détecté</p>
-              <p className="text-yellow-700 text-sm mt-1">
-                Avec {transactions.length} transactions, l'association automatique peut prendre plusieurs minutes. 
-                Considérez filtrer par lot pour de meilleures performances.
-              </p>
-            </div>
+      {/* Filters */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Rechercher par communication, compte, contrepartie..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
-        </div>
-      )}
-
-      <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-        <div className="relative flex-grow">
-          <input
-            type="text"
-            placeholder="Rechercher une transaction..."
-            className="form-input pl-10 pr-4 py-2 w-full"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <Filter className="h-5 w-5 text-gray-500" />
-          <select
-            className="form-input py-2"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as any)}
-          >
-            <option value="all">Tous les statuts</option>
-            <option value="unmatched">Non associées</option>
-            <option value="matched">Associées</option>
-            <option value="partially_matched">Partiellement associées</option>
-            <option value="ignored">Ignorées</option>
-          </select>
-        </div>
-        
-        {batches.length > 0 && (
-          <div className="flex items-center space-x-2">
-            <Database className="h-5 w-5 text-gray-500" />
+          
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-gray-400" />
             <select
-              className="form-input py-2"
-              value={selectedBatch || ''}
-              onChange={(e) => {
-                setSelectedBatch(e.target.value || null);
-                // Refresh transactions when batch changes
-                setTimeout(() => fetchTransactions(), 100);
-              }}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as any)}
+              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">Tous les lots</option>
-              {batches.map(batch => (
-                <option key={batch} value={batch}>
-                  {batch.replace('batch-', 'Lot ')}
-                </option>
-              ))}
+              <option value="all">Tous les statuts</option>
+              <option value="unmatched">Non associées</option>
+              <option value="matched">Associées</option>
+              <option value="partially_matched">Partiellement associées</option>
+              <option value="overpaid">Surpayées</option>
+              <option value="ignored">Ignorées</option>
             </select>
           </div>
-        )}
-      </div>
-      
-      {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 p-4 rounded-lg">
-          <div className="flex">
-            <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
-            <p className="text-red-700">{error}</p>
+          
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-gray-400" />
+            <input
+              type="date"
+              placeholder="Date début"
+              value={dateFilter.start || ''}
+              onChange={(e) => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <span className="text-gray-500">à</span>
+            <input
+              type="date"
+              placeholder="Date fin"
+              value={dateFilter.end || ''}
+              onChange={(e) => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
           </div>
         </div>
-      ) : filteredTransactions.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-md p-8 text-center">
-          <p className="text-gray-600 mb-4">
-            {searchTerm || filter !== 'all' || selectedBatch
-              ? 'Aucune transaction ne correspond à vos critères.'
-              : 'Aucune transaction bancaire trouvée.'}
-          </p>
+        
+        <div className="flex justify-between">
           <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="btn-primary inline-flex items-center"
+            onClick={handleFilter}
+            className="btn-primary"
           >
-            <Upload className="h-4 w-4 mr-2" />
-            Importer un fichier CSV
+            Filtrer
+          </button>
+          
+          <button
+            onClick={handleResetFilters}
+            className="btn-outline"
+          >
+            Réinitialiser les filtres
           </button>
         </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+      </div>
+
+      {/* Transactions Table */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 p-4 rounded-lg">
+            <div className="flex">
+              <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+              <p className="text-red-700">{error}</p>
+            </div>
+          </div>
+        ) : transactions.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune transaction trouvée</h3>
+            <p className="text-gray-600">
+              {searchTerm || filter !== 'all' || dateFilter.start || dateFilter.end || amountFilter.min || amountFilter.max
+                ? 'Essayez d\'ajuster vos filtres pour voir plus de résultats.'
+                : 'Aucune transaction n\'a été importée. Utilisez le bouton "Importer CSV" pour commencer.'}
+            </p>
+          </div>
+        ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
+                  <th 
+                    className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('transaction_date')}
+                  >
+                    <div className="flex items-center">
+                      Date
+                      {sortField === 'transaction_date' && (
+                        <ArrowUpDown className="ml-1 h-4 w-4" />
+                      )}
+                    </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Montant
+                  <th 
+                    className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('amount')}
+                  >
+                    <div className="flex items-center">
+                      Montant
+                      {sortField === 'amount' && (
+                        <ArrowUpDown className="ml-1 h-4 w-4" />
+                      )}
+                    </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Numéro de facture
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Communication
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Numéro de mouvement
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    N° Mouvement
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Compte contrepartie
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Contrepartie
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Statut
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Facture liée
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTransactions.map((transaction) => (
-                  <tr key={transaction.id} className={clsx(
-                    "hover:bg-gray-50",
-                    transaction.status === 'unmatched' && "bg-red-50"
-                  )}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {new Date(transaction.transaction_date).toLocaleDateString('fr-FR')}
-                      </div>
+                {transactions.map((transaction) => (
+                  <tr key={transaction.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatDate(transaction.transaction_date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className={clsx(
-                        "text-sm font-medium",
-                        transaction.amount >= 0 ? "text-green-600" : "text-red-600"
-                      )}>
-                        {transaction.amount} {transaction.currency}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {transaction.extracted_invoice_number || 
-                          <span className="text-gray-400 italic">Non extrait</span>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900 max-w-xs truncate" title={transaction.communication}>
-                        {transaction.communication || <span className="text-gray-400 italic">Aucune communication</span>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {transaction.movement_number || <span className="text-gray-400 italic">-</span>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">
-                        {transaction.counterparty_name || <span className="text-gray-400 italic">Inconnu</span>}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {transaction.counterparty_address || <span className="text-gray-400 italic">-</span>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        getTransactionStatusColor(transaction.status)
-                      }`}>
-                        {getTransactionStatusText(transaction.status)}
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <span className={transaction.amount >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
+                        {formatCurrency(transaction.amount)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {transaction.invoice ? (
-                        <div className="text-sm">
-                          <div className="font-medium text-gray-900">
-                            {transaction.invoice.invoice_number}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {transaction.invoice.user?.prenom} {transaction.invoice.user?.nom}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-gray-400 italic">Non liée</span>
-                      )}
+                    <td className="px-3 py-4 text-sm text-gray-500 max-w-xs truncate">
+                      {transaction.communication || <span className="italic text-gray-400">-</span>}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={() => handleViewTransactionDetails(transaction)}
-                        className="text-primary-600 hover:text-primary-900"
-                        title="Voir les détails"
-                      >
-                        <FileText className="h-5 w-5" />
-                      </button>
+                    <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {transaction.movement_number || <span className="italic text-gray-400">-</span>}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {transaction.counterparty_name || <span className="italic text-gray-400">-</span>}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      {getStatusBadge(transaction.status)}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex justify-end space-x-2">
+                        <button
+                          onClick={() => handleViewTransaction(transaction)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="Voir les détails"
+                        >
+                          <FileText className="w-5 h-5" />
+                        </button>
+                        {transaction.status === 'unmatched' && (
+                          <button
+                            onClick={() => handleMatchTransaction(transaction)}
+                            className="text-green-600 hover:text-green-900"
+                            title="Associer à une facture"
+                          >
+                            <LinkIcon className="w-5 h-5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      {/* Import CSV File Modal */}
-      <Dialog
-        open={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        className="fixed inset-0 z-50 overflow-y-auto"
-      >
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
-
-          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
-            <Dialog.Title className="text-lg font-semibold mb-4">
-              Importer un fichier CSV
-            </Dialog.Title>
-
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Sélectionnez un fichier CSV à importer. Le système tentera d'associer automatiquement les transactions aux factures.
-              </p>
-
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  className="hidden"
-                  id="csv-file-input"
-                />
-                <label
-                  htmlFor="csv-file-input"
-                  className="cursor-pointer flex flex-col items-center justify-center"
-                >
-                  <Upload className="h-10 w-10 text-gray-400 mb-2" />
-                  <span className="text-sm font-medium text-gray-700">
-                    {selectedFile ? selectedFile.name : "Cliquez pour sélectionner un fichier"}
-                  </span>
-                  <span className="text-xs text-gray-500 mt-1">
-                    {selectedFile ? `${(selectedFile.size / 1024).toFixed(2)} KB` : "Format .CSV"}
-                  </span>
-                </label>
+        )}
+        
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 flex items-center justify-between border-t border-gray-200">
+            <div className="flex-1 flex justify-between sm:hidden">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+                  currentPage === 1 
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Précédent
+              </button>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+                  currentPage === totalPages 
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Suivant
+              </button>
+            </div>
+            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Affichage de <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> à{' '}
+                  <span className="font-medium">
+                    {Math.min(currentPage * itemsPerPage, totalCount)}
+                  </span>{' '}
+                  sur <span className="font-medium">{totalCount}</span> résultats
+                </p>
               </div>
-
-              {importResult && (
-                <div className={clsx(
-                  "p-4 rounded-lg text-sm",
-                  importResult.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                )}>
-                  <p className="font-medium">{importResult.success ? "Importation réussie" : "Échec de l'importation"}</p>
-                  <p>{importResult.message}</p>
-                  {importResult.success && (
-                    <p className="mt-1">
-                      Batch ID: {importResult.batch_id}<br />
-                      Transactions: {importResult.transactions}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsImportModalOpen(false)}
-                  className="btn-outline"
-                  disabled={isImporting}
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={handleImportFile}
-                  disabled={!selectedFile || isImporting}
-                  className={clsx(
-                    "btn-primary",
-                    (!selectedFile || isImporting) && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  {isImporting ? (
-                    <span className="flex items-center">
-                      <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                      Importation...
-                    </span>
-                  ) : (
-                    <span className="flex items-center">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Importer
-                    </span>
-                  )}
-                </button>
+              <div>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
+                      currentPage === 1 
+                        ? 'text-gray-300 cursor-not-allowed' 
+                        : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="sr-only">Précédent</span>
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                  
+                  {/* Page numbers */}
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    let page;
+                    if (totalPages <= 5) {
+                      page = i + 1;
+                    } else if (currentPage <= 3) {
+                      page = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      page = totalPages - 4 + i;
+                    } else {
+                      page = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                          currentPage === page
+                            ? 'z-10 bg-primary-50 border-primary-500 text-primary-600'
+                            : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                  
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
+                      currentPage === totalPages 
+                        ? 'text-gray-300 cursor-not-allowed' 
+                        : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="sr-only">Suivant</span>
+                    <ArrowRight className="h-5 w-5" />
+                  </button>
+                </nav>
               </div>
             </div>
           </div>
-        </div>
-      </Dialog>
+        )}
+      </div>
 
-      {/* Transaction Detail Modal */}
-      <Dialog
-        open={isTransactionDetailModalOpen}
-        onClose={() => setIsTransactionDetailModalOpen(false)}
-        className="fixed inset-0 z-50 overflow-y-auto"
-      >
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
-
-          <div className="relative bg-white rounded-lg shadow-xl max-w-3xl w-full mx-auto p-6">
-            <Dialog.Title className="text-lg font-semibold mb-4">
-              Détails de la transaction
-            </Dialog.Title>
-
+      {/* Transaction Details Modal */}
+      <Dialog open={isModalOpen} onClose={() => setIsModalOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Dialog.Panel className="mx-auto max-w-4xl w-full bg-white rounded-lg shadow-xl">
             {selectedTransaction && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Date</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {new Date(selectedTransaction.transaction_date).toLocaleDateString('fr-FR')}
-                    </p>
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <Dialog.Title className="text-lg font-semibold text-gray-900">
+                    Détails de la transaction
+                  </Dialog.Title>
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Date</h3>
+                      <p className="mt-1 text-sm text-gray-900">{formatDate(selectedTransaction.transaction_date)}</p>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Montant</h3>
+                      <p className={`mt-1 text-sm font-medium ${selectedTransaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatCurrency(selectedTransaction.amount)}
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Communication</h3>
+                      <p className="mt-1 text-sm text-gray-900">{selectedTransaction.communication || '-'}</p>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Numéro de mouvement</h3>
+                      <p className="mt-1 text-sm text-gray-900">{selectedTransaction.movement_number || '-'}</p>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Numéro de facture extrait</h3>
+                      <p className="mt-1 text-sm text-gray-900">{selectedTransaction.extracted_invoice_number || '-'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Montant</h3>
-                    <p className={clsx(
-                      "mt-1 text-sm font-medium",
-                      selectedTransaction.amount >= 0 ? "text-green-600" : "text-red-600"
-                    )}>
-                      {selectedTransaction.amount} {selectedTransaction.currency}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Numéro de facture extrait</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {selectedTransaction.extracted_invoice_number || 
-                        <span className="italic text-gray-400">Non extrait</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Communication</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {selectedTransaction.communication || <span className="italic text-gray-400">Aucune communication</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Numéro de mouvement</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {selectedTransaction.movement_number || <span className="italic text-gray-400">Non renseigné</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Notre compte</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {selectedTransaction.account_name || <span className="italic text-gray-400">Nom inconnu</span>}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {selectedTransaction.account_number || <span className="italic">Numéro inconnu</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Compte contrepartie</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {selectedTransaction.counterparty_address || <span className="italic text-gray-400">Non renseignée</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Contrepartie</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {selectedTransaction.counterparty_name || <span className="italic text-gray-400">Non renseigné</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Référence bancaire</h3>
-                    <p className="mt-1 text-sm text-gray-900">
-                      {selectedTransaction.bank_reference || <span className="italic text-gray-400">Aucune référence</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Statut</h3>
-                    <p className="mt-1">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        getTransactionStatusColor(selectedTransaction.status)
-                      }`}>
-                        {getTransactionStatusText(selectedTransaction.status)}
-                      </span>
-                    </p>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Compte</h3>
+                      <p className="mt-1 text-sm text-gray-900">{selectedTransaction.account_name || '-'}</p>
+                      <p className="text-xs text-gray-500">{selectedTransaction.account_number || '-'}</p>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Contrepartie</h3>
+                      <p className="mt-1 text-sm text-gray-900">{selectedTransaction.counterparty_name || '-'}</p>
+                      <p className="text-xs text-gray-500">{selectedTransaction.counterparty_address || '-'}</p>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Statut</h3>
+                      <div className="mt-1">
+                        {getStatusBadge(selectedTransaction.status)}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Facture associée</h3>
+                      <p className="mt-1 text-sm text-gray-900">
+                        {selectedTransaction.invoice_id ? (
+                          <span className="inline-flex items-center text-blue-600">
+                            <LinkIcon className="h-4 w-4 mr-1" />
+                            Facture associée
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">Aucune facture associée</span>
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Raw transaction data */}
-                {(selectedTransaction.raw_libelles || selectedTransaction.raw_details_mouvement) && (
-                  <div className="mt-6 border-t pt-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Données brutes de la transaction</h3>
-                    
+                {/* Raw data section */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Données brutes</h3>
+                  
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-2 text-xs font-mono overflow-x-auto">
                     {selectedTransaction.raw_libelles && (
-                      <div className="mb-4">
-                        <h4 className="text-xs font-medium text-gray-500">Libellés</h4>
-                        <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm text-gray-800 whitespace-pre-wrap">
-                          {selectedTransaction.raw_libelles}
-                        </div>
+                      <div>
+                        <span className="text-gray-500">Libellés:</span>
+                        <pre className="mt-1 whitespace-pre-wrap">{selectedTransaction.raw_libelles}</pre>
                       </div>
                     )}
                     
                     {selectedTransaction.raw_details_mouvement && (
                       <div>
-                        <h4 className="text-xs font-medium text-gray-500">Détails du mouvement</h4>
-                        <div className="mt-1 p-3 bg-gray-50 rounded-lg text-sm text-gray-800 whitespace-pre-wrap">
-                          {selectedTransaction.raw_details_mouvement}
-                        </div>
+                        <span className="text-gray-500">Détails du mouvement:</span>
+                        <pre className="mt-1 whitespace-pre-wrap">{selectedTransaction.raw_details_mouvement}</pre>
                       </div>
                     )}
-                  </div>
-                )}
-
-                {/* Linked invoice */}
-                {selectedTransaction.invoice && (
-                  <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Facture associée</h3>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">{selectedTransaction.invoice.invoice_number}</p>
-                        <p className="text-sm text-gray-600">
-                          {selectedTransaction.invoice.user?.prenom} {selectedTransaction.invoice.user?.nom}
-                        </p>
-                        <p className="text-sm text-gray-600">{selectedTransaction.invoice.user?.email}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium">{selectedTransaction.invoice.amount} €</p>
-                        <p className="text-xs">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            selectedTransaction.invoice.status === 'paid' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {selectedTransaction.invoice.status === 'paid' ? 'Payée' : 'En attente'}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
                     
-                    {/* Show all linked transactions for this invoice */}
-                    {linkedTransactions.length > 0 && (
-                      <div className="mt-4">
-                        <h4 className="text-xs font-medium text-gray-500 mb-2">Paiements associés à cette facture</h4>
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                          {linkedTransactions.map(tx => (
-                            <div key={tx.id} className={clsx(
-                              "p-2 rounded-lg text-sm",
-                              tx.id === selectedTransaction.id ? "bg-primary-50 border border-primary-200" : "bg-gray-50"
-                            )}>
-                              <div className="flex justify-between">
-                                <div>
-                                  <p className="font-medium">{new Date(tx.transaction_date).toLocaleDateString('fr-FR')}</p>
-                                  <p className="text-xs text-gray-500">{tx.movement_number}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className={clsx(
-                                    "font-medium",
-                                    tx.amount >= 0 ? "text-green-600" : "text-red-600"
-                                  )}>
-                                    {tx.amount} {tx.currency}
-                                  </p>
-                                  <p className="text-xs">
-                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
-                                      getTransactionStatusColor(tx.status)
-                                    }`}>
-                                      {getTransactionStatusText(tx.status)}
-                                    </span>
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        {/* Payment summary */}
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="text-sm font-medium text-blue-800">Total des paiements</p>
-                              <p className="text-xs text-blue-600">{linkedTransactions.length} transaction(s)</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-medium text-blue-800">{calculateLinkedTransactionsTotal()} €</p>
-                              {selectedTransaction.invoice && (
-                                <p className="text-xs text-blue-600">
-                                  {calculateLinkedTransactionsTotal() >= selectedTransaction.invoice.amount 
-                                    ? `Payé (${(calculateLinkedTransactionsTotal() - selectedTransaction.invoice.amount).toFixed(2)} € en trop)` 
-                                    : `Reste ${(selectedTransaction.invoice.amount - calculateLinkedTransactionsTotal()).toFixed(2)} €`}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
+                    {selectedTransaction.raw_file_path && (
+                      <div>
+                        <span className="text-gray-500">Fichier source:</span>
+                        <p className="mt-1">{selectedTransaction.raw_file_path}</p>
                       </div>
                     )}
                   </div>
-                )}
-
-                {/* Notes */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    value={transactionNotes}
-                    onChange={(e) => setTransactionNotes(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="Ajouter des notes sur cette transaction..."
-                  />
                 </div>
 
-                {/* Suggested invoices */}
-                {selectedTransaction.status === 'unmatched' && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Factures suggérées</h3>
-                    
-                    {/* Search input for invoices */}
-                    <div className="relative mb-4">
-                      <input
-                        type="text"
-                        placeholder="Rechercher une facture..."
-                        value={modalSearchTerm}
-                        onChange={(e) => setModalSearchTerm(e.target.value)}
-                        className="form-input pl-10 w-full"
-                      />
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
-                    </div>
-                    
-                    {isLoadingSuggestions || isSearchingInvoices ? (
-                      <div className="flex justify-center py-4">
-                        <Loader2 className="h-5 w-5 animate-spin text-primary-600" />
-                      </div>
-                    ) : suggestedInvoices.length === 0 ? (
-                      <p className="text-sm text-gray-500 py-2">Aucune suggestion disponible</p>
-                    ) : (
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {suggestedInvoices.map(invoice => (
-                          <div key={invoice.id} className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <p className="text-sm font-medium">{invoice.invoice_number}</p>
-                                <p className="text-xs text-gray-500">
-                                  {invoice.user?.prenom} {invoice.user?.nom}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {invoice.user?.email}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-medium">{invoice.amount} €</p>
-                                <button
-                                  onClick={() => handleConfirmLinkToInvoice(invoice)}
-                                  className="text-xs text-primary-600 hover:text-primary-800"
-                                  disabled={isLinkingTransaction}
-                                >
-                                  {isLinkingTransaction ? 'Association...' : 'Associer'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex justify-end space-x-3 pt-4 border-t">
-                  <button
-                    type="button"
-                    onClick={() => setIsTransactionDetailModalOpen(false)}
-                    className="btn-outline"
-                    disabled={isLinkingTransaction}
-                  >
-                    Fermer
-                  </button>
-                  
+                <div className="mt-6 flex justify-end">
                   {selectedTransaction.status === 'unmatched' && (
                     <button
-                      type="button"
-                      onClick={() => handleUpdateTransactionStatus('ignored')}
-                      className="btn-outline text-gray-600"
-                      disabled={isLinkingTransaction}
+                      onClick={() => {
+                        setIsModalOpen(false);
+                        handleMatchTransaction(selectedTransaction);
+                      }}
+                      className="btn-primary mr-3"
                     >
-                      Ignorer
-                    </button>
-                  )}
-                  
-                  {selectedTransaction.status !== 'unmatched' && (
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateTransactionStatus('unmatched')}
-                      className="btn-outline text-yellow-600"
-                      disabled={isLinkingTransaction}
-                    >
-                      Marquer comme non associé
+                      Associer à une facture
                     </button>
                   )}
                   
                   <button
-                    type="button"
-                    onClick={() => {
-                      // Save notes
-                      supabase
-                        .from('bank_transactions')
-                        .update({ notes: transactionNotes })
-                        .eq('id', selectedTransaction.id)
-                        .then(() => {
-                          toast.success('Notes enregistrées');
-                          setIsTransactionDetailModalOpen(false);
-                          fetchTransactions();
-                        })
-                        .catch(err => {
-                          console.error('Error saving notes:', err);
-                          toast.error('Erreur lors de l\'enregistrement des notes');
-                        });
-                    }}
-                    className="btn-primary"
-                    disabled={isLinkingTransaction}
+                    onClick={() => setIsModalOpen(false)}
+                    className="btn-outline"
                   >
-                    {isLinkingTransaction ? (
-                      <span className="flex items-center">
-                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                        Enregistrement...
-                      </span>
-                    ) : (
-                      'Enregistrer'
-                    )}
+                    Fermer
                   </button>
                 </div>
               </div>
             )}
-          </div>
+          </Dialog.Panel>
         </div>
       </Dialog>
 
-      {/* Confirm Link Modal */}
-      <Dialog
-        open={isConfirmLinkModalOpen}
-        onClose={() => !isLinkingTransaction && setIsConfirmLinkModalOpen(false)}
-        className="fixed inset-0 z-50 overflow-y-auto"
-      >
-        <div className="flex min-h-screen items-center justify-center p-4">
-          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
-
-          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
-            <Dialog.Title className="text-lg font-semibold mb-4">
-              Confirmer l'association
-            </Dialog.Title>
-
-            {selectedTransaction && selectedInvoiceForLink && (
-              <div className="space-y-4">
-                <p className="text-gray-600">
-                  Êtes-vous sûr de vouloir associer cette transaction à la facture suivante ?
-                </p>
-                
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <p className="text-sm font-medium text-gray-500">Transaction</p>
-                      <p className="font-medium">{selectedTransaction.amount} €</p>
-                      <p className="text-sm text-gray-600">
-                        {new Date(selectedTransaction.transaction_date).toLocaleDateString('fr-FR')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-500">Facture</p>
-                      <p className="font-medium">{selectedInvoiceForLink.invoice_number}</p>
-                      <p className="text-sm text-gray-600">{selectedInvoiceForLink.amount} €</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className={clsx(
-                  "p-4 rounded-lg",
-                  selectedTransaction.amount < selectedInvoiceForLink.amount 
-                    ? "bg-yellow-50" 
-                    : selectedTransaction.amount > selectedInvoiceForLink.amount 
-                    ? "bg-blue-50" 
-                    : "bg-green-50"
-                )}>
-                  <div className="flex items-start">
-                    <AlertCircle className={clsx(
-                      "h-5 w-5 mr-2 flex-shrink-0 mt-0.5",
-                      selectedTransaction.amount < selectedInvoiceForLink.amount 
-                        ? "text-yellow-500" 
-                        : selectedTransaction.amount > selectedInvoiceForLink.amount 
-                        ? "text-blue-500" 
-                        : "text-green-500"
-                    )} />
-                    <div>
-                      {selectedTransaction.amount < selectedInvoiceForLink.amount ? (
-                        <>
-                          <p className="text-sm text-yellow-700 font-medium">Paiement partiel</p>
-                          <p className="text-sm text-yellow-600">
-                            Cette transaction ne couvre que {((selectedTransaction.amount / selectedInvoiceForLink.amount) * 100).toFixed(0)}% du montant de la facture.
-                            La facture restera en attente jusqu'à ce que le montant total soit payé.
-                          </p>
-                        </>
-                      ) : selectedTransaction.amount > selectedInvoiceForLink.amount ? (
-                        <>
-                          <p className="text-sm text-blue-700 font-medium">Surpaiement détecté</p>
-                          <p className="text-sm text-blue-600">
-                            Cette transaction dépasse le montant de la facture de {(selectedTransaction.amount - selectedInvoiceForLink.amount).toFixed(2)} €.
-                            Une note de crédit sera automatiquement créée pour ce montant.
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-sm text-green-700 font-medium">Montant exact</p>
-                          <p className="text-sm text-green-600">
-                            Le montant de la transaction correspond exactement au montant de la facture.
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Warning for potential timeout */}
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <div className="flex">
-                    <Clock className="h-4 w-4 text-amber-500 mr-2 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm text-amber-800 font-medium">Opération en cours</p>
-                      <p className="text-sm text-amber-700">
-                        Cette opération peut prendre quelques secondes. Veuillez patienter...
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-3 pt-4">
+      {/* Match Transaction Modal */}
+      <Dialog open={isMatchModalOpen} onClose={() => setIsMatchModalOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Dialog.Panel className="mx-auto max-w-2xl w-full bg-white rounded-lg shadow-xl">
+            {selectedTransaction && (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <Dialog.Title className="text-lg font-semibold text-gray-900">
+                    Associer la transaction à une facture
+                  </Dialog.Title>
                   <button
-                    type="button"
-                    onClick={() => setIsConfirmLinkModalOpen(false)}
+                    onClick={() => setIsMatchModalOpen(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Détails de la transaction</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Date</p>
+                      <p className="text-sm font-medium">{formatDate(selectedTransaction.transaction_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Montant</p>
+                      <p className={`text-sm font-medium ${selectedTransaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatCurrency(selectedTransaction.amount)}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500">Communication</p>
+                      <p className="text-sm">{selectedTransaction.communication || '-'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500">Contrepartie</p>
+                      <p className="text-sm">{selectedTransaction.counterparty_name || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Sélectionner une facture</h3>
+                  
+                  {/* Search bar for invoices */}
+                  <div className="relative mb-4">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Rechercher une facture par numéro, client..."
+                      value={modalInvoiceSearchTerm}
+                      onChange={(e) => handleModalInvoiceSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  
+                  {isLoadingInvoices ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+                    </div>
+                  ) : filteredInvoices.length === 0 ? (
+                    <div className="text-center py-8 bg-gray-50 rounded-lg">
+                      <p className="text-gray-600">Aucune facture en attente trouvée</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {filteredInvoices.map((invoice) => {
+                        // Check if this invoice amount matches the transaction amount
+                        const isExactMatch = Math.abs(invoice.amount - selectedTransaction.amount) < 0.01;
+                        
+                        return (
+                          <div
+                            key={invoice.id}
+                            className={clsx(
+                              "border rounded-lg p-3 cursor-pointer",
+                              selectedInvoice === invoice.id
+                                ? "border-primary-500 bg-primary-50"
+                                : isExactMatch
+                                  ? "border-green-300 bg-green-50 hover:border-green-400"
+                                  : "border-gray-200 hover:border-gray-300"
+                            )}
+                            onClick={() => setSelectedInvoice(invoice.id)}
+                          >
+                            <div className="flex justify-between">
+                              <div>
+                                <p className="font-medium">{invoice.invoice_number}</p>
+                                <p className="text-sm text-gray-600">
+                                  {invoice.user.prenom} {invoice.user.nom}
+                                </p>
+                                <p className="text-xs text-gray-500">{invoice.user.email}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className={clsx(
+                                  "font-medium",
+                                  isExactMatch ? "text-green-600" : ""
+                                )}>
+                                  {formatCurrency(invoice.amount)}
+                                  {isExactMatch && (
+                                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      <CheckCircle className="h-3 w-3 mr-1" />
+                                      Montant exact
+                                    </span>
+                                  )}
+                                </p>
+                                <div className="mt-1">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    En attente
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setIsMatchModalOpen(false)}
                     className="btn-outline"
-                    disabled={isLinkingTransaction}
                   >
                     Annuler
                   </button>
                   <button
-                    type="button"
-                    onClick={handleLinkToInvoice}
-                    className="btn-primary"
-                    disabled={isLinkingTransaction}
+                    onClick={handleConfirmMatch}
+                    disabled={!selectedInvoice || isProcessingTransaction}
+                    className={`btn-primary ${(!selectedInvoice || isProcessingTransaction) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {isLinkingTransaction ? (
+                    {isProcessingTransaction ? (
                       <span className="flex items-center">
                         <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                        Association en cours...
+                        Association...
                       </span>
                     ) : (
-                      'Confirmer l\'association'
+                      'Associer'
                     )}
                   </button>
                 </div>
               </div>
             )}
-          </div>
+          </Dialog.Panel>
+        </div>
+      </Dialog>
+
+      {/* Upload CSV Modal */}
+      <Dialog open={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Dialog.Panel className="mx-auto max-w-md w-full bg-white rounded-lg shadow-xl">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <Dialog.Title className="text-lg font-semibold text-gray-900">
+                  Importer un fichier CSV
+                </Dialog.Title>
+                <button
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <input
+                    type="file"
+                    id="csv-file"
+                    accept=".csv,.txt"
+                    className="hidden"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  />
+                  <label htmlFor="csv-file" className="cursor-pointer">
+                    <Upload className="h-10 w-10 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-900">
+                      {uploadFile ? uploadFile.name : 'Cliquez pour sélectionner un fichier'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Formats acceptés: CSV, TXT
+                    </p>
+                  </label>
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="flex">
+                    <Info className="h-5 w-5 text-blue-500 mr-2 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-blue-700 font-medium">Format attendu</p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Le fichier doit contenir les colonnes suivantes: Numéro de compte, Nom du compte, Compte contrepartie, Numéro de mouvement, Date comptable, Date valeur, Montant, Devise, Libellés, Détails du mouvement
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="btn-outline"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleUploadCSV}
+                  disabled={!uploadFile || isUploading}
+                  className={`btn-primary ${(!uploadFile || isUploading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isUploading ? (
+                    <span className="flex items-center">
+                      <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                      Importation...
+                    </span>
+                  ) : (
+                    'Importer'
+                  )}
+                </button>
+              </div>
+            </div>
+          </Dialog.Panel>
         </div>
       </Dialog>
     </div>

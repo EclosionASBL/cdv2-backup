@@ -125,14 +125,24 @@ const AdminCancellationRequestsPage = () => {
 
       if (error) {
         console.error('Edge function error:', error);
-        throw new Error(error.message || 'Failed to process cancellation approval');
+        
+        // Try to extract more detailed error message if available
+        let errorMessage = 'Failed to process cancellation approval';
+        if (error.message) {
+          errorMessage = error.message;
+        }
+        if (error.context && typeof error.context === 'object' && 'message' in error.context) {
+          errorMessage = error.context.message as string;
+        }
+        
+        throw new Error(errorMessage);
       }
 
       toast.success('Cancellation request approved successfully');
       await fetchRequests();
       setIsModalOpen(false);
       setSelectedRequest(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error approving cancellation:', error);
       toast.error(error.message || 'Failed to approve cancellation request');
     } finally {

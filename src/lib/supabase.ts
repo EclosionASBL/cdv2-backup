@@ -19,6 +19,13 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'X-Client-Info': 'kids-activities-registration'
+    },
+    fetch: (url, options = {}) => {
+      return fetch(url, {
+        ...options,
+        // Add timeout to prevent hanging requests
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      });
     }
   },
   db: {

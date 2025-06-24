@@ -3,7 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.49.1';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-client-info, apikey',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
 };
 
 interface ProcessCancellationRequest {
@@ -112,7 +112,8 @@ Deno.serve(async (req) => {
     }
 
     // Call the database function to process the cancellation
-    const { data: result, error: functionError } = await supabaseAdmin.rpc(
+    console.log('Calling process_cancellation_approval RPC with:', { requestId, refundType, adminNotes });
+    const { data: rpcResult, error: rpcError } = await supabaseAdmin.rpc(
       'process_cancellation_approval',
       {
         p_request_id: requestId,
@@ -121,51 +122,68 @@ Deno.serve(async (req) => {
       }
     );
 
-    if (functionError) {
-      console.error('Error calling process_cancellation_approval function:', functionError);
+    if (rpcError) {
+      console.error('Error calling process_cancellation_approval RPC:', rpcError);
       return new Response(
-        JSON.stringify({ error: functionError.message || 'Error processing cancellation' }),
+        JSON.stringify({ error: rpcError.message || 'Failed to process cancellation approval' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    // Generate PDF for credit note if one was created
-    if (result && result.credit_note_id) {
+    // Check if the RPC result indicates success
+    if (!rpcResult || !rpcResult.success) {
+      console.error('RPC returned unsuccessful result:', rpcResult);
+      return new Response(
+        JSON.stringify({ 
+          error: rpcResult?.error_message || 'Unknown error processing cancellation' 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    console.log('RPC result:', rpcResult);
+
+    // Generate PDF for the credit note if one was created
+    if (rpcResult.credit_note_id) {
       try {
-        console.log('Generating PDF for credit note:', result.credit_note_id);
+        console.log('Generating PDF for credit note:', rpcResult.credit_note_id);
         
-        const pdfRes = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
+        const pdfResponse = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`
+            'Authorization': `Bearer ${supabaseServiceKey}`,
           },
           body: JSON.stringify({
-            credit_note_id: result.credit_note_id,
-            api_key: Deno.env.get('UPDATE_INVOICE_API_KEY')
-          })
+            credit_note_id: rpcResult.credit_note_id,
+            api_key: Deno.env.get('UPDATE_INVOICE_API_KEY') || ''
+          }),
         });
         
-        if (!pdfRes.ok) {
-          console.error('Error generating credit note PDF:', await pdfRes.text());
+        if (!pdfResponse.ok) {
+          const errorText = await pdfResponse.text();
+          console.error('Error generating credit note PDF:', errorText);
           // Continue despite PDF generation error
         } else {
-          const pdfData = await pdfRes.json();
-          console.log('PDF generation successful:', pdfData);
+          const pdfData = await pdfResponse.json();
+          console.log('Credit note PDF generated:', pdfData);
           
-          // Update credit note with PDF URL
+          // Update the credit note with the PDF URL
           if (pdfData.pdf_url) {
             const { error: updateError } = await supabaseAdmin
               .from('credit_notes')
               .update({ pdf_url: pdfData.pdf_url })
-              .eq('id', result.credit_note_id);
+              .eq('id', rpcResult.credit_note_id);
               
             if (updateError) {
               console.error('Error updating credit note with PDF URL:', updateError);
             } else {
               console.log('Credit note updated with PDF URL');
               
-              // Update cancellation request with credit note URL
+              // Add the PDF URL to the result
+              rpcResult.pdf_url = pdfData.pdf_url;
+              
+              // Update the cancellation request with the credit note URL
               const { error: updateRequestError } = await supabaseAdmin
                 .from('cancellation_requests')
                 .update({ credit_note_url: pdfData.pdf_url })
@@ -179,39 +197,37 @@ Deno.serve(async (req) => {
         }
         
         // Send email with credit note
-        try {
-          console.log('Sending credit note email');
-          
-          const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-credit-note-email`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseServiceKey}`
-            },
-            body: JSON.stringify({
-              credit_note_id: result.credit_note_id
-            })
-          });
-          
-          if (!emailRes.ok) {
-            console.error('Error sending credit note email:', await emailRes.text());
-          } else {
-            console.log('Credit note email sent successfully');
-          }
-        } catch (emailError) {
-          console.error('Error calling send-credit-note-email function:', emailError);
+        console.log('Sending credit note email for:', rpcResult.credit_note_id);
+        
+        const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-credit-note-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            credit_note_id: rpcResult.credit_note_id
+          }),
+        });
+        
+        if (!emailResponse.ok) {
+          const errorText = await emailResponse.text();
+          console.error('Error sending credit note email:', errorText);
+          // Continue despite email error
+        } else {
+          console.log('Credit note email sent successfully');
         }
+        
       } catch (pdfError) {
-        console.error('Error generating credit note PDF:', pdfError);
-        // Continue despite PDF generation error
+        console.error('Error in PDF generation or email sending:', pdfError);
+        // Continue despite PDF/email errors
       }
     }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Cancellation request processed successfully',
-        result 
+        result: rpcResult
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
