@@ -14,6 +14,9 @@ if (!supabaseUrl || !supabaseServiceKey) {
   process.exit(1);
 }
 
+console.log('Supabase URL:', supabaseUrl);
+console.log('Service Key available:', !!supabaseServiceKey);
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function updateRegistrations() {
@@ -28,6 +31,7 @@ async function updateRegistrations() {
       .eq('status', 'paid');
     
     if (invoicesError) {
+      console.error('Error fetching paid invoices:', invoicesError);
       throw new Error(`Error fetching paid invoices: ${invoicesError.message}`);
     }
     
@@ -48,7 +52,12 @@ async function updateRegistrations() {
         .eq('payment_status', 'pending');
       
       if (regError) {
-        console.error(`Error fetching registrations for invoice ${invoice.invoice_number}: ${regError.message}`);
+        console.error(`Error fetching registrations for invoice ${invoice.invoice_number}:`, regError);
+        continue;
+      }
+      
+      if (!pendingRegistrations) {
+        console.log(`No data returned for pending registrations query for invoice ${invoice.invoice_number}`);
         continue;
       }
       
@@ -61,35 +70,46 @@ async function updateRegistrations() {
       
       console.log(`Found ${pendingRegistrations.length} pending registrations for invoice ${invoice.invoice_number}`);
       
-      // Update registrations to paid status
-      const { data: updateResult, error: updateError } = await supabase
-        .from('registrations')
-        .update({ payment_status: 'paid' })
-        .eq('invoice_id', invoice.invoice_number)
-        .eq('payment_status', 'pending');
+      // Log the exact query we're about to execute
+      console.log(`Attempting to update registrations for invoice_id: '${invoice.invoice_number}' with payment_status: 'pending' to 'paid'`);
       
-      if (updateError) {
-        console.error(`Error updating registrations for invoice ${invoice.invoice_number}: ${updateError.message}`);
+      try {
+        // Update registrations to paid status
+        const { data: updateResult, error: updateError } = await supabase
+          .from('registrations')
+          .update({ payment_status: 'paid' })
+          .eq('invoice_id', invoice.invoice_number)
+          .eq('payment_status', 'pending');
+        
+        if (updateError) {
+          console.error(`Error updating registrations for invoice ${invoice.invoice_number}:`, updateError);
+          console.error('Full error object:', JSON.stringify(updateError, null, 2));
+          continue;
+        }
+        
+        console.log(`Update result:`, updateResult);
+        console.log(`Updated ${pendingRegistrations.length} registrations to paid status for invoice ${invoice.invoice_number}`);
+        totalUpdated += pendingRegistrations.length;
+      } catch (updateException) {
+        console.error(`Exception during update for invoice ${invoice.invoice_number}:`, updateException);
         continue;
       }
       
-      console.log(`Updated ${pendingRegistrations.length} registrations to paid status for invoice ${invoice.invoice_number}`);
-      totalUpdated += pendingRegistrations.length;
-      
       // Call the update_invoice_payment_status function to ensure everything is consistent
       try {
-        const { error: rpcError } = await supabase.rpc(
+        console.log(`Calling RPC update_invoice_payment_status for invoice ${invoice.invoice_number}`);
+        const { data: rpcData, error: rpcError } = await supabase.rpc(
           'update_invoice_payment_status',
           { p_invoice_number: invoice.invoice_number }
         );
         
         if (rpcError) {
-          console.error(`Error calling update_invoice_payment_status for invoice ${invoice.invoice_number}: ${rpcError.message}`);
+          console.error(`Error calling update_invoice_payment_status for invoice ${invoice.invoice_number}:`, rpcError);
         } else {
-          console.log(`Successfully called update_invoice_payment_status for invoice ${invoice.invoice_number}`);
+          console.log(`Successfully called update_invoice_payment_status for invoice ${invoice.invoice_number}`, rpcData);
         }
       } catch (rpcError) {
-        console.error(`Exception calling update_invoice_payment_status for invoice ${invoice.invoice_number}: ${rpcError.message}`);
+        console.error(`Exception calling update_invoice_payment_status for invoice ${invoice.invoice_number}:`, rpcError);
       }
     }
     
@@ -100,7 +120,7 @@ async function updateRegistrations() {
     console.log('Update process completed successfully!');
     
   } catch (error) {
-    console.error('Error in update process:', error.message);
+    console.error('Error in update process:', error);
     process.exit(1);
   }
 }
