@@ -9,6 +9,8 @@ interface Center {
   city: string;
   tag: string;
   active: boolean;
+  phone?: string;
+  address2?: string;
 }
 
 interface Stage {
