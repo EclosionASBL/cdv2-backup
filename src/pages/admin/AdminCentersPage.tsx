@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAdminStore } from '../../stores/adminStore';
-import { Plus, Pencil, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, AlertTriangle, Loader2, X } from 'lucide-react';
 
 const AdminCentersPage = () => {
   const { centers, isLoading, error, fetchCenters, createCenter, updateCenter, deleteCenter } = useAdminStore();
@@ -11,7 +11,9 @@ const AdminCentersPage = () => {
     address: '',
     postal_code: '',
     city: '',
-    tag: ''
+    tag: '',
+    phone: '',
+    address2: ''
   });
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -27,7 +29,9 @@ const AdminCentersPage = () => {
         address: center.address,
         postal_code: center.postal_code,
         city: center.city,
-        tag: center.tag
+        tag: center.tag,
+        phone: center.phone || '',
+        address2: center.address2 || ''
       });
     } else {
       setEditingCenter(null);
@@ -36,7 +40,9 @@ const AdminCentersPage = () => {
         address: '',
         postal_code: '',
         city: '',
-        tag: ''
+        tag: '',
+        phone: '',
+        address2: ''
       });
     }
     setIsModalOpen(true);
@@ -44,6 +50,7 @@ const AdminCentersPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     try {
       if (editingCenter) {
         await updateCenter(editingCenter.id, formData);
@@ -116,6 +123,9 @@ const AdminCentersPage = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Tag
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Téléphone
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
@@ -128,7 +138,8 @@ const AdminCentersPage = () => {
                     {center.name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {center.address}
+                    <div>{center.address}</div>
+                    {center.address2 && <div className="text-xs text-gray-400">{center.address2}</div>}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {center.postal_code}
@@ -138,6 +149,9 @@ const AdminCentersPage = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {center.tag}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {center.phone || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
@@ -164,9 +178,17 @@ const AdminCentersPage = () => {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
-            <h2 className="text-xl font-semibold mb-4">
-              {editingCenter ? 'Modifier le centre' : 'Nouveau centre'}
-            </h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">
+                {editingCenter ? 'Modifier le centre' : 'Nouveau centre'}
+              </h2>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
             
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -184,7 +206,7 @@ const AdminCentersPage = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Adresse
+                  Adresse principale
                 </label>
                 <input
                   type="text"
@@ -192,6 +214,19 @@ const AdminCentersPage = () => {
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   className="mt-1 form-input"
                   required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Adresse secondaire (optionnelle)
+                </label>
+                <input
+                  type="text"
+                  value={formData.address2}
+                  onChange={(e) => setFormData({ ...formData, address2: e.target.value })}
+                  className="mt-1 form-input"
+                  placeholder="Adresse du second site (si applicable)"
                 />
               </div>
 
@@ -223,17 +258,32 @@ const AdminCentersPage = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Tag
-                </label>
-                <input
-                  type="text"
-                  value={formData.tag}
-                  onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
-                  className="mt-1 form-input"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Tag
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.tag}
+                    onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
+                    className="mt-1 form-input"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Téléphone
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="mt-1 form-input"
+                    placeholder="+32 470 123 456"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3 mt-6 pt-6 border-t">
