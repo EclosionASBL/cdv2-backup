@@ -10,6 +10,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import SessionFilters from './components/SessionFilters';
 import SessionTable from './components/SessionTable';
 import SessionFormModal from './components/SessionFormModal';
+import WaitingListModal from '../../components/admin/WaitingListModal';
 
 interface SessionFormData {
   stage_id: string;
@@ -57,6 +58,10 @@ const AdminSessionsPage = () => {
   const [selectedPeriode, setSelectedPeriode] = useState<string | null>(null);
   const [selectedSemaine, setSelectedSemaine] = useState<string | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  
+  // Waiting list modal state
+  const [isWaitingListModalOpen, setIsWaitingListModalOpen] = useState(false);
+  const [selectedActivityForWaitingList, setSelectedActivityForWaitingList] = useState<string | null>(null);
 
   const handleDuplicate = (session: Session) => {
     setEditingSession(null);
@@ -179,6 +184,11 @@ const AdminSessionsPage = () => {
       setIsRefreshing(false);
     }
   };
+  
+  const handleOpenWaitingListModal = (activityId: string) => {
+    setSelectedActivityForWaitingList(activityId);
+    setIsWaitingListModalOpen(true);
+  };
 
   const filteredSessions = sessions.filter((s) =>
     (!selectedCenter || s.center_id === selectedCenter) &&
@@ -268,6 +278,7 @@ const AdminSessionsPage = () => {
         handleDuplicate={handleDuplicate}
         setDeleteId={setDeleteId}
         waitingListCounts={waitingListCounts}
+        onViewWaitingList={handleOpenWaitingListModal}
       />
 
       <SessionFormModal
@@ -316,6 +327,16 @@ const AdminSessionsPage = () => {
           </div>
         </div>
       )}
+      
+      {/* Waiting List Modal */}
+      {selectedActivityForWaitingList && (
+        <WaitingListModal
+          isOpen={isWaitingListModalOpen}
+          onClose={() => setIsWaitingListModalOpen(false)}
+          activityId={selectedActivityForWaitingList}
+        />
+      )}
+      
       <Toaster position="top-right" />
     </div>
   );

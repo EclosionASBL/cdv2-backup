@@ -10,6 +10,7 @@ interface SessionTableProps {
   handleDuplicate: (session: any) => void;
   setDeleteId: (id: string | null) => void;
   waitingListCounts?: Record<string, number>;
+  onViewWaitingList: (activityId: string) => void;
 }
 
 const SessionTable = ({
@@ -19,7 +20,8 @@ const SessionTable = ({
   handleOpenModal,
   handleDuplicate,
   setDeleteId,
-  waitingListCounts = {}
+  waitingListCounts = {},
+  onViewWaitingList
 }: SessionTableProps) => {
   // Fonction pour formater les dates
   const formatDate = (dateString: string) => {
@@ -126,16 +128,16 @@ const SessionTable = ({
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
                     {waitingListCounts[session.id] ? (
-                      <Link 
-                        to="/admin/waiting-list" 
+                      <button 
+                        onClick={() => onViewWaitingList(session.id)}
                         className={clsx(
                           "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
-                          "bg-amber-100 text-amber-800"
+                          "bg-amber-100 text-amber-800 hover:bg-amber-200"
                         )}
                       >
                         <ListWait className="h-3 w-3 mr-1" />
                         {waitingListCounts[session.id]}
-                      </Link>
+                      </button>
                     ) : (
                       <span className="text-gray-400">-</span>
                     )}
