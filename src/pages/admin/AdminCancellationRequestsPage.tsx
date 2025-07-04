@@ -89,14 +89,22 @@ const AdminCancellationRequestsPage = () => {
         .select(`
           *,
           registration:registrations(amount_paid, payment_status, invoice_id),
-          kid:kids(prenom, nom),
+          kid:kids(
+            prenom, 
+            nom
+          ),
           session:sessions(
             stage:stages(title),
             start_date,
             end_date,
             center:centers(name)
           ),
-          user:users(email, prenom, nom, telephone)
+          user:users!cancellation_requests_user_id_fkey(
+            email, 
+            prenom, 
+            nom, 
+            telephone
+          )
         `)
         .order('created_at', { ascending: false });
 

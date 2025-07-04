@@ -76,7 +76,7 @@ export const CancellationRequestModal = ({
 
           {registrationDetails && (
             <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-              <p className="font-medium">{registrationDetails.session?.stage?.title || 'Unknown Activity'}</p>
+              <p className="font-medium">{registrationDetails.session?.stage?.title}</p>
               <p className="text-sm text-gray-600">
                 Pour: {registrationDetails.kid ? `${registrationDetails.kid.prenom} ${registrationDetails.kid.nom}` : 'Unknown Child'}
               </p>

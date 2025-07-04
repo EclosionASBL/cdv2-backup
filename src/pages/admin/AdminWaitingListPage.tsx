@@ -35,8 +35,8 @@ const AdminWaitingListPage = () => {
         .from('sessions')
         .select(`
           id,
-          stage:stage_id(title),
-          center:center_id(name),
+          stage:stages(title),
+          center:centers(name),
           start_date,
           end_date,
           capacity
@@ -104,23 +104,6 @@ const AdminWaitingListPage = () => {
     return acc;
   }, {} as Record<string, typeof entries>);
 
-  useEffect(() => {
-    console.log('entriesByActivity:', entriesByActivity);
-    console.log('Object.keys(entriesByActivity):', Object.keys(entriesByActivity));
-  }, [entriesByActivity]);
-
-  // Sort entries by status (waiting first, then invited) and then by created_at
-  Object.keys(entriesByActivity).forEach(activityId => {
-    entriesByActivity[activityId].sort((a, b) => {
-      // First sort by status (waiting first, then invited)
-      if (a.status === 'waiting' && b.status !== 'waiting') return -1;
-      if (a.status !== 'waiting' && b.status === 'waiting') return 1;
-      
-      // Then sort by created_at
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
-  });
-
   const getActivityName = (activityId: string) => {
     const activity = activities.find(a => a.id === activityId);
     if (!activity) return 'Activité inconnue';
@@ -182,6 +165,8 @@ const AdminWaitingListPage = () => {
   
   return (
     <div className="space-y-6">
+      <Toaster position="top-right" />
+      
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Liste d'attente</h1>
@@ -191,10 +176,7 @@ const AdminWaitingListPage = () => {
 
       {error && (
         <div className="bg-red-50 p-4 rounded-lg">
-          <div className="flex">
-            <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
-            <p className="text-red-700">{error}</p>
-          </div>
+          <p className="text-red-700">{error}</p>
         </div>
       )}
 
@@ -268,7 +250,7 @@ const AdminWaitingListPage = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {entriesByActivity[activityId].map((entry, index) => {
-                        // Unwrap arrays if needed
+                        // Unwrap nested objects
                         const unwrappedEntry = unwrapEntry(entry);
                         
                         return (
@@ -299,7 +281,13 @@ const AdminWaitingListPage = () => {
                               {new Date(unwrappedEntry.created_at).toLocaleDateString('fr-FR')}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              {getStatusBadge(unwrappedEntry.status, unwrappedEntry.expires_at)}
+                              <span className={clsx(
+                                "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                                getWaitingListStatusColor(unwrappedEntry.status)
+                              )}>
+                                <Clock className="h-4 w-4 mr-1" />
+                                {getWaitingListStatusText(unwrappedEntry)}
+                              </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                               <div className="flex justify-end space-x-2">
@@ -358,7 +346,6 @@ const AdminWaitingListPage = () => {
           </div>
         )}
       </div>
-      <Toaster position="top-right" />
     </div>
   );
 };

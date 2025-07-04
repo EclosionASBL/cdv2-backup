@@ -83,7 +83,7 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
         .from('waiting_list')
         .select(`
           *,
-          kid:kid_id(
+          kid:kids(
             prenom,
             nom,
             cpostal,
@@ -95,11 +95,11 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
             nom,
             telephone
           ),
-          session:activity_id(
-            stage:stage_id(title),
+          session:sessions(
+            stage:stages(title),
             start_date,
             end_date,
-            center:center_id(name),
+            center:centers(name),
             prix_normal,
             prix_reduit,
             prix_local,
