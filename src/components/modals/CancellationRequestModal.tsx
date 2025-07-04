@@ -93,27 +93,6 @@ export const CancellationRequestModal = ({
             </div>
           )}
 
-          {/* Parent Information */}
-          {registrationDetails?.user && (
-            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-              <h3 className="font-medium text-gray-700 mb-2">Informations du parent</h3>
-              <p className="text-sm text-gray-600">
-                <strong>Nom:</strong> {registrationDetails.user.prenom} {registrationDetails.user.nom}
-              </p>
-              <p className="text-sm text-gray-600">
-                <strong>Email:</strong> {registrationDetails.user.email || '-'}
-              </p>
-              <p className="text-sm text-gray-600">
-                <strong>Téléphone:</strong> {registrationDetails.user.telephone || '-'}
-              </p>
-              {registrationDetails.user.adresse && (
-                <p className="text-sm text-gray-600">
-                  <strong>Adresse:</strong> {registrationDetails.user.adresse}, {registrationDetails.user.cpostal} {registrationDetails.user.localite}
-                </p>
-              )}
-            </div>
-          )}
-
           <div className="mt-2">
             <p className="text-sm text-gray-600">
               Vous êtes sur le point de demander l'annulation de cette inscription. Cette demande sera envoyée à l'équipe administrative pour confirmation.

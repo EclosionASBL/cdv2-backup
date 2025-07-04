@@ -235,9 +235,6 @@ const AdminWaitingListPage = () => {
                           Email
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Adresse
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Téléphone
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -273,21 +270,9 @@ const AdminWaitingListPage = () => {
                               <div className="text-sm font-medium text-gray-900">
                                 {unwrappedEntry.parent?.prenom} {unwrappedEntry.parent?.nom}
                               </div>
-                              {/* Add console.log to debug parent data */}
-                              {console.log('Parent data:', unwrappedEntry.parent)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {unwrappedEntry.parent?.email}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {unwrappedEntry.parent?.adresse ? (
-                                <>
-                                  <div>{unwrappedEntry.parent.adresse}</div>
-                                  <div>{unwrappedEntry.parent.cpostal} {unwrappedEntry.parent.localite}</div>
-                                </>
-                              ) : (
-                                '-'
-                              )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {unwrappedEntry.parent?.telephone || '-'}
