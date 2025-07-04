@@ -10,6 +10,7 @@ const AdminWaitingListPage = () => {
     entries: waitingListEntries, 
     fetchWaitingList, 
     isLoading: isWaitingListLoading, 
+    error,
     removeFromWaitingList,
     offerSeat,
     markEntryConverted,
@@ -29,7 +30,7 @@ const AdminWaitingListPage = () => {
   }, [fetchWaitingList]);
 
   useEffect(() => {
-    console.log('Waiting list entries:', entries);
+    console.log('Waiting list entries:', waitingListEntries);
   }, [waitingListEntries]);
 
   const fetchActivities = async () => {
