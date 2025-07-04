@@ -71,7 +71,7 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
       // Check if user is admin
       const { data: userData, error: roleError } = await supabase
         .from('users')
-        .select('role')
+        .select('*')
         .eq('id', user.id)
         .single();
       
@@ -83,16 +83,23 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
       console.log('isAdmin', isAdmin, 'userData:', userData);
       
       let query = supabase
-        .from('waiting_list')
+        .from('waiting_list as wl')
         .select(`
-          *,
-          kid:kids(
+          wl.id,
+          wl.activity_id,
+          wl.kid_id,
+          wl.user_id,
+          wl.created_at,
+          wl.invited_at,
+          wl.expires_at,
+          wl.status,
+          kid:kid_id(
             prenom,
             nom,
             cpostal,
             ecole
           ),
-          parent:users!waiting_list_user_id_fkey(
+          parent:user_id(
             email,
             prenom,
             nom,
@@ -101,11 +108,11 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
             cpostal,
             localite
           ),
-          session:sessions(
-            stage:stages(title),
+          session:activity_id(
+            stage:stage_id(title),
             start_date,
             end_date,
-            center:centers(name),
+            center:center_id(name),
             prix_normal,
             prix_reduit,
             prix_local,
