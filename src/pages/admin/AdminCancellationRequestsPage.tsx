@@ -26,11 +26,11 @@ interface CancellationRequest {
     amount_paid: number;
     payment_status: string;
     invoice_id: string | null;
-  };
+  } | null;
   kid: {
     prenom: string;
     nom: string;
-  };
+  } | null;
   session: {
     stage: {
       title: string;
@@ -40,13 +40,13 @@ interface CancellationRequest {
     center: {
       name: string;
     };
-  };
+  } | null;
   user: {
     email: string;
     prenom: string;
     nom: string;
     telephone: string;
-  };
+  } | null;
 }
 
 const AdminCancellationRequestsPage = () => {
@@ -184,10 +184,10 @@ const AdminCancellationRequestsPage = () => {
   const filteredRequests = requests.filter(request => {
     const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
     const matchesSearch = searchTerm === '' || 
-      request.kid.prenom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.kid.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.session.stage.title.toLowerCase().includes(searchTerm.toLowerCase());
+      request.kid?.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      request.kid?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      request.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      request.session?.stage?.title?.toLowerCase().includes(searchTerm.toLowerCase());
     
     return matchesStatus && matchesSearch;
   });
@@ -345,28 +345,32 @@ const AdminCancellationRequestsPage = () => {
                     <td className="px-6 py-4">
                       <div className="text-sm">
                         <div className="font-medium text-gray-900">
-                          {request.kid.prenom} {request.kid.nom}
+                          {request.kid ? `${request.kid.prenom} ${request.kid.nom}` : 'Unknown Child'}
                         </div>
                         <div className="text-gray-500">
-                          {request.session.stage.title}
+                          {request.session?.stage?.title || 'Unknown Activity'}
                         </div>
-                        <div className="text-gray-500 text-xs">
-                          {new Date(request.session.start_date).toLocaleDateString()} - {new Date(request.session.end_date).toLocaleDateString()}
-                        </div>
-                        <div className="text-gray-500 text-xs">
-                          {request.session.center.name}
-                        </div>
+                        {request.session && (
+                          <>
+                            <div className="text-gray-500 text-xs">
+                              {new Date(request.session.start_date).toLocaleDateString()} - {new Date(request.session.end_date).toLocaleDateString()}
+                            </div>
+                            <div className="text-gray-500 text-xs">
+                              {request.session.center?.name || 'Unknown Center'}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm">
                         <div className="font-medium text-gray-900">
-                          {request.user.prenom} {request.user.nom}
+                          {request.user ? `${request.user.prenom} ${request.user.nom}` : 'Unknown Parent'}
                         </div>
                         <div className="text-gray-500">
-                          {request.user.email}
+                          {request.user?.email || 'No email'}
                         </div>
-                        {request.user.telephone && (
+                        {request.user?.telephone && (
                           <div className="text-gray-500 text-xs">
                             {request.user.telephone}
                           </div>
@@ -375,10 +379,10 @@ const AdminCancellationRequestsPage = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        €{request.registration.amount_paid.toFixed(2)}
+                        €{request.registration?.amount_paid?.toFixed(2) || '0.00'}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {request.registration.payment_status}
+                        {request.registration?.payment_status || 'Unknown'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -500,9 +504,9 @@ const CancellationRequestModal = ({
   const [refundType, setRefundType] = useState<'full' | 'partial' | 'none'>('full');
 
   // Calculate days until start date
-  const daysUntilStart = Math.ceil(
+  const daysUntilStart = request.session ? Math.ceil(
     (new Date(request.session.start_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-  );
+  ) : 0;
 
   const isLessThan10Days = daysUntilStart < 10;
 
@@ -542,22 +546,28 @@ const CancellationRequestModal = ({
           <div className="space-y-2 text-sm">
             <div>
               <span className="text-gray-500">Child:</span>
-              <div className="font-medium">{request.kid.prenom} {request.kid.nom}</div>
-            </div>
-            <div>
-              <span className="text-gray-500">Activity:</span>
-              <div className="font-medium">{request.session.stage.title}</div>
-            </div>
-            <div>
-              <span className="text-gray-500">Dates:</span>
               <div className="font-medium">
-                {new Date(request.session.start_date).toLocaleDateString()} - {new Date(request.session.end_date).toLocaleDateString()}
+                {request.kid ? `${request.kid.prenom} ${request.kid.nom}` : 'Unknown Child'}
               </div>
             </div>
             <div>
-              <span className="text-gray-500">Center:</span>
-              <div className="font-medium">{request.session.center.name}</div>
+              <span className="text-gray-500">Activity:</span>
+              <div className="font-medium">{request.session?.stage?.title || 'Unknown Activity'}</div>
             </div>
+            {request.session && (
+              <>
+                <div>
+                  <span className="text-gray-500">Dates:</span>
+                  <div className="font-medium">
+                    {new Date(request.session.start_date).toLocaleDateString()} - {new Date(request.session.end_date).toLocaleDateString()}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-500">Center:</span>
+                  <div className="font-medium">{request.session.center?.name || 'Unknown Center'}</div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -567,13 +577,13 @@ const CancellationRequestModal = ({
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Amount Paid:</span>
-              <div className="font-medium">€{request.registration.amount_paid.toFixed(2)}</div>
+              <div className="font-medium">€{request.registration?.amount_paid?.toFixed(2) || '0.00'}</div>
             </div>
             <div>
               <span className="text-gray-500">Payment Status:</span>
-              <div className="font-medium">{request.registration.payment_status}</div>
+              <div className="font-medium">{request.registration?.payment_status || 'Unknown'}</div>
             </div>
-            {request.registration.invoice_id && (
+            {request.registration?.invoice_id && (
               <div className="col-span-2">
                 <span className="text-gray-500">Invoice:</span>
                 <div className="font-medium">{request.registration.invoice_id}</div>
