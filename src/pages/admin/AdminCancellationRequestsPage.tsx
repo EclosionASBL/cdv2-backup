@@ -22,16 +22,16 @@ interface CancellationRequest {
   refund_type: 'full' | 'partial' | 'none' | null;
   credit_note_id: string | null;
   credit_note_url: string | null;
-  registration: {
+  registration?: {
     amount_paid: number;
     payment_status: string;
     invoice_id: string | null;
   } | null;
-  kid: {
+  kid?: {
     prenom: string;
     nom: string;
   } | null;
-  session: {
+  session?: {
     stage: {
       title: string;
     };
@@ -41,11 +41,14 @@ interface CancellationRequest {
       name: string;
     };
   } | null;
-  user: {
+  user?: {
     email: string;
     prenom: string;
     nom: string;
     telephone: string;
+    adresse: string;
+    cpostal: string;
+    localite: string;
   } | null;
 }
 
@@ -103,7 +106,10 @@ const AdminCancellationRequestsPage = () => {
             email, 
             prenom, 
             nom, 
-            telephone
+            telephone,
+            adresse,
+            cpostal,
+            localite
           )
         `)
         .order('created_at', { ascending: false });
@@ -189,13 +195,28 @@ const AdminCancellationRequestsPage = () => {
     setIsWaitingListModalOpen(true);
   };
 
+  // Helper function to safely unwrap nested objects that might be arrays
+  const unwrapObject = <T,>(obj: T | T[] | null | undefined): T | null => {
+    if (!obj) return null;
+    if (Array.isArray(obj) && obj.length > 0) return obj[0];
+    return obj as T;
+  };
+
   const filteredRequests = requests.filter(request => {
     const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
+    const searchLower = searchTerm.toLowerCase();
+    
+    // Safely access nested properties
+    const kid = unwrapObject(request.kid);
+    const session = unwrapObject(request.session);
+    const stage = session ? unwrapObject(session.stage) : null;
+    const user = unwrapObject(request.user);
+    
     const matchesSearch = searchTerm === '' || 
-      request.kid?.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.kid?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      request.session?.stage?.title?.toLowerCase().includes(searchTerm.toLowerCase());
+      (kid?.prenom || '').toLowerCase().includes(searchLower) ||
+      (kid?.nom || '').toLowerCase().includes(searchLower) ||
+      (user?.email || '').toLowerCase().includes(searchLower) ||
+      (stage?.title || '').toLowerCase().includes(searchLower);
     
     return matchesStatus && matchesSearch;
   });
@@ -338,113 +359,128 @@ const AdminCancellationRequestsPage = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredRequests.map((request) => (
-                  <tr key={request.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {new Date(request.request_date).toLocaleDateString()}
+                {filteredRequests.map((request) => {
+                  // Unwrap nested objects
+                  const kid = unwrapObject(request.kid);
+                  const session = unwrapObject(request.session);
+                  const stage = session ? unwrapObject(session.stage) : null;
+                  const center = session ? unwrapObject(session.center) : null;
+                  const user = unwrapObject(request.user);
+                  const registration = unwrapObject(request.registration);
+                  
+                  return (
+                    <tr key={request.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm">
+                          <div className="font-medium text-gray-900">
+                            {new Date(request.request_date).toLocaleDateString()}
+                          </div>
+                          <div className="text-gray-500">
+                            {new Date(request.request_date).toLocaleTimeString()}
+                          </div>
                         </div>
-                        <div className="text-gray-500">
-                          {new Date(request.request_date).toLocaleTimeString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm">
+                          <div className="font-medium text-gray-900">
+                            {kid ? `${kid.prenom} ${kid.nom}` : 'Unknown Child'}
+                          </div>
+                          <div className="text-gray-500">
+                            {stage?.title || 'Unknown Activity'}
+                          </div>
+                          {session && (
+                            <>
+                              <div className="text-gray-500 text-xs">
+                                {new Date(session.start_date).toLocaleDateString()} - {new Date(session.end_date).toLocaleDateString()}
+                              </div>
+                              <div className="text-gray-500 text-xs">
+                                {center?.name || 'Unknown Center'}
+                              </div>
+                            </>
+                          )}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {request.kid ? `${request.kid.prenom} ${request.kid.nom}` : 'Unknown Child'}
-                        </div>
-                        <div className="text-gray-500">
-                          {request.session?.stage?.title || 'Unknown Activity'}
-                        </div>
-                        {request.session && (
-                          <>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm">
+                          <div className="font-medium text-gray-900">
+                            {user ? `${user.prenom || ''} ${user.nom || ''}`.trim() || 'Unknown Parent' : 'Unknown Parent'}
+                          </div>
+                          <div className="text-gray-500">
+                            {user?.email || 'No email'}
+                          </div>
+                          {user?.telephone && (
                             <div className="text-gray-500 text-xs">
-                              {new Date(request.session.start_date).toLocaleDateString()} - {new Date(request.session.end_date).toLocaleDateString()}
+                              {user.telephone}
                             </div>
+                          )}
+                          {user?.adresse && (
                             <div className="text-gray-500 text-xs">
-                              {request.session.center?.name || 'Unknown Center'}
+                              {user.adresse}, {user.cpostal} {user.localite}
                             </div>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {request.user ? `${request.user.prenom || ''} ${request.user.nom || ''}`.trim() || 'Unknown Parent' : 'Unknown Parent'}
+                          )}
                         </div>
-                        <div className="text-gray-500">
-                          {request.user?.email || 'No email'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          €{registration?.amount_paid?.toFixed(2) || '0.00'}
                         </div>
-                        {request.user?.telephone && (
-                          <div className="text-gray-500 text-xs">
-                            {request.user.telephone}
+                        <div className="text-xs text-gray-500">
+                          {registration?.payment_status || 'Unknown'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(request.status)}
+                          <span className={getStatusBadge(request.status)}>
+                            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                          </span>
+                        </div>
+                        {request.refund_type && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            Refund: {request.refund_type}
                           </div>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        €{request.registration?.amount_paid?.toFixed(2) || '0.00'}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {request.registration?.payment_status || 'Unknown'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(request.status)}
-                        <span className={getStatusBadge(request.status)}>
-                          {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
-                        </span>
-                      </div>
-                      {request.refund_type && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          Refund: {request.refund_type}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {waitingListCounts[request.activity_id] ? (
-                        <button 
-                          onClick={() => handleOpenWaitingListModal(request.activity_id)}
-                          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200"
-                        >
-                          <Users className="h-3 w-3 mr-1" />
-                          {waitingListCounts[request.activity_id]} {waitingListCounts[request.activity_id] === 1 ? 'enfant' : 'enfants'}
-                        </button>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Aucune attente</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedRequest(request);
-                            setIsModalOpen(true);
-                          }}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          View Details
-                        </button>
-                        {request.credit_note_url && (
-                          <a
-                            href={request.credit_note_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-green-600 hover:text-green-900 flex items-center gap-1"
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {waitingListCounts[request.activity_id] ? (
+                          <button 
+                            onClick={() => handleOpenWaitingListModal(request.activity_id)}
+                            className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200"
                           >
-                            <Download className="w-3 h-3" />
-                            Credit Note
-                          </a>
+                            <Users className="h-3 w-3 mr-1" />
+                            {waitingListCounts[request.activity_id]} {waitingListCounts[request.activity_id] === 1 ? 'enfant' : 'enfants'}
+                          </button>
+                        ) : (
+                          <span className="text-gray-400 text-xs">Aucune attente</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedRequest(request);
+                              setIsModalOpen(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            View Details
+                          </button>
+                          {request.credit_note_url && (
+                            <a
+                              href={request.credit_note_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-green-600 hover:text-green-900 flex items-center gap-1"
+                            >
+                              <Download className="w-3 h-3" />
+                              Credit Note
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -511,12 +547,27 @@ const CancellationRequestModal = ({
   const [adminNotes, setAdminNotes] = useState(request.admin_notes || '');
   const [refundType, setRefundType] = useState<'full' | 'partial' | 'none'>('full');
 
+  // Unwrap nested objects
+  const kid = unwrapObject(request.kid);
+  const session = unwrapObject(request.session);
+  const stage = session ? unwrapObject(session.stage) : null;
+  const center = session ? unwrapObject(session.center) : null;
+  const user = unwrapObject(request.user);
+  const registration = unwrapObject(request.registration);
+
   // Calculate days until start date
-  const daysUntilStart = request.session ? Math.ceil(
-    (new Date(request.session.start_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+  const daysUntilStart = session ? Math.ceil(
+    (new Date(session.start_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
   ) : 0;
 
   const isLessThan10Days = daysUntilStart < 10;
+
+  // Helper function to safely unwrap nested objects that might be arrays
+  function unwrapObject<T>(obj: T | T[] | null | undefined): T | null {
+    if (!obj) return null;
+    if (Array.isArray(obj) && obj.length > 0) return obj[0];
+    return obj as T;
+  }
 
   return (
     <div className="p-6">
@@ -555,24 +606,24 @@ const CancellationRequestModal = ({
             <div>
               <span className="text-gray-500">Child:</span>
               <div className="font-medium">
-                {request.kid ? `${request.kid.prenom} ${request.kid.nom}` : 'Unknown Child'}
+                {kid ? `${kid.prenom} ${kid.nom}` : 'Unknown Child'}
               </div>
             </div>
             <div>
               <span className="text-gray-500">Activity:</span>
-              <div className="font-medium">{request.session?.stage?.title || 'Unknown Activity'}</div>
+              <div className="font-medium">{stage?.title || 'Unknown Activity'}</div>
             </div>
-            {request.session && (
+            {session && (
               <>
                 <div>
                   <span className="text-gray-500">Dates:</span>
                   <div className="font-medium">
-                    {new Date(request.session.start_date).toLocaleDateString()} - {new Date(request.session.end_date).toLocaleDateString()}
+                    {new Date(session.start_date).toLocaleDateString()} - {new Date(session.end_date).toLocaleDateString()}
                   </div>
                 </div>
                 <div>
                   <span className="text-gray-500">Center:</span>
-                  <div className="font-medium">{request.session.center?.name || 'Unknown Center'}</div>
+                  <div className="font-medium">{center?.name || 'Unknown Center'}</div>
                 </div>
               </>
             )}
@@ -585,16 +636,16 @@ const CancellationRequestModal = ({
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Amount Paid:</span>
-              <div className="font-medium">€{request.registration?.amount_paid?.toFixed(2) || '0.00'}</div>
+              <div className="font-medium">€{registration?.amount_paid?.toFixed(2) || '0.00'}</div>
             </div>
             <div>
               <span className="text-gray-500">Payment Status:</span>
-              <div className="font-medium">{request.registration?.payment_status || 'Unknown'}</div>
+              <div className="font-medium">{registration?.payment_status || 'Unknown'}</div>
             </div>
-            {request.registration?.invoice_id && (
+            {registration?.invoice_id && (
               <div className="col-span-2">
                 <span className="text-gray-500">Invoice:</span>
-                <div className="font-medium">{request.registration.invoice_id}</div>
+                <div className="font-medium">{registration.invoice_id}</div>
               </div>
             )}
           </div>

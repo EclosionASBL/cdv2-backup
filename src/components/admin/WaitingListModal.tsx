@@ -112,6 +112,9 @@ const WaitingListModal = ({ isOpen, onClose, activityId }: WaitingListModalProps
                       Téléphone
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Adresse
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Date d'ajout
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -146,10 +149,15 @@ const WaitingListModal = ({ isOpen, onClose, activityId }: WaitingListModalProps
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {unwrappedEntry.parent?.email}
+                          {unwrappedEntry.parent?.email || '-'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                           {unwrappedEntry.parent?.telephone || '-'}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                          {unwrappedEntry.parent?.adresse ? 
+                            `${unwrappedEntry.parent.adresse}, ${unwrappedEntry.parent.cpostal} ${unwrappedEntry.parent.localite}` : 
+                            '-'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                           {new Date(unwrappedEntry.created_at).toLocaleDateString('fr-FR')}

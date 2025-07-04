@@ -23,6 +23,9 @@ export interface WaitingListEntry {
     nom: string;
     email: string;
     telephone: string;
+    adresse: string;
+    cpostal: string;
+    localite: string;
   };
   session?: {
     stage: {
@@ -93,7 +96,10 @@ export const useWaitingListStore = create<WaitingListState>((set, get) => ({
             email,
             prenom,
             nom,
-            telephone
+            telephone,
+            adresse,
+            cpostal,
+            localite
           ),
           session:sessions(
             stage:stages(title),
