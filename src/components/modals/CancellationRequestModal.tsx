@@ -12,7 +12,7 @@ interface CancellationRequestModalProps {
     kid: {
       prenom: string;
       nom: string;
-    };
+    } | null;
     session: {
       stage: {
         title: string;
@@ -22,7 +22,7 @@ interface CancellationRequestModalProps {
       center: {
         name: string;
       };
-    };
+    } | null;
   } | null;
   isLoading: boolean;
 }
@@ -38,7 +38,7 @@ export const CancellationRequestModal = ({
   const [isConfirmed, setIsConfirmed] = useState(false);
 
   // Calculate days until start date
-  const daysUntilStart = registrationDetails ? Math.ceil(
+  const daysUntilStart = registrationDetails?.session ? Math.ceil(
     (new Date(registrationDetails.session.start_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
   ) : 0;
 
@@ -76,16 +76,20 @@ export const CancellationRequestModal = ({
 
           {registrationDetails && (
             <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-              <p className="font-medium">{registrationDetails.session.stage.title}</p>
+              <p className="font-medium">{registrationDetails.session?.stage?.title || 'Unknown Activity'}</p>
               <p className="text-sm text-gray-600">
-                Pour: {registrationDetails.kid.prenom} {registrationDetails.kid.nom}
+                Pour: {registrationDetails.kid ? `${registrationDetails.kid.prenom} ${registrationDetails.kid.nom}` : 'Unknown Child'}
               </p>
-              <p className="text-sm text-gray-600">
-                Du {new Date(registrationDetails.session.start_date).toLocaleDateString('fr-FR')} au {new Date(registrationDetails.session.end_date).toLocaleDateString('fr-FR')}
-              </p>
-              <p className="text-sm text-gray-600">
-                Centre: {registrationDetails.session.center.name}
-              </p>
+              {registrationDetails.session && (
+                <>
+                  <p className="text-sm text-gray-600">
+                    Du {new Date(registrationDetails.session.start_date).toLocaleDateString('fr-FR')} au {new Date(registrationDetails.session.end_date).toLocaleDateString('fr-FR')}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Centre: {registrationDetails.session.center?.name || 'Unknown Center'}
+                  </p>
+                </>
+              )}
             </div>
           )}
 
