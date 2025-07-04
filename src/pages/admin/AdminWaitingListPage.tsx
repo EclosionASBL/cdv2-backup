@@ -10,7 +10,6 @@ const AdminWaitingListPage = () => {
     entries: waitingListEntries, 
     fetchWaitingList, 
     isLoading: isWaitingListLoading, 
-    error,
     removeFromWaitingList,
     offerSeat,
     markEntryConverted,
@@ -30,7 +29,7 @@ const AdminWaitingListPage = () => {
   }, [fetchWaitingList]);
 
   useEffect(() => {
-    console.log('Waiting list entries:', waitingListEntries);
+    console.log('Waiting list entries:', entries);
   }, [waitingListEntries]);
 
   const fetchActivities = async () => {
@@ -39,8 +38,8 @@ const AdminWaitingListPage = () => {
         .from('sessions')
         .select(`
           id,
-          stage:stages(title),
-          center:centers(name),
+          stage:stage_id(title),
+          center:center_id(name),
           start_date,
           end_date,
           capacity
@@ -298,7 +297,7 @@ const AdminWaitingListPage = () => {
             </div>
           </div>
         </div>
-        
+
         {isWaitingListLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
@@ -367,18 +366,16 @@ const AdminWaitingListPage = () => {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">
-                                {unwrappedEntry.kid?.prenom} {unwrappedEntry.kid?.nom || ''}
+                                {unwrappedEntry.kid?.prenom} {unwrappedEntry.kid?.nom}
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">
-                                {unwrappedEntry.parent?.prenom && unwrappedEntry.parent?.nom 
-                                  ? `${unwrappedEntry.parent.prenom} ${unwrappedEntry.parent.nom}`
-                                  : 'Parent inconnu'}
+                                {unwrappedEntry.parent?.prenom} {unwrappedEntry.parent?.nom}
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {unwrappedEntry.parent?.email || '-'}
+                              {unwrappedEntry.parent?.email}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {unwrappedEntry.parent?.telephone || '-'}
