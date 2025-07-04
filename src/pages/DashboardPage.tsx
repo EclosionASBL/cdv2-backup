@@ -17,10 +17,10 @@ interface Registration {
   price_type: string;
   reduced_declaration: boolean;
   invoice_id: string | null;
-  kid: {
+  kid?: {
     prenom: string;
     nom: string;
-  };
+  } | null;
   session: {
     stage: {
       title: string;
@@ -436,7 +436,7 @@ const DashboardPage = () => {
                       {new Date(reg.session.start_date).toLocaleDateString('fr-FR')} - {new Date(reg.session.end_date).toLocaleDateString('fr-FR')}
                     </p>
                     <p className="text-sm text-gray-600">
-                      Pour: {reg.kid.prenom} {reg.kid.nom}
+                      Pour: {reg.kid ? `${reg.kid.prenom} ${reg.kid.nom}` : 'Enfant inconnu'}
                     </p>
                   </div>
                   <div className="flex flex-col items-end">

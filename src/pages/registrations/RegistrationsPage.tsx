@@ -27,10 +27,10 @@ interface Registration {
   invoice_id: string | null;
   invoice_url: string | null;
   cancellation_status: 'none' | 'requested' | 'cancelled_full_refund' | 'cancelled_partial_refund' | 'cancelled_no_refund';
-  kid: {
+  kid?: {
     prenom: string;
     nom: string;
-  };
+  } | null;
   session: {
     stage: {
       title: string;
@@ -440,8 +440,8 @@ const RegistrationsPage = () => {
       const searchLower = searchTerm.toLowerCase();
       return (
         reg.session.stage.title.toLowerCase().includes(searchLower) ||
-        reg.kid.prenom.toLowerCase().includes(searchLower) ||
-        reg.kid.nom.toLowerCase().includes(searchLower) ||
+        (reg.kid?.prenom?.toLowerCase().includes(searchLower)) ||
+        (reg.kid?.nom?.toLowerCase().includes(searchLower)) ||
         reg.session.center.name.toLowerCase().includes(searchLower)
       );
     });
@@ -537,7 +537,9 @@ const RegistrationsPage = () => {
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
                           <div>
                             <h3 className="font-semibold text-lg text-gray-900">{reg.session.stage.title}</h3>
-                            <p className="text-sm text-gray-600">Pour: {reg.kid.prenom} {reg.kid.nom}</p>
+                            <p className="text-sm text-gray-600">
+                              Pour: {reg.kid ? `${reg.kid.prenom} ${reg.kid.nom}` : 'Enfant inconnu'}
+                            </p>
                           </div>
                           <div className="flex flex-col items-start sm:items-end">
                             <span className={clsx(
@@ -667,7 +669,7 @@ const RegistrationsPage = () => {
                                 {unwrappedEntry.session?.stage.title}
                               </h3>
                               <p className="text-sm text-gray-600">
-                                Pour: {unwrappedEntry.kid?.prenom} {unwrappedEntry.kid?.nom}
+                                Pour: {unwrappedEntry.kid ? `${unwrappedEntry.kid.prenom} ${unwrappedEntry.kid.nom}` : 'Enfant inconnu'}
                               </p>
                             </div>
                             <div>
