@@ -126,15 +126,32 @@ const AdminCancellationRequestsPage = () => {
       if (error) {
         console.error('Edge function error:', error);
         
-        // Try to extract more detailed error message if available
+        // Extract detailed error message from Edge Function response
         let errorMessage = 'Failed to process cancellation approval';
-        if (error.message) {
+        
+        // First, try to get the error message from the response body
+        if (data && typeof data === 'object' && 'error' in data) {
+          errorMessage = data.error as string;
+        } else if (data && typeof data === 'object' && 'message' in data) {
+          errorMessage = data.message as string;
+        } else if (data && typeof data === 'object' && 'error_message' in data) {
+          errorMessage = data.error_message as string;
+        }
+        // If no detailed message in response body, fall back to error object
+        else if (error.message) {
           errorMessage = error.message;
         }
-        if (error.context && typeof error.context === 'object' && 'message' in error.context) {
+        // Check for context-based error messages
+        else if (error.context && typeof error.context === 'object' && 'message' in error.context) {
           errorMessage = error.context.message as string;
         }
         
+        throw new Error(errorMessage);
+      }
+
+      // Check if the Edge Function returned an error in the response data
+      if (data && typeof data === 'object' && 'success' in data && data.success === false) {
+        const errorMessage = (data as any).error_message || (data as any).error || 'Unknown error occurred';
         throw new Error(errorMessage);
       }
 
