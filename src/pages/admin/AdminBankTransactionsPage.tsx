@@ -20,7 +20,8 @@ import {
   Link as LinkIcon,
   Calendar,
   ArrowUpDown,
-  Info
+  Info,
+  Unlink
 } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -82,6 +83,9 @@ const AdminBankTransactionsPage = () => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [modalInvoiceSearchTerm, setModalInvoiceSearchTerm] = useState('');
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
+  const [isDisassociateModalOpen, setIsDisassociateModalOpen] = useState(false);
+  const [selectedTransactionForDisassociation, setSelectedTransactionForDisassociation] = useState<BankTransaction | null>(null);
+  const [isDisassociating, setIsDisassociating] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -433,6 +437,41 @@ const AdminBankTransactionsPage = () => {
     }
   };
 
+  const handleDisassociateTransaction = async () => {
+    if (!selectedTransactionForDisassociation) return;
+    
+    try {
+      setIsDisassociating(true);
+      
+      const { data, error } = await supabase.rpc('disassociate_bank_transaction', {
+        p_transaction_id: selectedTransactionForDisassociation.id
+      });
+      
+      if (error) {
+        console.error('Error disassociating transaction:', error);
+        toast.error(`Erreur: ${error.message}`);
+        return;
+      }
+      
+      if (!data.success) {
+        toast.error(data.error || 'Erreur lors de la dissociation');
+        return;
+      }
+      
+      toast.success('Transaction dissociée avec succès');
+      setIsDisassociateModalOpen(false);
+      setSelectedTransactionForDisassociation(null);
+      
+      // Refresh the transactions list
+      fetchTransactions();
+    } catch (err: any) {
+      console.error('Error disassociating transaction:', err);
+      toast.error('Une erreur est survenue lors de la dissociation');
+    } finally {
+      setIsDisassociating(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
@@ -743,6 +782,19 @@ const AdminBankTransactionsPage = () => {
                             title="Associer à une facture"
                           >
                             <LinkIcon className="w-5 h-5" />
+                          </button>
+                        )}
+                        
+                        {transaction.invoice_id && (
+                          <button
+                            onClick={() => {
+                              setSelectedTransactionForDisassociation(transaction);
+                              setIsDisassociateModalOpen(true);
+                            }}
+                            className="text-red-600 hover:text-red-900"
+                            title="Dissocier de la facture"
+                          >
+                            <Unlink className="h-5 w-5" />
                           </button>
                         )}
                       </div>
@@ -1216,6 +1268,94 @@ const AdminBankTransactionsPage = () => {
               </div>
             </div>
           </Dialog.Panel>
+        </div>
+      </Dialog>
+
+      {/* Disassociate Transaction Modal */}
+      <Dialog
+        open={isDisassociateModalOpen}
+        onClose={() => !isDisassociating && setIsDisassociateModalOpen(false)}
+        className="fixed inset-0 z-50 overflow-y-auto"
+      >
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <Dialog.Overlay className="fixed inset-0 bg-black bg-opacity-30" />
+
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-auto p-6">
+            <div className="flex items-center mb-4">
+              <div className="bg-red-100 rounded-full p-2 mr-3">
+                <Unlink className="h-6 w-6 text-red-600" />
+              </div>
+              <Dialog.Title className="text-lg font-semibold">
+                Dissocier la transaction
+              </Dialog.Title>
+            </div>
+
+            {selectedTransactionForDisassociation && (
+              <div className="space-y-4">
+                <p className="text-gray-600">
+                  Êtes-vous sûr de vouloir dissocier cette transaction de sa facture ?
+                </p>
+                
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm">
+                    <strong>Transaction :</strong> {formatCurrency(selectedTransactionForDisassociation.amount)}
+                  </p>
+                  <p className="text-sm">
+                    <strong>Date :</strong> {formatDate(selectedTransactionForDisassociation.transaction_date)}
+                  </p>
+                  <p className="text-sm">
+                    <strong>Communication :</strong> {selectedTransactionForDisassociation.communication || 'Aucune'}
+                  </p>
+                  {selectedTransactionForDisassociation.extracted_invoice_number && (
+                    <p className="text-sm">
+                      <strong>Facture associée :</strong> {selectedTransactionForDisassociation.extracted_invoice_number}
+                    </p>
+                  )}
+                </div>
+                
+                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                  <div className="flex">
+                    <AlertCircle className="h-5 w-5 text-yellow-500 mr-2 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-yellow-700">
+                      <p className="font-medium">Attention :</p>
+                      <p>Cette action va :</p>
+                      <ul className="list-disc list-inside mt-1">
+                        <li>Marquer la transaction comme "non associée"</li>
+                        <li>Réévaluer automatiquement le statut de la facture</li>
+                        <li>Mettre à jour le statut des inscriptions si nécessaire</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsDisassociateModalOpen(false)}
+                    className="btn-outline"
+                    disabled={isDisassociating}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisassociateTransaction}
+                    disabled={isDisassociating}
+                    className="btn-primary bg-red-600 hover:bg-red-700"
+                  >
+                    {isDisassociating ? (
+                      <span className="flex items-center">
+                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                        Dissociation...
+                      </span>
+                    ) : (
+                      'Dissocier'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </Dialog>
     </div>
