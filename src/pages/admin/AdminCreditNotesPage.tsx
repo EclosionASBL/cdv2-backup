@@ -327,14 +327,16 @@ const AdminCreditNotesPage = () => {
     
     // Filter out already cancelled registrations
     const activeRegistrations = invoice.registrations?.filter(
-      reg => reg.cancellation_status === 'none'
+      reg => reg.cancellation_status === 'none' || reg.cancellation_status === 'requested'
     ) || [];
     
     setFormData({
       invoiceId: invoice.id,
       type: 'full',
       registrationIds: activeRegistrations.map(reg => reg.id),
-      amount: activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0),
+      amount: activeRegistrations.length > 0 
+        ? activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0)
+        : invoice.amount, // Utiliser le montant total de la facture si pas d'inscriptions
       cancelRegistrations: true,
       adminNotes: ''
     });
@@ -345,18 +347,25 @@ const AdminCreditNotesPage = () => {
   const handleTypeChange = (type: 'full' | 'partial' | 'custom') => {
     if (!selectedInvoice) return;
     
-    // Filter out already cancelled registrations
+    // Filter out already cancelled registrations (only if registrations exist)
     const activeRegistrations = selectedInvoice.registrations?.filter(
-      reg => reg.cancellation_status === 'none'
+      reg => reg.cancellation_status === 'none' || reg.cancellation_status === 'requested'
     ) || [];
     
     let amount = 0;
     let registrationIds: string[] = [];
     
     if (type === 'full') {
-      // Full refund - all active registrations, sum of their amounts
-      amount = activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0);
-      registrationIds = activeRegistrations.map(reg => reg.id);
+      // Full refund - if we have active registrations, use their sum
+      // Otherwise, use the full invoice amount
+      if (activeRegistrations.length > 0) {
+        amount = activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0);
+        registrationIds = activeRegistrations.map(reg => reg.id);
+      } else {
+        // No registrations, use full invoice amount
+        amount = selectedInvoice.amount;
+        registrationIds = [];
+      }
     } else if (type === 'partial') {
       // Partial refund - no registrations selected by default
       amount = 0;
@@ -804,7 +813,9 @@ const AdminCreditNotesPage = () => {
                         : 'Sélectionnez une inscription pour le remboursement personnalisé'}
                     </h3>
                     <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {selectedInvoice.registrations?.filter(reg => reg.cancellation_status === 'none').map((registration) => {
+                      {selectedInvoice.registrations?.filter(reg => 
+                        reg.cancellation_status === 'none' || reg.cancellation_status === 'requested'
+                      ).map((registration) => {
                         const isSelected = formData.registrationIds.includes(registration.id);
                         const isDisabled = formData.type === 'custom' && formData.registrationIds.length > 0 && !isSelected;
                         
@@ -834,6 +845,11 @@ const AdminCreditNotesPage = () => {
                                 <p className="text-sm text-gray-600">
                                   Centre: {registration.session.center.name}
                                 </p>
+                                {registration.cancellation_status === 'requested' && (
+                                  <span className="inline-block text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded mt-1">
+                                    Annulation demandée
+                                  </span>
+                                )}
                               </div>
                               <div className="text-right">
                                 <p className="font-medium">{formatCurrency(registration.amount_paid)}</p>
@@ -948,10 +964,10 @@ const AdminCreditNotesPage = () => {
                   <button
                     type="button"
                     onClick={handleCreateCreditNote}
-                    disabled={isProcessing || formData.amount <= 0 || (formData.type !== 'full' && formData.registrationIds.length === 0)}
+                    disabled={isProcessing || formData.amount <= 0}
                     className={clsx(
                       "btn-primary",
-                      (isProcessing || formData.amount <= 0 || (formData.type !== 'full' && formData.registrationIds.length === 0)) && "opacity-50 cursor-not-allowed"
+                      (isProcessing || formData.amount <= 0) && "opacity-50 cursor-not-allowed"
                     )}
                   >
                     {isProcessing ? (

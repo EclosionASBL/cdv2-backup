@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
 
     const { invoiceId, type, registrationIds, amount, cancelRegistrations, adminNotes } = requestData;
 
-    if (!invoiceId || !type || amount <= 0 || (type !== 'full' && registrationIds.length === 0)) {
+    if (!invoiceId || !type || amount <= 0) {
       console.error('Missing required parameters:', { invoiceId, type, registrationIds, amount });
       return new Response(
         JSON.stringify({ error: 'Missing required parameters' }),
@@ -138,32 +138,72 @@ Deno.serve(async (req) => {
     }
 
     // Get the registrations
-    const { data: registrations, error: registrationsError } = await supabaseAdmin
-      .from('registrations')
-      .select(`
-        id,
-        kid_id,
-        activity_id,
-        amount_paid,
-        payment_status,
-        price_type,
-        cancellation_status,
-        kid:kids(
-          prenom,
-          nom
-        ),
-        session:activity_id(
-          stage:stage_id(
-            title
+    let registrations = [];
+    let registrationsError = null;
+    
+    // Only fetch registrations if we have registration IDs to work with
+    if (registrationIds && registrationIds.length > 0) {
+      const { data: regData, error: regError } = await supabaseAdmin
+        .from('registrations')
+        .select(`
+          id,
+          kid_id,
+          activity_id,
+          amount_paid,
+          payment_status,
+          price_type,
+          cancellation_status,
+          kid:kids(
+            prenom,
+            nom
           ),
-          start_date,
-          end_date,
-          center:center_id(
-            name
+          session:activity_id(
+            stage:stage_id(
+              title
+            ),
+            start_date,
+            end_date,
+            center:center_id(
+              name
+            )
           )
-        )
-      `)
-      .in('id', type === 'full' ? invoice.registration_ids : registrationIds);
+        `)
+        .in('id', registrationIds);
+      
+      registrations = regData || [];
+      registrationsError = regError;
+    } else if (type === 'full' && invoice.registration_ids && invoice.registration_ids.length > 0) {
+      // For full refund, try to get registrations from invoice if no specific IDs provided
+      const { data: regData, error: regError } = await supabaseAdmin
+        .from('registrations')
+        .select(`
+          id,
+          kid_id,
+          activity_id,
+          amount_paid,
+          payment_status,
+          price_type,
+          cancellation_status,
+          kid:kids(
+            prenom,
+            nom
+          ),
+          session:activity_id(
+            stage:stage_id(
+              title
+            ),
+            start_date,
+            end_date,
+            center:center_id(
+              name
+            )
+          )
+        `)
+        .in('id', invoice.registration_ids);
+      
+      registrations = regData || [];
+      registrationsError = regError;
+    }
 
     if (registrationsError) {
       console.error('Error fetching registrations:', registrationsError);
@@ -173,10 +213,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Filter out already cancelled registrations
-    const validRegistrations = registrations.filter(reg => reg.cancellation_status === 'none');
+    // Filter out already cancelled registrations (only if we have registrations)
+    const validRegistrations = registrations.length > 0 
+      ? registrations.filter(reg => reg.cancellation_status === 'none')
+      : [];
     
-    if (validRegistrations.length === 0) {
+    // For cases where we have no valid registrations but still want to create a credit note
+    // (e.g., full refund of an invoice without registrations)
+    if (validRegistrations.length === 0 && type !== 'full') {
       return new Response(
         JSON.stringify({ error: 'No valid registrations found for cancellation' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -208,7 +252,7 @@ Deno.serve(async (req) => {
       .from('credit_notes')
       .insert({
         user_id: invoice.user_id,
-        registration_id: validRegistrations[0].id, // Link to the first registration
+        registration_id: validRegistrations.length > 0 ? validRegistrations[0].id : null, // Link to the first registration or null
         cancellation_request_id: null, // No specific cancellation request
         credit_note_number: creditNoteNumber,
         amount: amount,
@@ -230,140 +274,152 @@ Deno.serve(async (req) => {
     // Process each registration
     const results = [];
     
-    for (const registration of validRegistrations) {
-      try {
-        // Check if a cancellation request already exists for this registration
-        const { data: existingRequest, error: checkError } = await supabaseAdmin
-          .from('cancellation_requests')
-          .select('id, status')
-          .eq('registration_id', registration.id)
-          .maybeSingle();
-          
-        if (checkError) {
-          console.error(`Error checking existing cancellation request for registration ${registration.id}:`, checkError);
-          throw new Error(`Error checking existing request: ${checkError.message}`);
-        }
-
-        let cancellationRequestId;
-        
-        if (existingRequest) {
-          // Update existing cancellation request
-          console.log(`Updating existing cancellation request ${existingRequest.id} for registration ${registration.id}`);
-          
-          const { error: updateError } = await supabaseAdmin
+    // Only process registrations if we have any
+    if (validRegistrations.length > 0) {
+      for (const registration of validRegistrations) {
+        try {
+          // Check if a cancellation request already exists for this registration
+          const { data: existingRequest, error: checkError } = await supabaseAdmin
             .from('cancellation_requests')
-            .update({
-              status: 'approved',
-              refund_type: refundType,
-              admin_notes: adminNotes,
-              credit_note_id: creditNoteNumber,
-              credit_note_url: null // Will be updated later
-            })
-            .eq('id', existingRequest.id);
+            .select('id, status')
+            .eq('registration_id', registration.id)
+            .maybeSingle();
             
-          if (updateError) {
-            console.error(`Error updating cancellation request ${existingRequest.id}:`, updateError);
-            throw new Error(`Error updating cancellation request: ${updateError.message}`);
-          }
-          
-          cancellationRequestId = existingRequest.id;
-        } else {
-          // Create new cancellation request
-          console.log(`Creating new cancellation request for registration ${registration.id}`);
-          
-          const { data: newRequest, error: insertError } = await supabaseAdmin
-            .from('cancellation_requests')
-            .insert({
-              user_id: invoice.user_id,
-              registration_id: registration.id,
-              kid_id: registration.kid_id,
-              activity_id: registration.activity_id,
-              status: 'approved',
-              refund_type: refundType,
-              admin_notes: adminNotes,
-              parent_notes: 'Créé par un administrateur',
-              credit_note_id: creditNoteNumber,
-              credit_note_url: null // Will be updated later
-            })
-            .select()
-            .single();
-            
-          if (insertError) {
-            console.error(`Error creating cancellation request for registration ${registration.id}:`, insertError);
-            throw new Error(`Error creating cancellation request: ${insertError.message}`);
-          }
-          
-          cancellationRequestId = newRequest.id;
-        }
-
-        // If requested, update registration to cancelled
-        if (cancelRegistrations) {
-          const cancellationStatus = refundType === 'full' 
-            ? 'cancelled_full_refund' 
-            : 'cancelled_partial_refund';
-            
-          const { error: updateRegError } = await supabaseAdmin
-            .from('registrations')
-            .update({
-              payment_status: 'cancelled',
-              cancellation_status: cancellationStatus
-            })
-            .eq('id', registration.id);
-            
-          if (updateRegError) {
-            console.error(`Error updating registration ${registration.id}:`, updateRegError);
-            throw new Error(`Error updating registration: ${updateRegError.message}`);
+          if (checkError) {
+            console.error(`Error checking existing cancellation request for registration ${registration.id}:`, checkError);
+            throw new Error(`Error checking existing request: ${checkError.message}`);
           }
 
-          // Update session registration count
-          try {
-            // Get the current count
-            const { data: sessionData, error: sessionError } = await supabaseAdmin
-              .from('sessions')
-              .select('current_registrations')
-              .eq('id', registration.activity_id)
-              .single();
+          let cancellationRequestId;
+          
+          if (existingRequest) {
+            // Update existing cancellation request
+            console.log(`Updating existing cancellation request ${existingRequest.id} for registration ${registration.id}`);
             
-            if (sessionError) {
-              console.error('Error fetching session:', sessionError);
-            } else if (sessionData && sessionData.current_registrations > 0) {
-              // Decrement the count
-              const { error: updateSessionError } = await supabaseAdmin
-                .from('sessions')
-                .update({ current_registrations: sessionData.current_registrations - 1 })
-                .eq('id', registration.activity_id);
+            const { error: updateError } = await supabaseAdmin
+              .from('cancellation_requests')
+              .update({
+                status: 'approved',
+                refund_type: refundType,
+                admin_notes: adminNotes,
+                credit_note_id: creditNoteNumber,
+                credit_note_url: null // Will be updated later
+              })
+              .eq('id', existingRequest.id);
               
-              if (updateSessionError) {
-                console.error('Error updating session registration count:', updateSessionError);
-              }
+            if (updateError) {
+              console.error(`Error updating cancellation request ${existingRequest.id}:`, updateError);
+              throw new Error(`Error updating cancellation request: ${updateError.message}`);
             }
-          } catch (sessionError) {
-            console.error('Error updating session registration count:', sessionError);
+            
+            cancellationRequestId = existingRequest.id;
+          } else {
+            // Create new cancellation request
+            console.log(`Creating new cancellation request for registration ${registration.id}`);
+            
+            const { data: newRequest, error: insertError } = await supabaseAdmin
+              .from('cancellation_requests')
+              .insert({
+                user_id: invoice.user_id,
+                registration_id: registration.id,
+                kid_id: registration.kid_id,
+                activity_id: registration.activity_id,
+                status: 'approved',
+                refund_type: refundType,
+                admin_notes: adminNotes,
+                parent_notes: 'Créé par un administrateur',
+                credit_note_id: creditNoteNumber,
+                credit_note_url: null // Will be updated later
+              })
+              .select()
+              .single();
+              
+            if (insertError) {
+              console.error(`Error creating cancellation request for registration ${registration.id}:`, insertError);
+              throw new Error(`Error creating cancellation request: ${insertError.message}`);
+            }
+            
+            cancellationRequestId = newRequest.id;
           }
-        }
 
-        results.push({
-          registration_id: registration.id,
-          cancellation_request_id: cancellationRequestId,
-          success: true
-        });
-      } catch (processError) {
-        console.error(`Error processing registration ${registration.id}:`, processError);
-        results.push({
-          registration_id: registration.id,
-          error: processError.message,
-          success: false
-        });
+          // If requested, update registration to cancelled
+          if (cancelRegistrations) {
+            const cancellationStatus = refundType === 'full' 
+              ? 'cancelled_full_refund' 
+              : 'cancelled_partial_refund';
+              
+            const { error: updateRegError } = await supabaseAdmin
+              .from('registrations')
+              .update({
+                payment_status: 'cancelled',
+                cancellation_status: cancellationStatus
+              })
+              .eq('id', registration.id);
+              
+            if (updateRegError) {
+              console.error(`Error updating registration ${registration.id}:`, updateRegError);
+              throw new Error(`Error updating registration: ${updateRegError.message}`);
+            }
+
+            // Update session registration count
+            try {
+              // Get the current count
+              const { data: sessionData, error: sessionError } = await supabaseAdmin
+                .from('sessions')
+                .select('current_registrations')
+                .eq('id', registration.activity_id)
+                .single();
+              
+              if (sessionError) {
+                console.error('Error fetching session:', sessionError);
+              } else if (sessionData && sessionData.current_registrations > 0) {
+                // Decrement the count
+                const { error: updateSessionError } = await supabaseAdmin
+                  .from('sessions')
+                  .update({ current_registrations: sessionData.current_registrations - 1 })
+                  .eq('id', registration.activity_id);
+                
+                if (updateSessionError) {
+                  console.error('Error updating session registration count:', updateSessionError);
+                }
+              }
+            } catch (sessionError) {
+              console.error('Error updating session registration count:', sessionError);
+            }
+          }
+
+          results.push({
+            registration_id: registration.id,
+            cancellation_request_id: cancellationRequestId,
+            success: true
+          });
+        } catch (processError) {
+          console.error(`Error processing registration ${registration.id}:`, processError);
+          results.push({
+            registration_id: registration.id,
+            error: processError.message,
+            success: false
+          });
+        }
       }
+    } else {
+      // No registrations to process, but credit note was created successfully
+      console.log('Credit note created without associated registrations');
+      results.push({
+        registration_id: null,
+        cancellation_request_id: null,
+        success: true,
+        message: 'Credit note created for invoice without registrations'
+      });
     }
 
     // If all registrations are cancelled and we're cancelling registrations, update invoice status
-    if (cancelRegistrations) {
+    if (cancelRegistrations && validRegistrations.length > 0) {
       // Check if all registrations for this invoice are now cancelled
       const { data: allRegistrations, error: regError } = await supabaseAdmin
         .from('registrations')
         .select('id, cancellation_status')
-        .in('id', invoice.registration_ids);
+        .in('id', invoice.registration_ids || []);
         
       if (!regError && allRegistrations) {
         // Check if all registrations are cancelled
@@ -383,10 +439,20 @@ Deno.serve(async (req) => {
           }
         }
       }
+    } else if (type === 'full' && validRegistrations.length === 0) {
+      // For full refund without registrations, mark invoice as cancelled
+      const { error: updateInvoiceError } = await supabaseAdmin
+        .from('invoices')
+        .update({ status: 'cancelled' })
+        .eq('id', invoiceId);
+        
+      if (updateInvoiceError) {
+        console.error('Error updating invoice status:', updateInvoiceError);
+      }
     }
 
     // Generate PDF for the credit note
-    try {
+      try {
       console.log('Generating PDF for credit note:', creditNote.id);
       
       const pdfResponse = await fetch(`${supabaseUrl}/functions/v1/generate-credit-note-pdf`, {
