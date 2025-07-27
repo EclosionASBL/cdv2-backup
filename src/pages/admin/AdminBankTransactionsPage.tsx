@@ -74,6 +74,7 @@ const AdminBankTransactionsPage = () => {
   const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [showCancelledInvoices, setShowCancelledInvoices] = useState(false);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
   const [isProcessingTransaction, setIsProcessingTransaction] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -197,6 +198,11 @@ const AdminBankTransactionsPage = () => {
     try {
       setIsLoadingInvoices(true);
       
+      // Determine which statuses to include
+      const statusFilter = showCancelledInvoices 
+        ? ['pending', 'paid', 'cancelled']
+        : ['pending', 'paid'];
+      
       // Fetch pending invoices
       const { data, error } = await supabase
         .from('invoices')
@@ -211,7 +217,7 @@ const AdminBankTransactionsPage = () => {
             email
           )
         `)
-        .eq('status', 'pending')
+        .in('status', statusFilter)
         .order('created_at', { ascending: false });
         
       if (error) throw error;
@@ -1092,7 +1098,6 @@ const AdminBankTransactionsPage = () => {
                   
                   {/* Search bar for invoices */}
                   <div className="relative mb-4">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input
                       type="text"
                       placeholder="Rechercher une facture par numéro, client..."
@@ -1100,69 +1105,98 @@ const AdminBankTransactionsPage = () => {
                       onChange={(e) => handleModalInvoiceSearch(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                  </div>
-                  
-                  {isLoadingInvoices ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
                     </div>
-                  ) : filteredInvoices.length === 0 ? (
-                    <div className="text-center py-8 bg-gray-50 rounded-lg">
-                      <p className="text-gray-600">Aucune facture en attente trouvée</p>
+                    
+                    <div className="mt-4">
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={showCancelledInvoices}
+                          onChange={(e) => setShowCancelledInvoices(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                        <span className="text-sm text-gray-700">
+                          Inclure les factures annulées
+                        </span>
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Utile pour associer des paiements reçus après annulation
+                      </p>
                     </div>
-                  ) : (
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {filteredInvoices.map((invoice) => {
-                        // Check if this invoice amount matches the transaction amount
-                        const isExactMatch = Math.abs(invoice.amount - selectedTransaction.amount) < 0.01;
-                        
-                        return (
-                          <div
-                            key={invoice.id}
-                            className={clsx(
-                              "border rounded-lg p-3 cursor-pointer",
-                              selectedInvoice === invoice.id
-                                ? "border-primary-500 bg-primary-50"
-                                : isExactMatch
-                                  ? "border-green-300 bg-green-50 hover:border-green-400"
-                                  : "border-gray-200 hover:border-gray-300"
-                            )}
-                            onClick={() => setSelectedInvoice(invoice.id)}
-                          >
-                            <div className="flex justify-between">
-                              <div>
-                                <p className="font-medium">{invoice.invoice_number}</p>
-                                <p className="text-sm text-gray-600">
-                                  {invoice.user.prenom} {invoice.user.nom}
-                                </p>
-                                <p className="text-xs text-gray-500">{invoice.user.email}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className={clsx(
-                                  "font-medium",
-                                  isExactMatch ? "text-green-600" : ""
-                                )}>
-                                  {formatCurrency(invoice.amount)}
+                    
+                    {isLoadingInvoices ? (
+                      <div className="flex justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+                      </div>
+                    ) : filteredInvoices.length === 0 ? (
+                      <div className="text-center py-8 bg-gray-50 rounded-lg">
+                        <p className="text-gray-600">Aucune facture en attente trouvée</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {filteredInvoices.map((invoice) => {
+                          // Check if this invoice amount matches the transaction amount
+                          const isExactMatch = Math.abs(invoice.amount - selectedTransaction.amount) < 0.01;
+                          
+                          return (
+                            <div 
+                              key={invoice.id}
+                              onClick={() => handleAssociateTransaction(invoice.id)}
+                              className={clsx(
+                                "p-4 border rounded-lg hover:bg-gray-50 cursor-pointer",
+                                invoice.status === 'cancelled' 
+                                  ? "border-red-200 bg-red-50" 
+                                  : "border-gray-200"
+                              )}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="font-medium">{invoice.invoice_number}</p>
+                                  <p className="text-sm text-gray-600">
+                                    {invoice.user?.prenom} {invoice.user?.nom}
+                                  </p>
+                                  <div className="flex items-center mt-1">
+                                    <span className={clsx(
+                                      "px-2 py-1 text-xs font-medium rounded-full",
+                                      invoice.status === 'paid' ? "bg-green-100 text-green-800" :
+                                      invoice.status === 'cancelled' ? "bg-red-100 text-red-800" :
+                                      "bg-yellow-100 text-yellow-800"
+                                    )}>
+                                      {invoice.status === 'paid' ? 'Payée' :
+                                       invoice.status === 'cancelled' ? 'Annulée' :
+                                       'En attente'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-medium">{formatCurrency(invoice.amount)}</p>
                                   {isExactMatch && (
-                                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
                                       <CheckCircle className="h-3 w-3 mr-1" />
                                       Montant exact
                                     </span>
                                   )}
-                                </p>
-                                <div className="mt-1">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    En attente
-                                  </span>
+                                  {invoice.status === 'pending' && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 mt-1">
+                                      <Clock className="h-3 w-3 mr-1" />
+                                      En attente
+                                    </span>
+                                  )}
+                                  {invoice.status === 'cancelled' && (
+                                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+                                      ⚠️ Cette facture a été annulée. L'association créera une provision pour l'utilisateur.
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex justify-end space-x-3">
