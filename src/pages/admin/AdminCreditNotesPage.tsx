@@ -345,7 +345,7 @@ const AdminCreditNotesPage = () => {
   const handleTypeChange = (type: 'full' | 'partial' | 'custom') => {
     if (!selectedInvoice) return;
     
-    // Filter out already cancelled registrations
+    // Filter out already cancelled registrations (only if registrations exist)
     const activeRegistrations = selectedInvoice.registrations?.filter(
       reg => reg.cancellation_status === 'none'
     ) || [];
@@ -354,9 +354,16 @@ const AdminCreditNotesPage = () => {
     let registrationIds: string[] = [];
     
     if (type === 'full') {
-      // Full refund - all active registrations, sum of their amounts
-      amount = activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0);
-      registrationIds = activeRegistrations.map(reg => reg.id);
+      // Full refund - if we have active registrations, use their sum
+      // Otherwise, use the full invoice amount
+      if (activeRegistrations.length > 0) {
+        amount = activeRegistrations.reduce((sum, reg) => sum + reg.amount_paid, 0);
+        registrationIds = activeRegistrations.map(reg => reg.id);
+      } else {
+        // No registrations, use full invoice amount
+        amount = selectedInvoice.amount;
+        registrationIds = [];
+      }
     } else if (type === 'partial') {
       // Partial refund - no registrations selected by default
       amount = 0;
@@ -948,10 +955,10 @@ const AdminCreditNotesPage = () => {
                   <button
                     type="button"
                     onClick={handleCreateCreditNote}
-                    disabled={isProcessing || formData.amount <= 0 || (formData.type !== 'full' && formData.registrationIds.length === 0)}
+                    disabled={isProcessing || formData.amount <= 0}
                     className={clsx(
                       "btn-primary",
-                      (isProcessing || formData.amount <= 0 || (formData.type !== 'full' && formData.registrationIds.length === 0)) && "opacity-50 cursor-not-allowed"
+                      (isProcessing || formData.amount <= 0) && "opacity-50 cursor-not-allowed"
                     )}
                   >
                     {isProcessing ? (
