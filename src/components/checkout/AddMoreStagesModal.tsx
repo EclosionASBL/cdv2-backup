@@ -70,7 +70,7 @@ export const AddMoreStagesModal = ({
                 className={`w-full btn-primary py-3 flex items-center justify-center ${!termsAccepted ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <ShoppingCart className="h-5 w-5 mr-2" />
-                Valider les inscriptions
+                Passer à la prochaine étape
                 <ArrowRight className="h-4 w-4 ml-2" />
               </button>
             </div>
