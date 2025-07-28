@@ -99,9 +99,38 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       let query = supabase
         .from('sessions')
         .select(`
-          *,
-          stage:stages(*),
-          center:centers(*)
+          id,
+          stage_id,
+          center_id,
+          start_date,
+          end_date,
+          capacity,
+          periode,
+          prix_normal,
+          prix_reduit,
+          prix_local,
+          prix_local_reduit,
+          remarques,
+          visible_from,
+          tarif_condition_id,
+          semaine,
+          current_registrations,
+          stage:stages(
+            id,
+            title,
+            description,
+            age_min,
+            age_max,
+            base_price,
+            image_url
+          ),
+          center:centers(
+            id,
+            name,
+            address,
+            postal_code,
+            city
+          )
         `)
         .eq('active', true)
         .order('start_date');
@@ -195,9 +224,38 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       const { data, error } = await supabase
         .from('sessions')
         .select(`
-          *,
-          stage:stages(*),
-          center:centers(*)
+          id,
+          stage_id,
+          center_id,
+          start_date,
+          end_date,
+          capacity,
+          periode,
+          prix_normal,
+          prix_reduit,
+          prix_local,
+          prix_local_reduit,
+          remarques,
+          visible_from,
+          tarif_condition_id,
+          semaine,
+          current_registrations,
+          stage:stages(
+            id,
+            title,
+            description,
+            age_min,
+            age_max,
+            base_price,
+            image_url
+          ),
+          center:centers(
+            id,
+            name,
+            address,
+            postal_code,
+            city
+          )
         `)
         .eq('id', id)
         .single();
